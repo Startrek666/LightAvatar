@@ -1,0 +1,66 @@
+# CPU-optimized Dockerfile for Lightweight Avatar Chat
+FROM python:3.11-slim
+
+# Set environment variables for CPU optimization
+ENV PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    OMP_NUM_THREADS=4 \
+    MKL_NUM_THREADS=4 \
+    NUMEXPR_NUM_THREADS=4 \
+    OPENBLAS_NUM_THREADS=4
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    # Basic tools
+    git \
+    git-lfs \
+    curl \
+    wget \
+    # Build dependencies
+    build-essential \
+    # OpenCV dependencies
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    # Audio dependencies
+    libsndfile1 \
+    ffmpeg \
+    # CPU optimization libraries
+    libopenblas-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Download Silero VAD model during build
+RUN python -c "import torch; torch.hub.load('snakers4/silero-vad', 'silero_vad', force_reload=False)"
+
+# Copy application code
+COPY backend/ ./backend/
+COPY config/ ./config/
+COPY scripts/ ./scripts/
+
+# Create necessary directories
+RUN mkdir -p models logs static ssl_certs
+
+# Copy frontend build (if available)
+# COPY frontend/dist ./static/frontend
+# COPY monitor/dist ./static/monitor
+
+# Expose ports
+EXPOSE 8000 9090
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Start command
+CMD ["python", "backend/app/main.py"]

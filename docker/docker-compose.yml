@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cpu
+    container_name: avatar-chat-backend
+    ports:
+      - "8000:8000"
+      - "9090:9090"
+    volumes:
+      - ../models:/app/models
+      - ../config:/app/config
+      - ../logs:/app/logs
+      - ../ssl_certs:/app/ssl_certs
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - LLM_API_KEY=${LLM_API_KEY}
+      - OMP_NUM_THREADS=4
+      - MKL_NUM_THREADS=4
+    restart: unless-stopped
+    networks:
+      - avatar-network
+    cpu_count: 4
+    mem_limit: 4g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    container_name: avatar-chat-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - avatar-network
+    restart: unless-stopped
+
+  monitor:
+    build:
+      context: ../monitor
+      dockerfile: ../docker/Dockerfile.monitor
+    container_name: avatar-chat-monitor
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    networks:
+      - avatar-network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: avatar-chat-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../ssl_certs:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+      - frontend
+      - monitor
+    networks:
+      - avatar-network
+    restart: unless-stopped
+
+networks:
+  avatar-network:
+    driver: bridge

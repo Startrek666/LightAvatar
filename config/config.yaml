@@ -1,0 +1,92 @@
+# Lightweight Avatar Chat Configuration
+
+# Server settings
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+
+# CORS settings
+cors:
+  origins:
+    - "http://localhost:3000"
+    - "http://localhost:3001"
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:3001"
+
+# WebSocket settings
+websocket:
+  heartbeat_interval: 30
+  message_queue_size: 100
+
+# System resources
+system:
+  max_memory_mb: 4096
+  max_sessions: 10
+  session_timeout: 300
+  cpu_threads: 4
+
+# ASR settings
+asr:
+  backend: "faster-whisper"  # Options: "faster-whisper" (本地) or "skynet" (API)
+  language: "zh"
+
+# Faster-Whisper settings (本地模型)
+whisper:
+  model: "small"  # Options: tiny, base, small, medium, large-v2, large-v3
+  device: "cpu"
+  compute_type: "int8"  # int8 for CPU optimization
+  beam_size: 5
+  best_of: 5
+  temperature: 0
+
+# Skynet Whisper API settings (远程服务)
+skynet_whisper:
+  server_url: "ws://localhost:6010"
+  participant_id: "avatar-user"
+
+# LLM settings (OpenAI-compatible API)
+llm:
+  api_url: "http://localhost:8080/v1"  # Your private LLM API endpoint
+  api_key: ""  # Will be overridden by LLM_API_KEY env var
+  model: "qwen-plus"  # Your model name
+  temperature: 0.7
+  max_tokens: 500
+  top_p: 0.9
+  presence_penalty: 0
+  frequency_penalty: 0
+  system_prompt: |
+    你是一个友好的AI助手，请用简洁清晰的语言回答问题。
+    回答时要自然、亲切，避免过于正式或机械的表达。
+  max_history: 10  # Maximum conversation history to keep
+
+# TTS settings (Edge TTS)
+tts:
+  voice: "zh-CN-XiaoxiaoNeural"  # Microsoft Edge TTS voice
+  rate: "+0%"  # Speech rate adjustment
+  pitch: "+0Hz"  # Pitch adjustment
+  volume: "+0%"  # Volume adjustment
+
+# Avatar settings (Wav2Lip)
+avatar:
+  fps: 25
+  resolution: [512, 512]
+  static_mode: false  # Use static image if true
+  enhance_mode: false  # Enable edge blending
+  template: "default.mp4"  # Default avatar template
+
+# Buffer settings
+buffer:
+  audio_buffer_size: 50  # Audio buffer frames
+  video_buffer_size: 75  # Video buffer frames
+
+# Monitoring settings
+monitoring:
+  enable: true
+  metrics_port: 9090
+
+# Logging settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file_rotation: "50 MB"
+  retention_days: 7

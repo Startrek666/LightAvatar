@@ -1,0 +1,153 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.code-workspace
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Model files (too large for git)
+models/
+*.pth
+*.onnx
+*.bin
+*.pt
+*.safetensors
+
+# Whisper models
+models/whisper/
+*.whisper
+
+# Avatar templates (可能较大)
+# templates/*.jpg
+# templates/*.png
+# 如果模板文件不大，可以提交
+
+# Cache
+.cache/
+*.cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# Audio/Video files (测试文件不提交)
+*.wav
+*.mp3
+*.mp4
+*.avi
+*.mkv
+*.pcm
+!assets/*.mp4  # 保留 assets 目录下的示例视频
+
+# Data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Docker volumes
+docker-compose.override.yml
+.docker/
+
+# OS
+Thumbs.db
+.DS_Store
+*.bak
+
+# Session data
+sessions/
+*.session
+
+# Monitoring data
+prometheus_data/
+
+# Generated documentation
+site/
+
+# Build artifacts
+*.whl
+
+# Test outputs
+test_outputs/
+outputs/
+
+# User uploads
+uploads/
+
+# Secrets (非常重要！)
+secrets/
+*.key
+*.pem
+credentials.json
+token.json
+
+# Local config overrides
+config/local.yaml
+config/*.local.yaml
+
+# Large files
+*.tar.gz
+*.zip
+*.rar
+
