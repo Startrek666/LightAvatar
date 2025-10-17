@@ -15,7 +15,7 @@
 
 - **后端**：FastAPI + WebSocket
 - **前端**：Vue3 + TypeScript + Ant Design Vue
-- **语音识别**：Faster-Whisper (CPU优化版)
+- **语音识别**：Faster-Whisper (本地) / Skynet Whisper API (远程)
 - **语音合成**：Edge TTS (微软免费服务)
 - **数字人驱动**：Wav2Lip (ONNX优化)
 - **大语言模型**：支持OpenAI兼容API
@@ -121,10 +121,17 @@ docker run -d \
 
 ## 📖 文档
 
-- [API文档](docs/api.md)
-- [配置说明](docs/configuration.md)
-- [部署指南](docs/deployment.md)
-- [开发指南](docs/development.md)
+### 核心文档
+- **[Ubuntu服务器部署指南](docs/UBUNTU_DEPLOYMENT.md)** ⭐ - 完整的部署步骤（包含快速开始和脚本说明）
+- **[架构文档](docs/ARCHITECTURE.md)** - 系统架构和技术详解
+- **[Avatar模板制作指南](docs/AVATAR_TEMPLATE_GUIDE.md)** - 数字人模板制作教程
+
+### 其他文档
+- [脚本使用说明](scripts/README.md) - 自动化部署脚本详细说明
+- [技术细节](docs/TECHNICAL_DETAILS.md) - 核心技术实现
+- [集成指南](docs/INTEGRATION_GUIDE.md) - 第三方集成说明
+- [使用说明](docs/USAGE.md) - 功能使用指南
+- [改进总结](docs/IMPROVEMENTS_SUMMARY.md) - 版本改进说明
 
 ## 📝 许可证
 
@@ -136,5 +143,5 @@ MIT License
 
 ## 📧 联系
 
-- 项目地址：https://github.com/yourusername/lightweight-avatar-chat
-- 问题反馈：[Issues](https://github.com/yourusername/lightweight-avatar-chat/issues)
+- 项目地址：https://github.com/Startrek666/LightAvatar
+- 问题反馈：[Issues](https://github.com/Startrek666/LightAvatar/issues)
