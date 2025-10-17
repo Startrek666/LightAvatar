@@ -349,38 +349,56 @@ skynet_whisper:
 
 ### 5.5 下载Wav2Lip模型
 
-#### 方法一：自动下载（推荐）
+#### 方法一：使用HuggingFace（推荐）
 
 ```bash
-# 创建下载脚本
-cat > download_wav2lip.sh << 'EOF'
-#!/bin/bash
 cd /opt/lightavatar/models/wav2lip
 
-# 下载原始Wav2Lip PyTorch模型
-echo "下载Wav2Lip模型..."
-wget -O wav2lip.pth https://github.com/Rudrabha/Wav2Lip/releases/download/v1.0/wav2lip.pth
+# 方案1: 从numz/wav2lip_studio下载（推荐）
+wget -O wav2lip.pth "https://huggingface.co/numz/wav2lip_studio/resolve/main/Wav2lip/wav2lip.pth"
 
-# 或使用备用链接（如果上面失败）
-# wget -O wav2lip.pth https://huggingface.co/spaces/SayedNazim/Wav2Lip-GFPGAN/resolve/main/wav2lip.pth
+# 或方案2: 从camenduru/Wav2Lip下载
+# wget -O wav2lip.pth "https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/wav2lip.pth"
 
-echo "下载完成！"
+# 验证下载
 ls -lh wav2lip.pth
-EOF
-
-chmod +x download_wav2lip.sh
-./download_wav2lip.sh
 ```
 
-#### 方法二：手动上传
+#### 方法二：使用官方OneDrive链接
+
+如果HuggingFace速度慢，可以使用官方OneDrive：
+
+```bash
+cd /opt/lightavatar/models/wav2lip
+
+# 使用wget下载（可能需要手动访问链接获取直接下载URL）
+# 官方链接: https://iiitaphyd-my.sharepoint.com/:u:/g/personal/radrabha_m_research_iiit_ac_in/Eb3LEzbfuKlJiR600lQWRxgBIY27JZg80f7V9jtMfbNDaQ
+
+echo "如果自动下载失败，请在浏览器中访问上述链接手动下载"
+```
+
+#### 方法三：手动上传
 
 如果自动下载失败，可以手动下载后上传：
 
-1. 本地下载：https://github.com/Rudrabha/Wav2Lip/releases/download/v1.0/wav2lip.pth
-2. 上传到服务器：
+**可用下载源**：
+1. HuggingFace (推荐): https://huggingface.co/numz/wav2lip_studio/resolve/main/Wav2lip/wav2lip.pth
+2. 官方OneDrive: https://iiitaphyd-my.sharepoint.com/:u:/g/personal/radrabha_m_research_iiit_ac_in/Eb3LEzbfuKlJiR600lQWRxgBIY27JZg80f7V9jtMfbNDaQ
+
+**上传到服务器**：
 ```bash
 # 在本地执行
 scp wav2lip.pth user@your-server:/opt/lightavatar/models/wav2lip/
+```
+
+**使用脚本自动下载**：
+
+项目中的 `scripts/download_models.sh` 已包含多个下载源，可以直接使用：
+
+```bash
+cd /opt/lightavatar
+bash scripts/download_models.sh
+# 选择 Wav2Lip 模型下载
 ```
 
 ### 5.6 转换Wav2Lip模型为ONNX格式（可选，提升性能）

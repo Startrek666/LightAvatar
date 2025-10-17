@@ -96,18 +96,35 @@ if [ -f "wav2lip.pth" ]; then
 else
     echo_info "正在下载 Wav2Lip PyTorch模型..."
     
-    # 尝试多个下载源
-    if wget -O wav2lip.pth https://github.com/Rudrabha/Wav2Lip/releases/download/v1.0/wav2lip.pth; then
-        echo_info "✓ Wav2Lip模型下载完成"
-    else
-        echo_warn "GitHub下载失败，尝试备用源..."
-        if wget -O wav2lip.pth https://huggingface.co/spaces/SayedNazim/Wav2Lip-GFPGAN/resolve/main/wav2lip.pth; then
-            echo_info "✓ Wav2Lip模型下载完成（备用源）"
-        else
-            echo_error "所有下载源均失败"
-            echo_error "请手动下载 wav2lip.pth 并放置到 models/wav2lip/ 目录"
-            echo_error "下载地址: https://github.com/Rudrabha/Wav2Lip/releases/download/v1.0/wav2lip.pth"
+    # 尝试多个下载源（按优先级）
+    DOWNLOADED=false
+    
+    # 源1: HuggingFace numz/wav2lip_studio (推荐)
+    echo_info "尝试从 HuggingFace (numz/wav2lip_studio) 下载..."
+    if wget -O wav2lip.pth "https://huggingface.co/numz/wav2lip_studio/resolve/main/Wav2lip/wav2lip.pth"; then
+        echo_info "✓ Wav2Lip模型下载完成 (HuggingFace)"
+        DOWNLOADED=true
+    fi
+    
+    # 源2: HuggingFace camenduru/Wav2Lip (备用)
+    if [ "$DOWNLOADED" = false ]; then
+        echo_warn "源1失败，尝试备用源2..."
+        if wget -O wav2lip.pth "https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/wav2lip.pth"; then
+            echo_info "✓ Wav2Lip模型下载完成 (备用源2)"
+            DOWNLOADED=true
         fi
+    fi
+    
+    # 源3: 官方OneDrive (需要手动)
+    if [ "$DOWNLOADED" = false ]; then
+        echo_error "所有自动下载源均失败"
+        echo ""
+        echo "请手动下载 wav2lip.pth 并放置到 models/wav2lip/ 目录"
+        echo ""
+        echo "可用下载地址:"
+        echo "  1. HuggingFace: https://huggingface.co/numz/wav2lip_studio/resolve/main/Wav2lip/wav2lip.pth"
+        echo "  2. 官方OneDrive: https://iiitaphyd-my.sharepoint.com/:u:/g/personal/radrabha_m_research_iiit_ac_in/Eb3LEzbfuKlJiR600lQWRxgBIY27JZg80f7V9jtMfbNDaQ"
+        echo ""
     fi
 fi
 

@@ -66,10 +66,12 @@ class Wav2Lip(nn.Module):
 
             nn.Sequential(
                 Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
+                Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True)),
 
             nn.Sequential(
                 Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+                Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True)),
 
@@ -99,6 +101,7 @@ class Wav2Lip(nn.Module):
 
             nn.Sequential(
                 nn.ConvTranspose2d(1024, 512, kernel_size=3, stride=1, padding=0),
+                Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True)),
 
             nn.Sequential(
@@ -199,7 +202,17 @@ def convert_to_onnx():
     else:
         state_dict = checkpoint
     
-    model.load_state_dict(state_dict)
+    # 移除 'module.' 前缀（如果存在，说明模型是用DataParallel训练的）
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        if key.startswith('module.'):
+            # 去掉 'module.' 前缀
+            new_key = key[7:]  # 'module.' 长度为7
+            new_state_dict[new_key] = value
+        else:
+            new_state_dict[key] = value
+    
+    model.load_state_dict(new_state_dict)
     model.eval()
     
     print(f"   模型参数数量: {sum(p.numel() for p in model.parameters()):,}")
