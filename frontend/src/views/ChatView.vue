@@ -119,9 +119,9 @@ import {
 } from '@ant-design/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
-import { useChatStore } from '@/store/chat'
+// import { useChatStore } from '@/store/chat' // 暂未使用，保留以备将来功能扩展
 
-// const chatStore = useChatStore() // 暂未使用，保留以备将来功能扩展
+// const chatStore = useChatStore()
 const { connect, disconnect, send, isConnected } = useWebSocket()
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
 
