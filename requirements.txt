@@ -28,6 +28,7 @@ websocket-client==1.8.0  # For Skynet Whisper API
 edge-tts==6.1.18
 
 # Avatar generation (Wav2Lip)
+torch==2.1.2  # PyTorch for Wav2Lip (CPU version)
 onnx==1.16.2
 onnxruntime==1.19.2
 opencv-python-headless==4.10.0.84

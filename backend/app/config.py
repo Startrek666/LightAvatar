@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     AVATAR_FPS: int = Field(default=25, description="Avatar video FPS")
     AVATAR_RESOLUTION: tuple = Field(default=(512, 512), description="Avatar video resolution")
     AVATAR_TEMPLATE: str = Field(default="default.mp4", description="Default avatar template")
+    AVATAR_USE_ONNX: bool = Field(default=False, description="Use ONNX model for avatar generation")
+    AVATAR_STATIC_MODE: bool = Field(default=False, description="Use static image mode")
+    AVATAR_ENHANCE_MODE: bool = Field(default=False, description="Enable edge blending enhancement")
     
     # Buffer settings
     AUDIO_BUFFER_SIZE: int = Field(default=50, description="Audio buffer size (frames)")
@@ -114,8 +117,15 @@ def load_config_file(config_path: Path) -> dict:
 def update_settings(config_dict: dict):
     """Update settings from dictionary"""
     for key, value in config_dict.items():
+        # 直接匹配顶层键
         if hasattr(settings, key.upper()):
             setattr(settings, key.upper(), value)
+        # 处理嵌套配置（如 avatar.fps -> AVATAR_FPS）
+        elif isinstance(value, dict):
+            for sub_key, sub_value in value.items():
+                combined_key = f"{key}_{sub_key}".upper()
+                if hasattr(settings, combined_key):
+                    setattr(settings, combined_key, sub_value)
 
 
 # Load configuration from file if exists

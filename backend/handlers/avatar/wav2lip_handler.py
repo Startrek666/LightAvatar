@@ -4,6 +4,7 @@ Wav2Lip Handler for CPU-optimized avatar generation
 import cv2
 import numpy as np
 import onnxruntime as ort
+import torch
 from typing import List, Tuple, Optional
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -12,6 +13,7 @@ import tempfile
 from loguru import logger
 import subprocess
 import json
+import sys
 
 from backend.handlers.base import BaseHandler
 from backend.core.health_monitor import timer, avatar_processing_time
@@ -31,8 +33,10 @@ class Wav2LipHandler(BaseHandler):
         self.resolution = resolution
         
         # Models
-        self.wav2lip_session = None
+        self.wav2lip_session = None  # ONNX session
+        self.wav2lip_model = None     # PyTorch model
         self.face_detector = None
+        self.use_onnx = self.config.get("use_onnx", False)
         
         # Processing
         self.executor = ThreadPoolExecutor(max_workers=2)
@@ -48,23 +52,80 @@ class Wav2LipHandler(BaseHandler):
     async def _setup(self):
         """Setup Wav2Lip models"""
         try:
-            # Initialize ONNX Runtime session for Wav2Lip
-            model_path = Path("models") / "wav2lip_cpu.onnx"
-            if not model_path.exists():
-                raise FileNotFoundError(f"Wav2Lip model not found at {model_path}")
-            
-            # Set ONNX Runtime options for CPU optimization
-            sess_options = ort.SessionOptions()
-            sess_options.intra_op_num_threads = self.config.get("cpu_threads", 4)
-            sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
-            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            
-            # Create inference session
-            self.wav2lip_session = ort.InferenceSession(
-                str(model_path),
-                sess_options,
-                providers=['CPUExecutionProvider']
-            )
+            if self.use_onnx:
+                # Initialize ONNX Runtime session for Wav2Lip
+                model_path = Path("models") / "wav2lip" / "wav2lip.onnx"
+                if not model_path.exists():
+                    # Fallback to old path
+                    model_path = Path("models") / "wav2lip_cpu.onnx"
+                
+                if not model_path.exists():
+                    raise FileNotFoundError(
+                        f"Wav2Lip ONNX model not found. Please run: python scripts/convert_wav2lip_to_onnx.py"
+                    )
+                
+                # Set ONNX Runtime options for CPU optimization
+                sess_options = ort.SessionOptions()
+                sess_options.intra_op_num_threads = self.config.get("cpu_threads", 4)
+                sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+                sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                
+                # Create inference session
+                self.wav2lip_session = ort.InferenceSession(
+                    str(model_path),
+                    sess_options,
+                    providers=['CPUExecutionProvider']
+                )
+                logger.info(f"Wav2Lip ONNX model loaded from {model_path}")
+            else:
+                # Load PyTorch model
+                model_path = Path("models") / "wav2lip" / "wav2lip.pth"
+                if not model_path.exists():
+                    raise FileNotFoundError(
+                        f"Wav2Lip PyTorch model not found at {model_path}. "
+                        f"Please download it using scripts/download_models.sh"
+                    )
+                
+                # Import Wav2Lip model definition
+                try:
+                    # Try to import from official repo if available
+                    project_root = Path(__file__).resolve().parents[3]
+                    tools_path = project_root / 'tools' / 'Wav2Lip'
+                    if tools_path.exists():
+                        sys.path.insert(0, str(tools_path))
+                        from models import Wav2Lip
+                        logger.info("Using official Wav2Lip model definition")
+                    else:
+                        raise ImportError("Official Wav2Lip not found")
+                except ImportError:
+                    # Fallback: use simplified model (may not match checkpoint)
+                    logger.warning("Official Wav2Lip not found, avatar generation may fail")
+                    logger.warning("Run: git clone https://github.com/Rudrabha/Wav2Lip.git tools/Wav2Lip")
+                    raise FileNotFoundError(
+                        "Please clone official Wav2Lip repo: git clone https://github.com/Rudrabha/Wav2Lip.git tools/Wav2Lip"
+                    )
+                
+                # Load model
+                self.wav2lip_model = Wav2Lip()
+                checkpoint = torch.load(model_path, map_location='cpu')
+                
+                # Handle state_dict
+                if 'state_dict' in checkpoint:
+                    state_dict = checkpoint['state_dict']
+                else:
+                    state_dict = checkpoint
+                
+                # Remove 'module.' prefix if present (DataParallel)
+                new_state_dict = {}
+                for key, value in state_dict.items():
+                    if key.startswith('module.'):
+                        new_state_dict[key[7:]] = value
+                    else:
+                        new_state_dict[key] = value
+                
+                self.wav2lip_model.load_state_dict(new_state_dict)
+                self.wav2lip_model.eval()
+                logger.info(f"Wav2Lip PyTorch model loaded from {model_path}")
             
             # Initialize face detector (MediaPipe)
             import mediapipe as mp
@@ -73,7 +134,7 @@ class Wav2LipHandler(BaseHandler):
                 min_detection_confidence=0.5
             )
             
-            logger.info("Wav2Lip models loaded successfully")
+            logger.info(f"Wav2Lip models loaded successfully (ONNX: {self.use_onnx})")
             
         except Exception as e:
             logger.error(f"Failed to load Wav2Lip models: {e}")
@@ -168,13 +229,21 @@ class Wav2LipHandler(BaseHandler):
                 mel_input = mel.reshape(1, 1, 80, 16)
                 
                 # Run inference
-                outputs = self.wav2lip_session.run(
-                    None,
-                    {
-                        'audio': mel_input.astype(np.float32),
-                        'face': face_input.astype(np.float32)
-                    }
-                )
+                if self.use_onnx:
+                    outputs = self.wav2lip_session.run(
+                        None,
+                        {
+                            'audio': mel_input.astype(np.float32),
+                            'face': face_input.astype(np.float32)
+                        }
+                    )
+                else:
+                    # PyTorch inference
+                    with torch.no_grad():
+                        mel_tensor = torch.FloatTensor(mel_input)
+                        face_tensor = torch.FloatTensor(face_input)
+                        outputs = self.wav2lip_model(mel_tensor, face_tensor)
+                        outputs = [outputs.cpu().numpy()]
                 
                 # Post-process output
                 lip_img = self._postprocess_output(outputs[0])
@@ -417,3 +486,7 @@ class Wav2LipHandler(BaseHandler):
             self.static_mode = config["static_mode"]
         if "enhance_mode" in config:
             self.enhance_mode = config["enhance_mode"]
+        if "use_onnx" in config:
+            if config["use_onnx"] != self.use_onnx:
+                logger.warning("Changing ONNX mode requires reinitializing the handler")
+                self.use_onnx = config["use_onnx"]

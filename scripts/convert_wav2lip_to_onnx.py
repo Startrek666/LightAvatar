@@ -174,6 +174,30 @@ def load_checkpoint(path, device='cpu'):
     checkpoint = torch.load(path, map_location=device)
     return checkpoint
 
+def create_model():
+    """优先使用官方Wav2Lip模型定义，失败时回退到内置模型。
+    返回: (model, used_official: bool)
+    """
+    tried_official = False
+    model = None
+    try:
+        project_root = Path(__file__).resolve().parents[1]
+        tools_path = project_root / 'tools' / 'Wav2Lip'
+        if tools_path.exists():
+            sys.path.insert(0, str(tools_path))
+            from models import Wav2Lip as OfficialWav2Lip
+            model = OfficialWav2Lip()
+            tried_official = True
+            print(f"使用官方Wav2Lip模型定义: {tools_path}")
+    except Exception as e:
+        print(f"官方Wav2Lip导入失败: {e}")
+
+    if model is None:
+        print("未找到官方模型，回退到内置模型定义（可能与权重不匹配）")
+        model = Wav2Lip()
+
+    return model, tried_official
+
 
 def convert_to_onnx():
     """转换Wav2Lip模型为ONNX格式"""
@@ -193,9 +217,9 @@ def convert_to_onnx():
     print("="*60)
     print()
     
-    # 创建模型
+    # 创建模型（优先官方定义）
     print("1. 创建模型架构...")
-    model = Wav2Lip()
+    model, used_official = create_model()
     
     # 加载权重
     print("2. 加载模型权重...")
@@ -216,8 +240,19 @@ def convert_to_onnx():
             new_state_dict[new_key] = value
         else:
             new_state_dict[key] = value
-    
-    model.load_state_dict(new_state_dict)
+
+    # 严格加载
+    try:
+        model.load_state_dict(new_state_dict, strict=True)
+    except RuntimeError as e:
+        print(f"权重加载失败（严格模式）: {e}")
+        if not used_official:
+            print("\n建议使用官方模型定义。请执行：")
+            print("  git clone https://github.com/Rudrabha/Wav2Lip.git tools/Wav2Lip")
+            print("然后重新运行: python scripts/convert_wav2lip_to_onnx.py")
+        else:
+            print("\n即便使用官方模型定义也加载失败，请确认权重文件是否为原版 Wav2Lip 权重。")
+        return False
     model.eval()
     
     print(f"   模型参数数量: {sum(p.numel() for p in model.parameters()):,}")

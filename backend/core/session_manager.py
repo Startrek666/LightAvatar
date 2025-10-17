@@ -79,7 +79,13 @@ class Session:
             )
             self.avatar_handler = Wav2LipHandler(
                 fps=settings.AVATAR_FPS,
-                resolution=settings.AVATAR_RESOLUTION
+                resolution=settings.AVATAR_RESOLUTION,
+                config={
+                    "use_onnx": settings.AVATAR_USE_ONNX,
+                    "static_mode": settings.AVATAR_STATIC_MODE,
+                    "enhance_mode": settings.AVATAR_ENHANCE_MODE,
+                    "cpu_threads": settings.CPU_THREADS
+                }
             )
             
             logger.info(f"Session {self.session_id} handlers initialized (ASR: {asr_backend})")
