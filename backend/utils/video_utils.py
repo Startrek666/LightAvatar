@@ -53,6 +53,20 @@ class VideoProcessor:
             (width, height)
         )
         
+        # Check if writer is opened successfully
+        if not writer.isOpened():
+            logger.error(f"Failed to open VideoWriter for {output_path}")
+            logger.error(f"Trying alternative codec...")
+            # Try with MJPEG codec as fallback
+            writer = cv2.VideoWriter(
+                output_path,
+                cv2.VideoWriter_fourcc(*'MJPG'),
+                fps,
+                (width, height)
+            )
+            if not writer.isOpened():
+                raise RuntimeError(f"Failed to initialize VideoWriter")
+        
         for frame in frames:
             writer.write(frame)
         
@@ -119,6 +133,8 @@ class VideoProcessor:
     
     def _frames_to_mp4_opencv(self, frames: List[np.ndarray], fps: float) -> bytes:
         """Convert frames to MP4 using OpenCV"""
+        import os
+        
         # Use temporary file
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_file:
             tmp_path = tmp_file.name
@@ -126,10 +142,23 @@ class VideoProcessor:
         try:
             self.write_video(frames, tmp_path, fps)
             
+            # Check if file exists and has content
+            if not os.path.exists(tmp_path):
+                logger.error(f"Temp video file not created: {tmp_path}")
+                return b""
+            
+            file_size = os.path.getsize(tmp_path)
+            logger.info(f"Temp video file size: {file_size} bytes")
+            
+            if file_size == 0:
+                logger.error(f"Temp video file is empty: {tmp_path}")
+                return b""
+            
             # Read video bytes
             with open(tmp_path, 'rb') as f:
                 video_bytes = f.read()
             
+            logger.info(f"Read {len(video_bytes)} bytes from OpenCV video")
             return video_bytes
         finally:
             # Cleanup
@@ -177,6 +206,9 @@ class VideoProcessor:
             # Write frames to FFmpeg
             for frame in frames:
                 process.stdin.write(frame.tobytes())
+            
+            # Close stdin to signal end of input
+            process.stdin.close()
             
             # Get output
             video_bytes, stderr = process.communicate()
