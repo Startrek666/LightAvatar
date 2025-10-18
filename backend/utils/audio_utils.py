@@ -21,6 +21,8 @@ class AudioProcessor:
     
     async def convert_to_wav(self, audio_data: bytes, input_format: str = "mp3") -> bytes:
         """Convert audio to WAV format"""
+        input_path = None
+        output_path = None
         try:
             # Use temporary files for conversion
             with tempfile.NamedTemporaryFile(suffix=f".{input_format}", delete=False) as input_file:
@@ -29,9 +31,13 @@ class AudioProcessor:
             
             output_path = input_path.replace(f".{input_format}", ".wav")
             
+            logger.debug(f"Converting audio: {input_path} -> {output_path}")
+            
             # Use ffmpeg for conversion (ensure it's installed)
+            # Use absolute path to ensure it's found in systemd service
+            ffmpeg_path = "/usr/bin/ffmpeg"
             cmd = [
-                "ffmpeg", "-i", input_path,
+                ffmpeg_path, "-i", input_path,
                 "-ar", str(self.sample_rate),
                 "-ac", "1",  # Mono
                 "-f", "wav",
@@ -45,20 +51,44 @@ class AudioProcessor:
                 stderr=asyncio.subprocess.PIPE
             )
             
-            await process.communicate()
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                logger.error(f"FFmpeg error (code {process.returncode}): {stderr.decode()}")
+                return b""
+            
+            # Check if output file exists
+            if not Path(output_path).exists():
+                logger.error(f"Output file not created: {output_path}")
+                return b""
             
             # Read converted file
             with open(output_path, 'rb') as f:
                 wav_data = f.read()
             
+            logger.debug(f"Conversion successful: {len(wav_data)} bytes")
+            
             # Cleanup
-            Path(input_path).unlink()
-            Path(output_path).unlink()
+            if input_path and Path(input_path).exists():
+                Path(input_path).unlink()
+            if output_path and Path(output_path).exists():
+                Path(output_path).unlink()
             
             return wav_data
             
+        except FileNotFoundError as e:
+            logger.error(f"FFmpeg not found or file error: {e}. Please install: sudo apt install ffmpeg")
+            return b""
         except Exception as e:
             logger.error(f"Audio conversion error: {e}")
+            # Cleanup on error
+            try:
+                if input_path and Path(input_path).exists():
+                    Path(input_path).unlink()
+                if output_path and Path(output_path).exists():
+                    Path(output_path).unlink()
+            except:
+                pass
             return b""
     
     def load_audio(self, audio_path: str) -> Tuple[np.ndarray, int]:

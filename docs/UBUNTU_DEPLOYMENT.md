@@ -1312,14 +1312,337 @@ dos2unix ubuntu_deploy.sh
 ✅ 日志记录完善
 ✅ WebSocket正常工作
 
+---
+
+## 前端静态服务配置（可选）
+
+如果你希望前端也作为独立服务运行（而非仅通过Nginx），可以使用以下配置：
+
+### 12.1 使用serve托管前端
+
+```bash
+# 全局安装serve
+sudo npm install -g serve
+
+# 创建前端服务文件
+sudo nano /etc/systemd/system/lightavatar-frontend.service
+```
+
+**服务配置**：
+
+```ini
+[Unit]
+Description=Lightweight Avatar Chat Frontend
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/lightavatar/frontend
+ExecStart=/usr/bin/serve -s dist -l 3000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# 启动前端服务
+sudo systemctl daemon-reload
+sudo systemctl start lightavatar-frontend
+sudo systemctl enable lightavatar-frontend
+
+# 查看状态
+sudo systemctl status lightavatar-frontend
+```
+
+### 12.2 前端开发模式（本地调试）
+
+```bash
+cd /opt/lightavatar/frontend
+
+# 开发模式运行（自动热重载）
+npm run dev
+
+# 访问 http://localhost:3000
+```
+
+---
+
+## SSL/HTTPS 配置（Let's Encrypt）
+
+### 13.1 安装Certbot
+
+```bash
+# 安装Certbot和Nginx插件
+sudo apt install -y certbot python3-certbot-nginx
+
+# 验证安装
+certbot --version
+```
+
+### 13.2 申请SSL证书
+
+**前提条件**：
+- 拥有一个域名（如 `example.com`）
+- 域名DNS已解析到服务器IP
+- 防火墙已开放80和443端口
+
+```bash
+# 停止Nginx（Let's Encrypt需要使用80端口）
+sudo systemctl stop nginx
+
+# 申请证书（独立模式）
+sudo certbot certonly --standalone \
+  -d your-domain.com \
+  -d www.your-domain.com \
+  --email your-email@example.com \
+  --agree-tos \
+  --no-eff-email
+
+# 或者使用Nginx插件（自动配置）
+sudo certbot --nginx \
+  -d your-domain.com \
+  -d www.your-domain.com \
+  --email your-email@example.com \
+  --agree-tos \
+  --redirect
+```
+
+**证书位置**：
+- 证书：`/etc/letsencrypt/live/your-domain.com/fullchain.pem`
+- 私钥：`/etc/letsencrypt/live/your-domain.com/privkey.pem`
+
+### 13.3 配置Nginx使用SSL
+
+```bash
+sudo nano /etc/nginx/sites-available/lightavatar
+```
+
+**完整的HTTPS配置**：
+
+```nginx
+# HTTP重定向到HTTPS
+server {
+    listen 80;
+    server_name your-domain.com www.your-domain.com;
+    
+    # Let's Encrypt验证
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    
+    # 重定向到HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+# HTTPS主服务
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com www.your-domain.com;
+
+    # SSL证书配置
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    
+    # SSL优化配置
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:50m;
+    ssl_session_tickets off;
+    
+    # 现代SSL配置
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers off;
+    
+    # HSTS（HTTP严格传输安全）
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    
+    # 安全头
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # 前端静态文件
+    location / {
+        root /opt/lightavatar/frontend/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 后端API代理
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket代理（WSS）
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8000/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket超时设置
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+
+    # 健康检查
+    location /health {
+        proxy_pass http://127.0.0.1:8000/health;
+    }
+
+    # 静态资源缓存
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|woff|woff2|ttf|svg)$ {
+        root /opt/lightavatar/frontend/dist;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+
+# HTTPS监控面板
+server {
+    listen 3001 ssl http2;
+    server_name your-domain.com;
+
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        root /opt/lightavatar/monitor/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location /metrics {
+        proxy_pass http://127.0.0.1:8000/metrics;
+    }
+}
+```
+
+**保存并重启Nginx**：
+
+```bash
+# 测试配置
+sudo nginx -t
+
+# 重启Nginx
+sudo systemctl restart nginx
+```
+
+### 13.4 配置自动续期
+
+Let's Encrypt证书有效期90天，需要定期续期：
+
+```bash
+# 测试续期（不实际执行）
+sudo certbot renew --dry-run
+
+# Certbot已自动配置定时任务，查看：
+sudo systemctl list-timers | grep certbot
+
+# 手动续期
+sudo certbot renew
+
+# 续期后重启Nginx
+sudo certbot renew --post-hook "systemctl reload nginx"
+```
+
+### 13.5 更新前端WebSocket配置
+
+修改前端代码使用WSS（加密WebSocket）：
+
+```bash
+nano /opt/lightavatar/frontend/src/composables/useWebSocket.ts
+```
+
+确保WebSocket URL使用协议自适应：
+
+```typescript
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`
+```
+
+然后重新构建前端：
+
+```bash
+cd /opt/lightavatar/frontend
+npm run build
+```
+
+### 13.6 使用脚本自动配置SSL
+
+项目提供了自动配置脚本：
+
+```bash
+cd /opt/lightavatar/scripts
+
+# 添加执行权限
+chmod +x setup_ssl.sh
+
+# 运行脚本（替换为你的域名和邮箱）
+sudo bash setup_ssl.sh your-domain.com your-email@example.com
+```
+
+### 13.7 验证HTTPS配置
+
+```bash
+# 1. 检查证书有效性
+sudo certbot certificates
+
+# 2. 测试SSL配置
+curl -I https://your-domain.com
+
+# 3. 在线检测SSL安全性
+# 访问：https://www.ssllabs.com/ssltest/
+```
+
+### 13.8 防火墙配置
+
+```bash
+# 允许HTTPS流量
+sudo ufw allow 443/tcp
+
+# 查看防火墙状态
+sudo ufw status
+
+# 预期输出应包含：
+# 80/tcp                     ALLOW       Anywhere
+# 443/tcp                    ALLOW       Anywhere
+# 3001/tcp                   ALLOW       Anywhere
+```
+
+---
+
 **下一步**：
-1. 配置SSL证书（使用Let's Encrypt）
+1. ✅ SSL证书已配置
 2. 设置监控告警
 3. 配置自动备份
 4. 性能压测
 
 ---
 
-**部署文档版本**: v1.0  
-**最后更新**: 2024-10-17  
+**部署文档版本**: v1.1  
+**最后更新**: 2024-10-18  
 **适用系统**: Ubuntu 20.04 / 22.04 LTS

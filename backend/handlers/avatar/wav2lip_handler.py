@@ -430,6 +430,10 @@ class Wav2LipHandler(BaseHandler):
     
     async def _load_video_template(self, video_path: str) -> List[np.ndarray]:
         """Load video template frames"""
+        # Handle relative paths
+        if not video_path.startswith('/') and not video_path.startswith('.'):
+            video_path = f"models/avatars/{video_path}"
+        
         frames = []
         
         cap = cv2.VideoCapture(video_path)
@@ -452,7 +456,17 @@ class Wav2LipHandler(BaseHandler):
     
     async def _load_image_template(self, image_path: str) -> List[np.ndarray]:
         """Load image template"""
+        # Handle relative paths
+        if not image_path.startswith('/') and not image_path.startswith('.'):
+            image_path = f"models/avatars/{image_path}"
+        
+        logger.info(f"Loading avatar template: {image_path}")
         image = cv2.imread(image_path)
+        
+        if image is None:
+            raise ValueError(f"Failed to load image template: {image_path}")
+        
+        logger.info(f"Template loaded: shape={image.shape}")
         image = cv2.resize(image, self.resolution)
         
         # Return multiple copies for static avatar
