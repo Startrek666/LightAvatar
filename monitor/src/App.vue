@@ -72,7 +72,7 @@
       </a-row>
       
       <!-- Charts -->
-      <a-row :gutter="16} class="charts-row">
+      <a-row :gutter="16" class="charts-row">
         <a-col :span="12">
           <a-card title="CPU 使用率趋势" :bordered="false">
             <v-chart class="chart" :option="cpuChartOption" autoresize />
@@ -111,10 +111,10 @@
       </a-card>
       
       <!-- Handler Performance -->
-      <a-row :gutter="16} class="performance-row">
+      <a-row :gutter="16" class="performance-row">
         <a-col :span="24}>
           <a-card title="模块性能" :bordered="false">
-            <a-row :gutter="16}>
+            <a-row :gutter="16">
               <a-col :span="4" v-for="handler in handlers" :key="handler.name">
                 <div class="handler-metric">
                   <div class="handler-name">{{ handler.name }}</div>
