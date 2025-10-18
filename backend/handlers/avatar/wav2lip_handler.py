@@ -180,6 +180,18 @@ class Wav2LipHandler(BaseHandler):
             # Extract mel spectrogram
             mel_chunks = await self._extract_mel_chunks(wav_audio)
             
+            # Calculate required frames based on audio duration
+            # Each mel chunk represents mel_step_size frames at mel hop_length
+            # hop_length=512, sr=16000 → each mel frame = 32ms
+            # mel_step_size=16 → each chunk = 512ms
+            # At 25fps, 512ms = 12.8 frames ≈ 13 frames per chunk
+            frames_per_chunk = int(self.fps * 0.512)  # ~13 frames for 512ms
+            if frames_per_chunk < 1:
+                frames_per_chunk = 1
+            
+            total_required_frames = len(mel_chunks) * frames_per_chunk
+            logger.info(f"Audio has {len(mel_chunks)} mel chunks, will generate {total_required_frames} frames ({frames_per_chunk} frames per chunk)")
+            
             # Load template video/image
             logger.info(f"Loading template: {template_path}")
             if template_path.endswith(('.mp4', '.avi', '.mov')):
@@ -190,20 +202,19 @@ class Wav2LipHandler(BaseHandler):
             if not template_frames:
                 raise ValueError(f"No frames loaded from template: {template_path}")
             
-            logger.info(f"Loaded {len(template_frames)} template frames, need {len(mel_chunks)} mel chunks")
+            logger.info(f"Loaded {len(template_frames)} template frames")
             
-            # Process frames in parallel
+            # Process frames: generate one processed frame per mel chunk, then repeat
             output_frames = []
             
             # Process in batches for efficiency
             batch_size = 5
+            processed_frames = []  # Store one processed frame per mel chunk
+            
             for i in range(0, len(mel_chunks), batch_size):
                 batch_mel = mel_chunks[i:i+batch_size]
-                batch_frames = template_frames[i:i+batch_size]
-                
-                # Ensure we have enough frames
-                while len(batch_frames) < len(batch_mel):
-                    batch_frames.append(template_frames[-1])
+                # Use cycling template frames
+                batch_frames = [template_frames[j % len(template_frames)] for j in range(i, i + len(batch_mel))]
                 
                 # Process batch
                 batch_output = await asyncio.get_event_loop().run_in_executor(
@@ -213,9 +224,14 @@ class Wav2LipHandler(BaseHandler):
                     batch_mel
                 )
                 
-                output_frames.extend(batch_output)
+                processed_frames.extend(batch_output)
             
-            logger.info(f"Generated {len(output_frames)} frames")
+            # Repeat each processed frame to match audio duration
+            for frame in processed_frames:
+                for _ in range(frames_per_chunk):
+                    output_frames.append(frame.copy())
+            
+            logger.info(f"Generated {len(output_frames)} frames from {len(processed_frames)} processed frames")
             
             return output_frames
             
