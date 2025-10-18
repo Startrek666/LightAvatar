@@ -230,9 +230,9 @@ class Wav2LipHandler(BaseHandler):
                 # Crop face region
                 face_img = self._crop_face(frame, face_coords)
                 
-                # Prepare inputs for ONNX
+                # Prepare inputs following official Wav2Lip format
                 face_input = self._preprocess_face(face_img)
-                mel_input = mel.reshape(1, 1, 80, 16)
+                mel_input = mel.reshape(1, 80, 16, 1)  # (batch, height, width, channels)
                 
                 # Run inference
                 if self.use_onnx:
@@ -244,17 +244,18 @@ class Wav2LipHandler(BaseHandler):
                         }
                     )
                 else:
-                    # PyTorch inference
+                    # PyTorch inference following official implementation
                     with torch.no_grad():
-                        # mel_input shape: (1, 1, 80, 16)
-                        # face_input shape: (1, 1, 3, 96, 96)
-                        mel_tensor = torch.FloatTensor(mel_input).cuda() if torch.cuda.is_available() else torch.FloatTensor(mel_input)
-                        face_tensor = torch.FloatTensor(face_input).cuda() if torch.cuda.is_available() else torch.FloatTensor(face_input)
+                        # Convert to tensor and transpose to NCHW format
+                        # face_input shape: (batch, height, width, 6)
+                        # mel_input shape: (batch, 80, 16, 1)
+                        face_tensor = torch.FloatTensor(np.transpose(face_input, (0, 3, 1, 2)))  # (batch, 6, 96, 96)
+                        mel_tensor = torch.FloatTensor(np.transpose(mel_input, (0, 3, 1, 2)))    # (batch, 1, 80, 16)
                         
-                        # Model expects (batch, channels, height, width) for face
-                        # Remove time dimension
-                        face_tensor = face_tensor.squeeze(1)  # (1, 3, 96, 96)
-                        mel_tensor = mel_tensor.squeeze(1)    # (1, 80, 16)
+                        # Move to device
+                        if torch.cuda.is_available():
+                            face_tensor = face_tensor.cuda()
+                            mel_tensor = mel_tensor.cuda()
                         
                         outputs = self.wav2lip_model(mel_tensor, face_tensor)
                         outputs = [outputs.cpu().numpy()]
@@ -319,31 +320,36 @@ class Wav2LipHandler(BaseHandler):
         return face
     
     def _preprocess_face(self, face: np.ndarray) -> np.ndarray:
-        """Preprocess face for model input"""
-        # Normalize to [-1, 1]
-        face = face.astype(np.float32) / 255.0
-        face = (face - 0.5) * 2.0
+        """Preprocess face for model input following official Wav2Lip implementation"""
+        # face shape: (96, 96, 3)
         
-        # Add batch and time dimensions
-        face = np.expand_dims(face, axis=0)
-        face = np.expand_dims(face, axis=0)
+        # Create masked version (mask lower half)
+        face_masked = face.copy()
+        face_masked[self.img_size//2:] = 0
         
-        # Transpose to NCHW format
-        face = np.transpose(face, (0, 1, 4, 2, 3))
+        # Concatenate masked and original face along channel dimension
+        # Result: (96, 96, 6)
+        face_input = np.concatenate((face_masked, face), axis=2)
         
-        return face
+        # Normalize to [0, 1]
+        face_input = face_input.astype(np.float32) / 255.0
+        
+        # Add batch dimension: (1, 96, 96, 6)
+        face_input = np.expand_dims(face_input, axis=0)
+        
+        return face_input
     
     def _postprocess_output(self, output: np.ndarray) -> np.ndarray:
         """Post-process model output"""
+        # output shape: (batch, channels, height, width)
+        # Transpose to (batch, height, width, channels)
+        output = np.transpose(output, (0, 2, 3, 1))
+        
         # Remove batch dimension
         output = output[0]
         
-        # Denormalize
-        output = (output + 1.0) / 2.0
+        # Denormalize from [0, 1] to [0, 255]
         output = (output * 255).astype(np.uint8)
-        
-        # Transpose back to HWC
-        output = np.transpose(output, (1, 2, 0))
         
         return output
     
