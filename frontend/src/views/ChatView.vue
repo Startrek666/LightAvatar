@@ -360,14 +360,32 @@ onMounted(async () => {
   const sessionId = Date.now().toString()
   connect(`/ws/${sessionId}`, handleWebSocketMessage, handleWebSocketBinary)
 
-  // Load saved settings
+  // Load settings from server
   try {
-    const savedSettings = localStorage.getItem('avatar-chat-settings')
-    if (savedSettings) {
-      settings.value = JSON.parse(savedSettings)
+    const response = await fetch('/api/config')
+    if (response.ok) {
+      const config = await response.json()
+      settings.value = config
+      // Save to localStorage as backup
+      localStorage.setItem('avatar-chat-settings', JSON.stringify(config))
+    } else {
+      // Fallback to localStorage
+      const savedSettings = localStorage.getItem('avatar-chat-settings')
+      if (savedSettings) {
+        settings.value = JSON.parse(savedSettings)
+      }
     }
   } catch (error) {
-    console.error('Failed to load settings:', error)
+    console.error('Failed to load settings from server:', error)
+    // Fallback to localStorage
+    try {
+      const savedSettings = localStorage.getItem('avatar-chat-settings')
+      if (savedSettings) {
+        settings.value = JSON.parse(savedSettings)
+      }
+    } catch (e) {
+      console.error('Failed to load settings from localStorage:', error)
+    }
   }
 })
 

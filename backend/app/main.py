@@ -222,6 +222,33 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         await session_manager.remove_session(session_id)
 
 
+@app.get("/api/config")
+async def get_config():
+    """Get current system configuration"""
+    return {
+        "llm": {
+            "api_url": settings.LLM_API_URL,
+            "api_key": settings.LLM_API_KEY if settings.LLM_API_KEY else "",
+            "model": settings.LLM_MODEL,
+            "temperature": settings.LLM_TEMPERATURE,
+            "max_tokens": settings.LLM_MAX_TOKENS
+        },
+        "tts": {
+            "voice": settings.TTS_VOICE,
+            "rate": settings.TTS_RATE,
+            "pitch": settings.TTS_PITCH
+        },
+        "avatar": {
+            "fps": settings.AVATAR_FPS,
+            "resolution": list(settings.AVATAR_RESOLUTION),
+            "template": settings.AVATAR_TEMPLATE,
+            "use_onnx": settings.AVATAR_USE_ONNX,
+            "static_mode": settings.AVATAR_STATIC_MODE,
+            "enhance_mode": settings.AVATAR_ENHANCE_MODE
+        }
+    }
+
+
 @app.post("/api/config")
 async def update_config(config: dict):
     """Update system configuration"""
