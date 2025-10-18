@@ -16,6 +16,7 @@ from backend.handlers.asr.skynet_whisper_handler import SkynetWhisperHandler
 from backend.handlers.llm.openai_handler import OpenAIHandler
 from backend.handlers.tts.edge_tts_handler import EdgeTTSHandler
 from backend.handlers.avatar.wav2lip_handler import Wav2LipHandler
+from backend.handlers.avatar.lite_avatar_handler import LiteAvatarHandler
 from backend.app.config import settings
 
 
@@ -77,18 +78,36 @@ class Session:
                 rate=settings.TTS_RATE,
                 pitch=settings.TTS_PITCH
             )
-            self.avatar_handler = Wav2LipHandler(
-                fps=settings.AVATAR_FPS,
-                resolution=settings.AVATAR_RESOLUTION,
-                config={
-                    "use_onnx": settings.AVATAR_USE_ONNX,
-                    "static_mode": settings.AVATAR_STATIC_MODE,
-                    "enhance_mode": settings.AVATAR_ENHANCE_MODE,
-                    "cpu_threads": settings.CPU_THREADS
-                }
-            )
             
-            logger.info(f"Session {self.session_id} handlers initialized (ASR: {asr_backend})")
+            # 根据配置选择 Avatar Handler
+            avatar_engine = settings.AVATAR_ENGINE.lower()
+            if avatar_engine == "lite":
+                logger.info(f"Using LiteAvatar engine for session {self.session_id}")
+                self.avatar_handler = LiteAvatarHandler(
+                    fps=settings.AVATAR_FPS,
+                    resolution=settings.AVATAR_RESOLUTION,
+                    config={
+                        "avatar_name": settings.AVATAR_NAME,
+                        "use_gpu": settings.AVATAR_USE_GPU,
+                        "render_threads": settings.AVATAR_RENDER_THREADS,
+                        "bg_frame_count": settings.AVATAR_BG_FRAME_COUNT,
+                        "cpu_threads": settings.CPU_THREADS
+                    }
+                )
+            else:
+                logger.info(f"Using Wav2Lip engine for session {self.session_id}")
+                self.avatar_handler = Wav2LipHandler(
+                    fps=settings.AVATAR_FPS,
+                    resolution=settings.AVATAR_RESOLUTION,
+                    config={
+                        "use_onnx": settings.AVATAR_USE_ONNX,
+                        "static_mode": settings.AVATAR_STATIC_MODE,
+                        "enhance_mode": settings.AVATAR_ENHANCE_MODE,
+                        "cpu_threads": settings.CPU_THREADS
+                    }
+                )
+            
+            logger.info(f"Session {self.session_id} handlers initialized (ASR: {asr_backend}, Avatar: {avatar_engine})")
         except Exception as e:
             logger.error(f"Failed to initialize handlers for session {self.session_id}: {e}")
             raise

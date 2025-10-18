@@ -76,8 +76,11 @@ class Settings(BaseSettings):
     TTS_PITCH: str = Field(default="+0Hz", description="Speech pitch")
     
     # Avatar settings
+    AVATAR_ENGINE: str = Field(default="wav2lip", description="Avatar engine: wav2lip or lite")
     AVATAR_FPS: int = Field(default=25, description="Avatar video FPS")
     AVATAR_RESOLUTION: tuple = Field(default=(512, 512), description="Avatar video resolution")
+    
+    # Wav2Lip settings
     AVATAR_TEMPLATE: str = Field(default="default.mp4", description="Default avatar template")
     AVATAR_USE_ONNX: bool = Field(default=False, description="Use ONNX model for avatar generation")
     AVATAR_STATIC_MODE: bool = Field(default=False, description="Use static image mode")
@@ -87,6 +90,12 @@ class Settings(BaseSettings):
     AVATAR_FACE_PADDING_HORIZONTAL: float = Field(default=0.15, description="Horizontal padding ratio (left/right)")
     AVATAR_FACE_PADDING_TOP: float = Field(default=0.10, description="Top padding ratio")
     AVATAR_FACE_PADDING_BOTTOM: float = Field(default=0.35, description="Bottom padding ratio (for mouth)")
+    
+    # LiteAvatar settings
+    AVATAR_NAME: str = Field(default="default", description="LiteAvatar data name")
+    AVATAR_USE_GPU: bool = Field(default=False, description="Use GPU for LiteAvatar")
+    AVATAR_RENDER_THREADS: int = Field(default=1, description="Number of render threads for LiteAvatar")
+    AVATAR_BG_FRAME_COUNT: int = Field(default=150, description="Background frame count to use")
     
     # Buffer settings
     AUDIO_BUFFER_SIZE: int = Field(default=50, description="Audio buffer size (frames)")

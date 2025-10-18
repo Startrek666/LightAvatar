@@ -67,13 +67,23 @@ tts:
   pitch: "+0Hz"  # Pitch adjustment
   volume: "+0%"  # Volume adjustment
 
-# Avatar settings (Wav2Lip)
+# Avatar settings
 avatar:
+  engine: "wav2lip"  # Options: "wav2lip" or "lite" (LiteAvatar)
   fps: 25
   resolution: [512, 512]
+  
+  # Wav2Lip settings
   static_mode: false  # Use static image if true
   enhance_mode: false  # Enable edge blending
   template: "default.mp4"  # Default avatar template
+  use_onnx: false  # Use ONNX for Wav2Lip
+  
+  # LiteAvatar settings
+  avatar_name: "default"  # LiteAvatar data name
+  use_gpu: false  # Use GPU for LiteAvatar
+  render_threads: 1  # Number of render threads
+  bg_frame_count: 150  # Background frame count to use
 
 # Buffer settings
 buffer:
