@@ -240,7 +240,7 @@ class VideoProcessor:
             '-tune', 'zerolatency',  # Low latency
             '-crf', '23',  # Quality (lower = better, 23 is good)
             '-pix_fmt', 'yuv420p',  # Compatible pixel format
-            '-movflags', '+faststart',  # Enable streaming
+            '-movflags', 'frag_keyframe+empty_moov',  # Fragmented MP4 for streaming (works with pipe)
             '-f', 'mp4',
             'pipe:1'  # Output to stdout
         ]

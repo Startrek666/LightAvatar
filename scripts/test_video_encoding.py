@@ -163,9 +163,13 @@ def test_ffmpeg_encoding(frames):
             'ffmpeg', '-y', '-f', 'rawvideo', '-vcodec', 'rawvideo',
             '-s', f'{width}x{height}', '-pix_fmt', 'bgr24', '-r', '25',
             '-i', '-', '-c:v', 'libx264', '-preset', 'ultrafast',
-            '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+            '-tune', 'zerolatency',
+            '-crf', '23', '-pix_fmt', 'yuv420p', 
+            '-movflags', 'frag_keyframe+empty_moov',  # 支持pipe输出
             '-f', 'mp4', 'pipe:1'
         ]
+        
+        print(f"FFmpeg命令: {' '.join(ffmpeg_cmd)}")
         
         process = subprocess.Popen(
             ffmpeg_cmd,
@@ -175,27 +179,58 @@ def test_ffmpeg_encoding(frames):
         )
         
         try:
-            for frame in frames:
-                process.stdin.write(frame.tobytes())
+            bytes_written = 0
+            for i, frame in enumerate(frames):
+                frame_bytes = frame.tobytes()
+                process.stdin.write(frame_bytes)
+                bytes_written += len(frame_bytes)
+                if i == 0:
+                    print(f"  第一帧: {len(frame_bytes)} bytes")
+            
+            print(f"  总共写入: {bytes_written} bytes ({len(frames)} 帧)")
             process.stdin.close()
-        except BrokenPipeError:
-            print("✗ FFmpeg broken pipe错误")
+            print("  stdin已关闭，等待FFmpeg处理...")
+        except BrokenPipeError as e:
+            print(f"✗ FFmpeg broken pipe错误: {e}")
+            # 获取stderr查看错误
+            _, stderr = process.communicate()
+            if stderr:
+                print(f"  FFmpeg stderr:\n{stderr.decode()}")
             process.kill()
             return
         
         video_bytes, stderr = process.communicate(timeout=30)
         
+        print(f"  FFmpeg返回码: {process.returncode}")
+        print(f"  输出大小: {len(video_bytes)} bytes")
+        
+        if stderr:
+            stderr_text = stderr.decode()
+            # 只打印最后几行（通常包含关键错误）
+            stderr_lines = stderr_text.strip().split('\n')
+            if len(stderr_lines) > 5:
+                print(f"  FFmpeg stderr (最后5行):")
+                for line in stderr_lines[-5:]:
+                    print(f"    {line}")
+            else:
+                print(f"  FFmpeg stderr:\n{stderr_text}")
+        
         if process.returncode == 0 and len(video_bytes) > 0:
             print(f"✓ FFmpeg编码成功: {len(video_bytes)} bytes")
+            
+            # 保存测试文件
+            test_file = Path('/tmp/test_ffmpeg_output.mp4')
+            test_file.write_bytes(video_bytes)
+            print(f"  测试文件已保存: {test_file}")
         else:
             print(f"✗ FFmpeg编码失败 (returncode: {process.returncode})")
-            if stderr:
-                print(f"  错误信息: {stderr.decode()[:200]}")
     
     except FileNotFoundError:
         print("✗ FFmpeg未找到")
     except Exception as e:
         print(f"✗ FFmpeg编码失败: {e}")
+        import traceback
+        traceback.print_exc()
 
 def check_browser_compatibility(video_path):
     """检查视频是否兼容浏览器"""
