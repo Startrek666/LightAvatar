@@ -112,7 +112,7 @@
       
       <!-- Handler Performance -->
       <a-row :gutter="16" class="performance-row">
-        <a-col :span="24}>
+        <a-col :span="24">
           <a-card title="模块性能" :bordered="false">
             <a-row :gutter="16">
               <a-col :span="4" v-for="handler in handlers" :key="handler.name">
