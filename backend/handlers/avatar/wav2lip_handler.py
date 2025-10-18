@@ -49,6 +49,9 @@ class Wav2LipHandler(BaseHandler):
         self.mel_step_size = 16
         self.img_size = 96
         
+        # Cache for template face detection
+        self.template_face_cache = {}
+        
     async def _setup(self):
         """Setup Wav2Lip models"""
         try:
@@ -204,6 +207,25 @@ class Wav2LipHandler(BaseHandler):
             
             logger.info(f"Loaded {len(template_frames)} template frames")
             
+            # Pre-detect face in first template frame (cache for efficiency)
+            template_key = f"{template_path}_{len(template_frames)}"
+            if template_key not in self.template_face_cache:
+                first_frame = template_frames[0]
+                face_coords = self._detect_face(first_frame)
+                if face_coords is None:
+                    logger.warning(f"No face detected in template {template_path}, using full frame")
+                    # Use center crop as fallback
+                    h, w = first_frame.shape[:2]
+                    face_size = min(h, w) * 3 // 4
+                    x = (w - face_size) // 2
+                    y = (h - face_size) // 2
+                    face_coords = (x, y, face_size, face_size)
+                self.template_face_cache[template_key] = face_coords
+                logger.info(f"Cached face detection for template: {face_coords}")
+            else:
+                face_coords = self.template_face_cache[template_key]
+                logger.info(f"Using cached face detection: {face_coords}")
+            
             # Process frames: generate one processed frame per mel chunk, then repeat
             output_frames = []
             
@@ -216,12 +238,13 @@ class Wav2LipHandler(BaseHandler):
                 # Use cycling template frames
                 batch_frames = [template_frames[j % len(template_frames)] for j in range(i, i + len(batch_mel))]
                 
-                # Process batch
+                # Process batch with pre-detected face coords
                 batch_output = await asyncio.get_event_loop().run_in_executor(
                     self.executor,
                     self._process_batch,
                     batch_frames,
-                    batch_mel
+                    batch_mel,
+                    face_coords  # Pass pre-detected face coords
                 )
                 
                 processed_frames.extend(batch_output)
@@ -239,20 +262,23 @@ class Wav2LipHandler(BaseHandler):
             logger.error(f"Avatar generation error: {e}")
             return []
     
-    def _process_batch(self, frames: List[np.ndarray], mel_chunks: List[np.ndarray]) -> List[np.ndarray]:
+    def _process_batch(self, frames: List[np.ndarray], mel_chunks: List[np.ndarray], face_coords: Optional[Tuple[int, int, int, int]] = None) -> List[np.ndarray]:
         """Process a batch of frames with mel chunks"""
         output_frames = []
         
         for frame, mel in zip(frames, mel_chunks):
             try:
-                # Detect face
-                face_coords = self._detect_face(frame)
+                # Use pre-detected face coords or detect face in frame
                 if face_coords is None:
-                    output_frames.append(frame)
-                    continue
+                    frame_face_coords = self._detect_face(frame)
+                    if frame_face_coords is None:
+                        output_frames.append(frame)
+                        continue
+                else:
+                    frame_face_coords = face_coords
                 
                 # Crop face region
-                face_img = self._crop_face(frame, face_coords)
+                face_img = self._crop_face(frame, frame_face_coords)
                 
                 # Prepare inputs following official Wav2Lip format
                 face_input = self._preprocess_face(face_img)
@@ -288,7 +314,7 @@ class Wav2LipHandler(BaseHandler):
                 lip_img = self._postprocess_output(outputs[0])
                 
                 # Merge back to frame
-                output_frame = self._merge_face(frame, lip_img, face_coords)
+                output_frame = self._merge_face(frame, lip_img, frame_face_coords)
                 
                 output_frames.append(output_frame)
                 
@@ -301,8 +327,25 @@ class Wav2LipHandler(BaseHandler):
     def _detect_face(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
         """Detect face in image using MediaPipe"""
         try:
+            # Validate input image
+            if image is None or image.size == 0:
+                logger.warning("Invalid image for face detection")
+                return None
+            
+            # Ensure image is contiguous and correct dtype
+            if not image.flags['C_CONTIGUOUS']:
+                image = np.ascontiguousarray(image)
+            
+            # Ensure uint8 format
+            if image.dtype != np.uint8:
+                image = image.astype(np.uint8)
+            
             # Convert BGR to RGB
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            # Ensure contiguous for MediaPipe
+            if not rgb_image.flags['C_CONTIGUOUS']:
+                rgb_image = np.ascontiguousarray(rgb_image)
             
             # Detect faces
             results = self.face_detector.process(rgb_image)
