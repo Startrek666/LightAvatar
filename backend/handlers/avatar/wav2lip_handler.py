@@ -49,6 +49,11 @@ class Wav2LipHandler(BaseHandler):
         self.mel_step_size = 16
         self.img_size = 96
         
+        # Face detection padding ratios (configurable for better mouth capture)
+        self.face_padding_horizontal = self.config.get("face_padding_horizontal", 0.15)  # 15% default
+        self.face_padding_top = self.config.get("face_padding_top", 0.10)  # 10% default
+        self.face_padding_bottom = self.config.get("face_padding_bottom", 0.35)  # 35% default (increased for better mouth capture)
+        
         # Cache for template face detection
         self.template_face_cache = {}
         
@@ -81,12 +86,21 @@ class Wav2LipHandler(BaseHandler):
                 )
                 logger.info(f"Wav2Lip ONNX model loaded from {model_path}")
             else:
-                # Load PyTorch model
-                model_path = Path("models") / "wav2lip" / "wav2lip.pth"
-                if not model_path.exists():
+                # Load PyTorch model (prefer GAN version for better quality)
+                model_path_gan = Path("models") / "wav2lip" / "wav2lip_gan.pth"
+                model_path_base = Path("models") / "wav2lip" / "wav2lip.pth"
+                
+                if model_path_gan.exists():
+                    model_path = model_path_gan
+                    logger.info("Using Wav2Lip GAN model for enhanced quality")
+                elif model_path_base.exists():
+                    model_path = model_path_base
+                    logger.info("Using base Wav2Lip model")
+                else:
                     raise FileNotFoundError(
-                        f"Wav2Lip PyTorch model not found at {model_path}. "
-                        f"Please download it using scripts/download_models.sh"
+                        f"Wav2Lip model not found. Please download:\n"
+                        f"  GAN version (recommended): wav2lip_gan.pth\n"
+                        f"  Base version: wav2lip.pth"
                     )
                 
                 # Import Wav2Lip model definition
@@ -361,12 +375,16 @@ class Wav2LipHandler(BaseHandler):
                 width = int(bbox.width * w)
                 height = int(bbox.height * h)
                 
-                # Add padding
-                padding = 20
-                x = max(0, x - padding)
-                y = max(0, y - padding)
-                width = min(w - x, width + 2 * padding)
-                height = min(h - y, height + 2 * padding)
+                # Expand face region to ensure full mouth is captured
+                # Use configurable padding ratios
+                padding_horizontal = int(width * self.face_padding_horizontal)
+                padding_top = int(height * self.face_padding_top)
+                padding_bottom = int(height * self.face_padding_bottom)
+                
+                x = max(0, x - padding_horizontal)
+                y = max(0, y - padding_top)
+                width = min(w - x, width + 2 * padding_horizontal)
+                height = min(h - y, height + padding_top + padding_bottom)
                 
                 return (x, y, width, height)
             
@@ -421,7 +439,7 @@ class Wav2LipHandler(BaseHandler):
         return output
     
     def _merge_face(self, frame: np.ndarray, lip_img: np.ndarray, coords: Tuple[int, int, int, int]) -> np.ndarray:
-        """Merge lip-synced face back to frame"""
+        """Merge lip-synced face back to frame with improved blending"""
         x, y, w, h = coords
         
         # Resize lip image to match face region
@@ -430,19 +448,41 @@ class Wav2LipHandler(BaseHandler):
         # Create output frame
         output = frame.copy()
         
-        # Simple blending
-        output[y:y+h, x:x+w] = lip_img
+        # Calculate mouth region (lower half of face)
+        mouth_y_start = int(h * 0.5)  # Start from 50% down the face
+        mouth_height = h - mouth_y_start
         
-        # Apply gaussian blur to edges for smoother blending
-        if self.enhance_mode:
-            mask = np.ones((h, w), dtype=np.float32)
-            mask = cv2.GaussianBlur(mask, (21, 21), 10)
-            mask = np.expand_dims(mask, axis=2)
-            
-            output[y:y+h, x:x+w] = (
-                output[y:y+h, x:x+w] * (1 - mask) +
-                lip_img * mask
-            ).astype(np.uint8)
+        # Create mask focused on mouth area with feathering
+        mask = np.zeros((h, w), dtype=np.float32)
+        
+        # Full opacity in mouth area
+        mask[mouth_y_start:, :] = 1.0
+        
+        # Feather the edges for smooth blending
+        feather_size = max(15, int(h * 0.1))  # 10% of face height or min 15px
+        
+        # Vertical feather (top edge of mouth area)
+        for i in range(feather_size):
+            if mouth_y_start - i >= 0:
+                alpha = i / feather_size
+                mask[mouth_y_start - i, :] = alpha
+        
+        # Horizontal feather (left and right edges)
+        for i in range(feather_size):
+            mask[:, i] *= (i / feather_size)
+            mask[:, -(i+1)] *= (i / feather_size)
+        
+        # Apply gaussian blur for smoother transition
+        mask = cv2.GaussianBlur(mask, (15, 15), 5)
+        mask = np.expand_dims(mask, axis=2)
+        
+        # Blend lip image with original frame
+        blended_region = (
+            frame[y:y+h, x:x+w] * (1 - mask) +
+            lip_img * mask
+        ).astype(np.uint8)
+        
+        output[y:y+h, x:x+w] = blended_region
         
         return output
     
@@ -680,3 +720,14 @@ class Wav2LipHandler(BaseHandler):
             if config["use_onnx"] != self.use_onnx:
                 logger.warning("Changing ONNX mode requires reinitializing the handler")
                 self.use_onnx = config["use_onnx"]
+        
+        # Face detection padding ratios
+        if "face_padding_horizontal" in config:
+            self.face_padding_horizontal = config["face_padding_horizontal"]
+            self.template_face_cache.clear()  # Clear cache when padding changes
+        if "face_padding_top" in config:
+            self.face_padding_top = config["face_padding_top"]
+            self.template_face_cache.clear()
+        if "face_padding_bottom" in config:
+            self.face_padding_bottom = config["face_padding_bottom"]
+            self.template_face_cache.clear()

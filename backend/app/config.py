@@ -81,7 +81,12 @@ class Settings(BaseSettings):
     AVATAR_TEMPLATE: str = Field(default="default.mp4", description="Default avatar template")
     AVATAR_USE_ONNX: bool = Field(default=False, description="Use ONNX model for avatar generation")
     AVATAR_STATIC_MODE: bool = Field(default=False, description="Use static image mode")
-    AVATAR_ENHANCE_MODE: bool = Field(default=False, description="Enable edge blending enhancement")
+    AVATAR_ENHANCE_MODE: bool = Field(default=True, description="Enable edge blending enhancement")
+    
+    # Face detection padding ratios for better mouth capture
+    AVATAR_FACE_PADDING_HORIZONTAL: float = Field(default=0.15, description="Horizontal padding ratio (left/right)")
+    AVATAR_FACE_PADDING_TOP: float = Field(default=0.10, description="Top padding ratio")
+    AVATAR_FACE_PADDING_BOTTOM: float = Field(default=0.35, description="Bottom padding ratio (for mouth)")
     
     # Buffer settings
     AUDIO_BUFFER_SIZE: int = Field(default=50, description="Audio buffer size (frames)")

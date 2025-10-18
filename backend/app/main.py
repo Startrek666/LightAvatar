@@ -244,7 +244,10 @@ async def get_config():
             "template": settings.AVATAR_TEMPLATE,
             "use_onnx": settings.AVATAR_USE_ONNX,
             "static_mode": settings.AVATAR_STATIC_MODE,
-            "enhance_mode": settings.AVATAR_ENHANCE_MODE
+            "enhance_mode": settings.AVATAR_ENHANCE_MODE,
+            "face_padding_horizontal": settings.AVATAR_FACE_PADDING_HORIZONTAL,
+            "face_padding_top": settings.AVATAR_FACE_PADDING_TOP,
+            "face_padding_bottom": settings.AVATAR_FACE_PADDING_BOTTOM
         }
     }
 
