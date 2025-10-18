@@ -142,6 +142,7 @@ import {
   DatabaseOutlined, 
   ApiOutlined 
 } from '@ant-design/icons-vue'
+import VChart from 'vue-echarts'
 import dayjs from 'dayjs'
 import axios from 'axios'
 
@@ -367,7 +368,7 @@ const updateCharts = () => {
 }
 
 // Auto refresh
-let refreshInterval: number
+let refreshInterval: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
   // Initial fetch
