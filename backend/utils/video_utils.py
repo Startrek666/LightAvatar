@@ -13,11 +13,22 @@ class VideoProcessor:
     """Video processing utilities"""
     
     def __init__(self):
-        # Try H.264 codec first (better compression), fallback to mp4v
-        try:
-            self.fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264
-        except:
-            self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # MPEG-4
+        # Try H.264 compatible codecs for browser playback
+        # Priority: avc1 (H.264) > X264 > mp4v
+        self.fourcc = None
+        for codec in ['avc1', 'H264', 'X264', 'mp4v']:
+            try:
+                self.fourcc = cv2.VideoWriter_fourcc(*codec)
+                break
+            except:
+                continue
+        
+        if self.fourcc is None:
+            # Last resort
+            self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        
+        # Check if FFmpeg is available and supports H.264
+        self.ffmpeg_available = self._check_ffmpeg_h264()
     
     def read_video(self, video_path: str) -> Tuple[List[np.ndarray], float]:
         """Read video and return frames and FPS"""
@@ -111,6 +122,43 @@ class VideoProcessor:
             value=(0, 0, 0)
         )
     
+    def _check_ffmpeg_h264(self) -> bool:
+        """Check if FFmpeg is available and supports H.264"""
+        import subprocess
+        try:
+            # Check if ffmpeg is available
+            result = subprocess.run(
+                ['ffmpeg', '-version'],
+                capture_output=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                logger.warning("FFmpeg not available")
+                return False
+            
+            # Check if libx264 is available
+            result = subprocess.run(
+                ['ffmpeg', '-codecs'],
+                capture_output=True,
+                timeout=5
+            )
+            output = result.stdout.decode()
+            has_h264 = 'libx264' in output or 'h264' in output.lower()
+            
+            if has_h264:
+                logger.info("FFmpeg with H.264 support detected")
+            else:
+                logger.warning("FFmpeg found but H.264 (libx264) not available")
+            
+            return has_h264
+            
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            logger.warning("FFmpeg not found in PATH")
+            return False
+        except Exception as e:
+            logger.warning(f"FFmpeg check failed: {e}")
+            return False
+    
     def frames_to_video_bytes(self, frames: List[np.ndarray], fps: float = 25.0, use_ffmpeg: bool = True) -> bytes:
         """
         Convert frames to video bytes
@@ -126,9 +174,12 @@ class VideoProcessor:
         if not frames:
             return b""
         
-        if use_ffmpeg:
+        # Automatically choose encoding method based on availability
+        if use_ffmpeg and self.ffmpeg_available:
             return self._frames_to_mp4_ffmpeg(frames, fps)
         else:
+            if use_ffmpeg and not self.ffmpeg_available:
+                logger.warning("FFmpeg not available, using OpenCV encoding. Install FFmpeg with libx264 for better browser compatibility.")
             return self._frames_to_mp4_opencv(frames, fps)
     
     def _frames_to_mp4_opencv(self, frames: List[np.ndarray], fps: float) -> bytes:
@@ -203,19 +254,30 @@ class VideoProcessor:
                 stderr=subprocess.PIPE
             )
             
-            # Write frames to FFmpeg
-            for frame in frames:
-                process.stdin.write(frame.tobytes())
-            
-            # Close stdin to signal end of input
-            process.stdin.close()
+            try:
+                # Write frames to FFmpeg
+                for frame in frames:
+                    process.stdin.write(frame.tobytes())
+                
+                # Close stdin to signal end of input
+                process.stdin.close()
+            except BrokenPipeError:
+                # FFmpeg crashed while writing
+                logger.error("FFmpeg broken pipe during write, falling back to OpenCV")
+                process.kill()
+                return self._frames_to_mp4_opencv(frames, fps)
             
             # Get output
-            video_bytes, stderr = process.communicate()
+            video_bytes, stderr = process.communicate(timeout=30)
             
             if process.returncode != 0:
-                logger.error(f"FFmpeg encoding error: {stderr.decode()}")
+                stderr_msg = stderr.decode() if stderr else "Unknown error"
+                logger.error(f"FFmpeg encoding failed (returncode {process.returncode}): {stderr_msg}")
                 # Fallback to OpenCV
+                return self._frames_to_mp4_opencv(frames, fps)
+            
+            if len(video_bytes) == 0:
+                logger.error("FFmpeg returned empty video, falling back to OpenCV")
                 return self._frames_to_mp4_opencv(frames, fps)
             
             logger.info(f"Encoded {len(frames)} frames to {len(video_bytes)} bytes using FFmpeg")
@@ -224,6 +286,10 @@ class VideoProcessor:
             
         except FileNotFoundError:
             logger.warning("FFmpeg not found, falling back to OpenCV encoding")
+            return self._frames_to_mp4_opencv(frames, fps)
+        except subprocess.TimeoutExpired:
+            logger.error("FFmpeg encoding timeout, falling back to OpenCV")
+            process.kill()
             return self._frames_to_mp4_opencv(frames, fps)
         except Exception as e:
             logger.error(f"FFmpeg encoding error: {e}, falling back to OpenCV")
