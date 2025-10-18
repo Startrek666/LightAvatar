@@ -256,19 +256,20 @@ class VideoProcessor:
             
             try:
                 # Write frames to FFmpeg
-                for frame in frames:
-                    process.stdin.write(frame.tobytes())
-                
-                # Close stdin to signal end of input
-                process.stdin.close()
+                input_data = b''.join(frame.tobytes() for frame in frames)
+            except Exception as e:
+                logger.error(f"Failed to prepare frame data: {e}")
+                process.kill()
+                return self._frames_to_mp4_opencv(frames, fps)
+            
+            try:
+                # Send data and get output (communicate handles stdin closing)
+                video_bytes, stderr = process.communicate(input=input_data, timeout=30)
             except BrokenPipeError:
                 # FFmpeg crashed while writing
                 logger.error("FFmpeg broken pipe during write, falling back to OpenCV")
                 process.kill()
                 return self._frames_to_mp4_opencv(frames, fps)
-            
-            # Get output
-            video_bytes, stderr = process.communicate(timeout=30)
             
             if process.returncode != 0:
                 stderr_msg = stderr.decode() if stderr else "Unknown error"

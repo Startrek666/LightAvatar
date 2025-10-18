@@ -178,28 +178,30 @@ def test_ffmpeg_encoding(frames):
             stderr=subprocess.PIPE
         )
         
+        # Prepare all frame data
         try:
-            bytes_written = 0
-            for i, frame in enumerate(frames):
-                frame_bytes = frame.tobytes()
-                process.stdin.write(frame_bytes)
-                bytes_written += len(frame_bytes)
-                if i == 0:
-                    print(f"  第一帧: {len(frame_bytes)} bytes")
-            
-            print(f"  总共写入: {bytes_written} bytes ({len(frames)} 帧)")
-            process.stdin.close()
-            print("  stdin已关闭，等待FFmpeg处理...")
-        except BrokenPipeError as e:
-            print(f"✗ FFmpeg broken pipe错误: {e}")
-            # 获取stderr查看错误
-            _, stderr = process.communicate()
-            if stderr:
-                print(f"  FFmpeg stderr:\n{stderr.decode()}")
+            input_data = b''.join(frame.tobytes() for frame in frames)
+            print(f"  准备数据: {len(input_data)} bytes ({len(frames)} 帧)")
+        except Exception as e:
+            print(f"✗ 准备帧数据失败: {e}")
             process.kill()
             return
         
-        video_bytes, stderr = process.communicate(timeout=30)
+        # Send data and get output
+        try:
+            print("  发送数据到FFmpeg...")
+            video_bytes, stderr = process.communicate(input=input_data, timeout=30)
+        except BrokenPipeError as e:
+            print(f"✗ FFmpeg broken pipe错误: {e}")
+            # 获取stderr查看错误
+            try:
+                _, stderr = process.communicate()
+                if stderr:
+                    print(f"  FFmpeg stderr:\n{stderr.decode()}")
+            except:
+                pass
+            process.kill()
+            return
         
         print(f"  FFmpeg返回码: {process.returncode}")
         print(f"  输出大小: {len(video_bytes)} bytes")
