@@ -149,7 +149,7 @@ class Wav2LipHandler(BaseHandler):
             template_path: Path to avatar template video/image
             
         Returns:
-            Video bytes in MP4 format
+            Video bytes in MP4 format with audio
         """
         with timer(avatar_processing_time):
             frames = await self._generate_avatar(audio_data, template_path)
@@ -158,7 +158,15 @@ class Wav2LipHandler(BaseHandler):
             if frames:
                 video_bytes = self.video_processor.frames_to_video_bytes(frames, self.fps)
                 logger.info(f"Generated video: {len(video_bytes)} bytes")
-                return video_bytes
+                
+                # Add audio track to video
+                video_with_audio = await self._add_audio_to_video(video_bytes, audio_data)
+                if video_with_audio:
+                    logger.info(f"Added audio track: {len(video_with_audio)} bytes")
+                    return video_with_audio
+                else:
+                    logger.warning("Failed to add audio, returning video without audio")
+                    return video_bytes
             else:
                 logger.warning("No frames generated")
                 return b""
@@ -491,6 +499,95 @@ class Wav2LipHandler(BaseHandler):
         
         # Return multiple copies for static avatar
         return [image] * 100
+    
+    async def _add_audio_to_video(self, video_bytes: bytes, audio_bytes: bytes) -> bytes:
+        """
+        Add audio track to video using FFmpeg
+        
+        Args:
+            video_bytes: Silent video bytes
+            audio_bytes: Audio bytes (MP3 from TTS)
+            
+        Returns:
+            Video bytes with audio track
+        """
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        
+        video_path = None
+        audio_path = None
+        output_path = None
+        
+        try:
+            # Create temporary files
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as video_file:
+                video_file.write(video_bytes)
+                video_path = video_file.name
+            
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as audio_file:
+                audio_file.write(audio_bytes)
+                audio_path = audio_file.name
+            
+            output_path = video_path.replace('.mp4', '_with_audio.mp4')
+            
+            # FFmpeg command to add audio to video
+            ffmpeg_cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,  # Video input
+                '-i', audio_path,  # Audio input
+                '-c:v', 'copy',    # Copy video stream (no re-encoding)
+                '-c:a', 'aac',     # Encode audio to AAC
+                '-b:a', '128k',    # Audio bitrate
+                '-shortest',       # End when shortest stream ends
+                output_path
+            ]
+            
+            # Run FFmpeg
+            process = await asyncio.create_subprocess_exec(
+                *ffmpeg_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+            
+            if process.returncode != 0:
+                stderr_msg = stderr.decode() if stderr else "Unknown error"
+                logger.error(f"FFmpeg audio merge failed (returncode {process.returncode}): {stderr_msg}")
+                return b""
+            
+            # Check output file
+            if not Path(output_path).exists():
+                logger.error(f"Output video with audio not created: {output_path}")
+                return b""
+            
+            file_size = Path(output_path).stat().st_size
+            if file_size == 0:
+                logger.error("Output video with audio is empty")
+                return b""
+            
+            # Read result
+            with open(output_path, 'rb') as f:
+                result = f.read()
+            
+            logger.debug(f"Audio merge successful: {len(result)} bytes")
+            return result
+            
+        except asyncio.TimeoutError:
+            logger.error("FFmpeg audio merge timeout")
+            return b""
+        except Exception as e:
+            logger.error(f"Audio merge error: {e}")
+            return b""
+        finally:
+            # Cleanup temporary files
+            for path in [video_path, audio_path, output_path]:
+                if path and Path(path).exists():
+                    try:
+                        Path(path).unlink()
+                    except:
+                        pass
     
     async def generate(self, audio_data: bytes, template_path: str) -> bytes:
         """
