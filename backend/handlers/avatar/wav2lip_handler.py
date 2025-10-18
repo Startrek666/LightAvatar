@@ -173,10 +173,16 @@ class Wav2LipHandler(BaseHandler):
             mel_chunks = await self._extract_mel_chunks(wav_audio)
             
             # Load template video/image
+            logger.info(f"Loading template: {template_path}")
             if template_path.endswith(('.mp4', '.avi', '.mov')):
                 template_frames = await self._load_video_template(template_path)
             else:
                 template_frames = await self._load_image_template(template_path)
+            
+            if not template_frames:
+                raise ValueError(f"No frames loaded from template: {template_path}")
+            
+            logger.info(f"Loaded {len(template_frames)} template frames, need {len(mel_chunks)} mel chunks")
             
             # Process frames in parallel
             output_frames = []
