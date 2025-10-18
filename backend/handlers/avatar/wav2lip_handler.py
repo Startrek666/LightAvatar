@@ -246,8 +246,16 @@ class Wav2LipHandler(BaseHandler):
                 else:
                     # PyTorch inference
                     with torch.no_grad():
-                        mel_tensor = torch.FloatTensor(mel_input)
-                        face_tensor = torch.FloatTensor(face_input)
+                        # mel_input shape: (1, 1, 80, 16)
+                        # face_input shape: (1, 1, 3, 96, 96)
+                        mel_tensor = torch.FloatTensor(mel_input).cuda() if torch.cuda.is_available() else torch.FloatTensor(mel_input)
+                        face_tensor = torch.FloatTensor(face_input).cuda() if torch.cuda.is_available() else torch.FloatTensor(face_input)
+                        
+                        # Model expects (batch, channels, height, width) for face
+                        # Remove time dimension
+                        face_tensor = face_tensor.squeeze(1)  # (1, 3, 96, 96)
+                        mel_tensor = mel_tensor.squeeze(1)    # (1, 80, 16)
+                        
                         outputs = self.wav2lip_model(mel_tensor, face_tensor)
                         outputs = [outputs.cpu().numpy()]
                 

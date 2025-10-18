@@ -347,9 +347,37 @@ skynet_whisper:
 
 ---
 
-### 5.5 下载Wav2Lip模型
+### 5.5 准备 Wav2Lip 环境
 
-#### 方法一：使用HuggingFace（推荐）
+**重要**：Wav2Lip 需要两个部分：
+1. **官方代码仓库**（包含模型架构定义）- 必需
+2. **模型权重文件** - 必需
+
+#### 步骤1：克隆官方 Wav2Lip 仓库（必需）
+
+```bash
+cd /opt/lightavatar
+
+# 创建 tools 目录
+mkdir -p tools
+cd tools
+
+# 克隆官方 Wav2Lip 仓库
+git clone https://github.com/Rudrabha/Wav2Lip.git
+
+# 验证文件结构
+ls -la Wav2Lip/
+# 应该看到：models/、face_detection/、wav2lip_train.py 等文件
+```
+
+**为什么需要克隆仓库？**
+- Wav2Lip 模型架构定义在官方仓库中
+- 包含人脸检测等依赖模块
+- 我们的代码会从 `tools/Wav2Lip/models/` 导入模型定义
+
+#### 步骤2：下载 Wav2Lip 模型权重
+
+**方法一：使用HuggingFace（推荐）**
 
 ```bash
 cd /opt/lightavatar/models/wav2lip
@@ -362,9 +390,10 @@ wget -O wav2lip.pth "https://huggingface.co/numz/wav2lip_studio/resolve/main/Wav
 
 # 验证下载
 ls -lh wav2lip.pth
+# 应该显示约 400MB
 ```
 
-#### 方法二：使用官方OneDrive链接
+**方法二：使用官方OneDrive链接**
 
 如果HuggingFace速度慢，可以使用官方OneDrive：
 
@@ -377,7 +406,7 @@ cd /opt/lightavatar/models/wav2lip
 echo "如果自动下载失败，请在浏览器中访问上述链接手动下载"
 ```
 
-#### 方法三：手动上传
+**方法三：手动上传
 
 如果自动下载失败，可以手动下载后上传：
 
@@ -399,6 +428,33 @@ scp wav2lip.pth user@your-server:/opt/lightavatar/models/wav2lip/
 cd /opt/lightavatar
 bash scripts/download_models.sh
 # 选择 Wav2Lip 模型下载
+```
+
+#### 步骤3：设置文件权限
+
+```bash
+# 设置正确的所有者
+sudo chown -R www-data:www-data /opt/lightavatar/tools/
+sudo chown -R www-data:www-data /opt/lightavatar/models/
+
+# 验证安装完整性
+ls -lh /opt/lightavatar/tools/Wav2Lip/
+ls -lh /opt/lightavatar/models/wav2lip/wav2lip.pth
+```
+
+**验证 Wav2Lip 安装**：
+
+```bash
+cd /opt/lightavatar
+source venv/bin/activate
+
+# 测试导入模型
+python3 << 'EOF'
+import sys
+sys.path.append('tools/Wav2Lip')
+from models import Wav2Lip
+print("✓ Wav2Lip 模型架构导入成功")
+EOF
 ```
 
 ### 5.6 转换Wav2Lip模型为ONNX格式（可选，提升性能）
@@ -621,7 +677,8 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/lightavatar
-Environment="PATH=/opt/lightavatar/venv/bin"
+# 重要：PATH 必须包含系统路径以找到 ffmpeg 等工具
+Environment="PATH=/opt/lightavatar/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 EnvironmentFile=/opt/lightavatar/.env
 ExecStart=/opt/lightavatar/venv/bin/python backend/app/main.py
@@ -1059,7 +1116,119 @@ asyncio.run(test())
 "
 ```
 
-### 问题4：内存不足
+### 问题4：数字人生成失败（黑屏无视频）
+
+这是最常见的部署问题，需要逐步排查：
+
+#### 4.1 检查 Wav2Lip 仓库是否克隆
+
+```bash
+# 检查官方仓库
+ls -la /opt/lightavatar/tools/Wav2Lip/
+
+# 如果不存在，执行克隆
+cd /opt/lightavatar
+mkdir -p tools && cd tools
+git clone https://github.com/Rudrabha/Wav2Lip.git
+```
+
+**错误日志特征**：
+```
+ERROR | Failed to load Wav2Lip models: Please clone official Wav2Lip repo
+```
+
+#### 4.2 检查 FFmpeg 是否安装且可用
+
+```bash
+# 检查 FFmpeg
+ffmpeg -version
+
+# 如果未安装
+sudo apt update && sudo apt install -y ffmpeg
+
+# 测试 www-data 用户能否执行
+sudo -u www-data ffmpeg -version
+```
+
+**错误日志特征**：
+```
+ERROR | Audio conversion error: [Errno 2] No such file or directory
+ERROR | FFmpeg encoding error: [Errno 32] Broken pipe
+```
+
+#### 4.3 检查模型文件和模板文件
+
+```bash
+# 检查模型权重
+ls -lh /opt/lightavatar/models/wav2lip/wav2lip.pth
+# 应该约 400MB
+
+# 检查 avatar 模板
+ls -lh /opt/lightavatar/models/avatars/
+# 应该至少有一个 default.jpg 或 default.png
+
+# 如果缺少模板，创建一个
+cd /opt/lightavatar/models/avatars/
+wget -O default.jpg "https://via.placeholder.com/512x512.jpg?text=Avatar"
+```
+
+**错误日志特征**：
+```
+ERROR | Failed to load image template: models/avatars/default.png
+ERROR | list index out of range
+ERROR | No frames loaded from template
+```
+
+#### 4.4 检查代码维度问题
+
+查看日志是否有以下错误：
+
+```
+ERROR | Error processing frame: expected 4D input (got 3D input)
+```
+
+**解决方法**：确保 `backend/handlers/avatar/wav2lip_handler.py` 第 246-260 行包含维度转换代码：
+
+```python
+# Model expects (batch, channels, height, width) for face
+# Remove time dimension
+face_tensor = face_tensor.squeeze(1)  # (1, 3, 96, 96)
+mel_tensor = mel_tensor.squeeze(1)    # (1, 80, 16)
+```
+
+#### 4.5 完整诊断脚本
+
+```bash
+#!/bin/bash
+echo "=== 数字人生成故障诊断 ==="
+
+echo -e "\n1. 检查 Wav2Lip 仓库"
+[ -d /opt/lightavatar/tools/Wav2Lip ] && echo "✓ 已克隆" || echo "✗ 未克隆"
+
+echo -e "\n2. 检查 FFmpeg"
+command -v ffmpeg &>/dev/null && echo "✓ 已安装" || echo "✗ 未安装"
+
+echo -e "\n3. 检查模型文件"
+[ -f /opt/lightavatar/models/wav2lip/wav2lip.pth ] && echo "✓ wav2lip.pth 存在" || echo "✗ 缺失"
+
+echo -e "\n4. 检查模板文件"
+ls /opt/lightavatar/models/avatars/*.{jpg,png,mp4} 2>/dev/null && echo "✓ 模板存在" || echo "✗ 缺失"
+
+echo -e "\n5. 检查后端服务"
+systemctl is-active lightavatar-backend &>/dev/null && echo "✓ 运行中" || echo "✗ 未运行"
+
+echo -e "\n6. 查看最近错误"
+sudo tail -20 /var/log/lightavatar/backend.log | grep ERROR || echo "无明显错误"
+```
+
+保存为 `diagnose_avatar.sh` 并运行：
+
+```bash
+chmod +x diagnose_avatar.sh
+./diagnose_avatar.sh
+```
+
+### 问题5：内存不足
 
 **优化配置**：
 
