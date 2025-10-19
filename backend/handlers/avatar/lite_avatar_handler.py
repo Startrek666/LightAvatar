@@ -34,13 +34,15 @@ class LiteAvatarHandler(BaseHandler):
     - 流畅的口型动画
     """
     
-    def __init__(self,
-                 fps: int = 30,
-                 resolution: Tuple[int, int] = (512, 512),
-                 config: Optional[dict] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
-        self.fps = fps
-        self.resolution = resolution
+        
+        # 必须在任何PyTorch/ONNX操作之前设置线程数
+        import torch
+        torch.set_num_threads(4)
+        torch.set_num_interop_threads(2)
+        
+        self.fps = self.config.get("fps", 30)
         
         # LiteAvatar核心组件
         self.audio2mouth = None
@@ -157,10 +159,6 @@ class LiteAvatarHandler(BaseHandler):
     
     async def _load_avatar_model(self):
         """加载Avatar编码器和生成器"""
-        # 配置PyTorch CPU线程数
-        torch.set_num_threads(4)
-        torch.set_num_interop_threads(2)
-        
         # 加载编解码器模型
         encoder_path = self.data_dir / "net_encode.pt"
         decoder_path = self.data_dir / "net_decode.pt"
