@@ -332,9 +332,18 @@ class LiteAvatarHandler(BaseHandler):
         try:
             # 导入特征提取函数
             import sys
-            lite_avatar_path = Path("d:/Aprojects/Light-avatar/lite-avatar-main")
-            if str(lite_avatar_path) not in sys.path:
-                sys.path.insert(0, str(lite_avatar_path))
+            # 尝试多个可能的路径
+            possible_paths = [
+                Path("/opt/lite-avatar"),
+                Path("/opt/lightavatar/lite-avatar"),
+                Path("d:/Aprojects/Light-avatar/lite-avatar-main")
+            ]
+            
+            for lite_avatar_path in possible_paths:
+                if lite_avatar_path.exists():
+                    if str(lite_avatar_path) not in sys.path:
+                        sys.path.insert(0, str(lite_avatar_path))
+                    break
             
             from extract_paraformer_feature import extract_para_feature
             return extract_para_feature(audio_array, frame_cnt)
@@ -345,7 +354,7 @@ class LiteAvatarHandler(BaseHandler):
             return np.zeros((frame_cnt, 560))
     
     def _inference_mouth_params(self, au_data: np.ndarray, ph_data: np.ndarray) -> List[Dict[str, float]]:
-        """推理口型参数"""
+        """推理口型参数（使用官方逻辑）"""
         param_res = []
         audio_length = ph_data.shape[0] / 30
         interval = 1.0
@@ -362,15 +371,27 @@ class LiteAvatarHandler(BaseHandler):
             start_frame = int(start_time * 30)
             end_frame = start_frame + int(30 * interval)
             
+            # 处理音频结束情况
             if end_time >= audio_length:
                 is_end = True
                 end_frame = au_data.shape[0]
-                start_frame = max(0, end_frame - int(30 * interval))
-                start_time = audio_length - interval
+                # 如果音频不足1秒，从末尾向前取30帧（padding）
+                if end_frame < 30:
+                    start_frame = 0
+                    # Padding到30帧
+                    pad_size = 30 - end_frame
+                    input_au = np.pad(au_data, ((0, pad_size), (0, 0)), mode='edge')
+                    input_ph = np.pad(ph_data, ((0, pad_size), (0, 0)), mode='edge')
+                else:
+                    start_frame = end_frame - int(30 * interval)
+                    input_au = au_data[start_frame:end_frame]
+                    input_ph = ph_data[start_frame:end_frame]
+                start_time = max(0, audio_length - interval)
                 end_time = audio_length
+            else:
+                input_au = au_data[start_frame:end_frame]
+                input_ph = ph_data[start_frame:end_frame]
             
-            input_au = au_data[start_frame:end_frame]
-            input_ph = ph_data[start_frame:end_frame]
             input_au = input_au[np.newaxis, :].astype(np.float32)
             input_ph = input_ph[np.newaxis, :].astype(np.float32)
             
