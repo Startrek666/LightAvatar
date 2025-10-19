@@ -354,51 +354,63 @@ class LiteAvatarHandler(BaseHandler):
             return self._extract_mfcc_feature(audio_array, frame_cnt)
     
     def _extract_mfcc_feature(self, audio_array: np.ndarray, frame_cnt: int) -> np.ndarray:
-        """使用MFCC作为音频特征的fallback"""
+        """使用MFCC作为音频特征的fallback，匹配Paraformer格式(frames, 50, 512)"""
         try:
             import librosa
             
-            # 提取MFCC特征（560维对应Paraformer特征维度）
-            # 使用更多的MFCC系数来匹配560维
-            n_mfcc = 80  # MFCC系数数量
+            # 模型期望输入: (frames, 50, 512)
+            # 总特征维度: 50 * 512 = 25600
+            target_seq_len = 50
+            target_feat_dim = 512
             
-            # 计算每帧对应的采样数
+            # 提取梅尔频谱图作为特征
+            n_mels = 80
             hop_length = len(audio_array) // frame_cnt if frame_cnt > 0 else 512
             
-            # 提取MFCC
-            mfcc = librosa.feature.mfcc(
+            # 提取Mel频谱
+            mel = librosa.feature.melspectrogram(
                 y=audio_array,
                 sr=16000,
-                n_mfcc=n_mfcc,
+                n_mels=n_mels,
                 hop_length=hop_length,
                 n_fft=2048
             )
             
-            # 转置为 (frames, features)
-            mfcc = mfcc.T
+            # 转换为对数刻度
+            mel_db = librosa.power_to_db(mel, ref=np.max)
+            
+            # 转置为 (frames, n_mels)
+            mel_db = mel_db.T
             
             # 调整到目标帧数
-            if mfcc.shape[0] != frame_cnt:
+            if mel_db.shape[0] != frame_cnt:
                 from scipy import interpolate
-                x = np.linspace(0, frame_cnt - 1, mfcc.shape[0])
+                x = np.linspace(0, frame_cnt - 1, mel_db.shape[0])
                 x_new = np.arange(frame_cnt)
-                f = interpolate.interp1d(x, mfcc, axis=0, kind='linear', fill_value='extrapolate')
-                mfcc = f(x_new)
+                f = interpolate.interp1d(x, mel_db, axis=0, kind='linear', fill_value='extrapolate')
+                mel_db = f(x_new)
             
-            # Padding到560维
-            if mfcc.shape[1] < 560:
-                pad_width = 560 - mfcc.shape[1]
-                mfcc = np.pad(mfcc, ((0, 0), (0, pad_width)), mode='constant')
+            # 扩展特征：重复并padding到 (frames, 50*512)
+            # 先扩展到25600维
+            total_dim = target_seq_len * target_feat_dim  # 25600
+            if mel_db.shape[1] < total_dim:
+                # 重复并padding
+                repeats = (total_dim // mel_db.shape[1]) + 1
+                expanded = np.tile(mel_db, (1, repeats))
+                expanded = expanded[:, :total_dim]
             else:
-                mfcc = mfcc[:, :560]
+                expanded = mel_db[:, :total_dim]
             
-            logger.info(f"使用MFCC特征替代Paraformer: shape={mfcc.shape}")
-            return mfcc.astype(np.float32)
+            # Reshape为 (frames, 50, 512)
+            features = expanded.reshape(frame_cnt, target_seq_len, target_feat_dim)
+            
+            logger.info(f"使用MFCC特征替代Paraformer: shape={features.shape}")
+            return features.astype(np.float32)
             
         except Exception as e:
             logger.error(f"MFCC提取失败: {e}")
-            # 最后的fallback：零特征
-            return np.zeros((frame_cnt, 560), dtype=np.float32)
+            # 最后的fallback：零特征，正确的4D形状
+            return np.zeros((frame_cnt, 50, 512), dtype=np.float32)
     
     def _inference_mouth_params(self, au_data: np.ndarray, ph_data: np.ndarray) -> List[Dict[str, float]]:
         """推理口型参数（使用官方逻辑）"""
