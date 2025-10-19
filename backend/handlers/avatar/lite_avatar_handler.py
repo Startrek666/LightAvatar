@@ -322,7 +322,9 @@ class LiteAvatarHandler(BaseHandler):
             audio_array, sr = sf.read(BytesIO(audio_with_header))
             
             # 提取Paraformer特征
-            frame_cnt = int(len(audio_array) / 16000 * 30)
+            # 向上取整确保视频时长 >= 音频时长
+            import math
+            frame_cnt = math.ceil(len(audio_array) / 16000 * 30)
             au_data = await asyncio.get_event_loop().run_in_executor(
                 self.executor,
                 self._extract_paraformer_feature,
@@ -740,6 +742,7 @@ class LiteAvatarHandler(BaseHandler):
             out.release()
             
             # 使用FFmpeg合并音视频
+            # 注意：移除-shortest，让视频和音频完整合并
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_no_audio_path,
@@ -747,7 +750,6 @@ class LiteAvatarHandler(BaseHandler):
                 '-c:v', 'libx264',
                 '-c:a', 'aac',
                 '-b:a', '128k',
-                '-shortest',
                 '-movflags', 'frag_keyframe+empty_moov',
                 '-loglevel', 'error',
                 video_path
