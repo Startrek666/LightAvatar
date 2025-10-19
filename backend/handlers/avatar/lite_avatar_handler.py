@@ -37,16 +37,9 @@ class LiteAvatarHandler(BaseHandler):
     def __init__(self,
                  fps: int = 30,
                  resolution: Tuple[int, int] = (512, 512),
-                 config: Optional[Dict[str, Any]] = None):
+                 config: Optional[dict] = None):
         super().__init__(config)
-        
-        # 必须在任何PyTorch/ONNX操作之前设置线程数
-        import torch
-        torch.set_num_threads(4)
-        torch.set_num_interop_threads(2)
-        
-        # 优先使用显式参数，否则从config读取
-        self.fps = fps if fps != 30 else self.config.get("fps", 30)
+        self.fps = fps
         self.resolution = resolution
         
         # LiteAvatar核心组件
@@ -102,6 +95,10 @@ class LiteAvatarHandler(BaseHandler):
                     f"Avatar数据目录不存在: {self.data_dir}\n"
                     f"请运行: python scripts/prepare_lite_avatar_data.py --avatar {avatar_name}"
                 )
+            
+            # 配置PyTorch线程数（必须在加载任何模型之前设置）
+            torch.set_num_threads(4)
+            torch.set_num_interop_threads(2)
             
             # 2. 加载Audio2Mouth模型
             logger.info("加载Audio2Mouth模型...")
