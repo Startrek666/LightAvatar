@@ -78,16 +78,16 @@ cd /opt/lightavatar
 mkdir -p models/lite_avatar/default
 
 # 复制编码器和解码器
-cp /opt/lite-avatar/data/sample_data/net_encode.pt models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/net_decode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/net_encode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/net_decode.pt models/lite_avatar/default/
 
 # 复制其他文件
-cp /opt/lite-avatar/data/sample_data/neutral_pose.npy models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/bg_video.mp4 models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/face_box.txt models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/neutral_pose.npy models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/bg_video.mp4 models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/face_box.txt models/lite_avatar/default/
 
 # 复制参考帧目录
-cp -r /opt/lite-avatar/data/sample_data/ref_frames models/lite_avatar/default/
+cp -r /opt/lite-avatar/data/preload/ref_frames models/lite_avatar/default/
 
 # 验证数据
 ls -lh models/lite_avatar/default/
@@ -122,14 +122,23 @@ pip install modelscope
 
 # 3. 运行官方下载脚本
 bash download_model.sh
+# 脚本会下载3个文件：
+# - model_1.onnx (~140MB) - Audio2Mouth模型 ✅ 需要
+# - lm.pb (~10MB) - Paraformer语言模型 ❌ 不需要
+# - model.pb (~400MB) - Paraformer ASR模型 ❌ 不需要
 
-# 4. 复制model_1.onnx到lightweight-avatar-chat
+# 4. 只复制model_1.onnx到lightweight-avatar-chat
 cp weights/model_1.onnx /opt/lightavatar/models/lite_avatar/
 
 # 验证
 ls -lh /opt/lightavatar/models/lite_avatar/model_1.onnx
 # 应该显示约140MB
 ```
+
+**说明**：
+- ✅ lightweight-avatar-chat 使用自己的ASR（Faster-Whisper/Skynet），不需要Paraformer
+- ✅ 只需要 `model_1.onnx` 用于音频特征→口型参数转换
+- ✅ 可选：删除不需要的Paraformer模型节省空间（~410MB）
 
 #### 方式2：手动从ModelScope下载
 

@@ -238,7 +238,6 @@ class LiteAvatarHandler(BaseHandler):
                 x = self.encoder(encoder_input)
             self.ref_img_list.append(x)
     
-    @timer("lite_avatar_process")
     async def process(self, data: Dict[str, Any]) -> bytes:
         """
         处理音频生成数字人视频
@@ -249,30 +248,29 @@ class LiteAvatarHandler(BaseHandler):
         Returns:
             视频字节流（MP4格式）
         """
-        try:
-            audio_data = data.get("audio_data")
-            if not audio_data:
-                raise ValueError("缺少audio_data参数")
-            
-            # 1. 音频转参数
-            logger.info("提取口型参数...")
-            param_res = await self._audio_to_params(audio_data)
-            
-            # 2. 参数转视频帧
-            logger.info(f"渲染{len(param_res)}帧...")
-            frames = await self._params_to_frames(param_res)
-            
-            # 3. 合成视频
-            logger.info("合成视频...")
-            video_data = await self._frames_to_video(frames, audio_data)
-            
-            avatar_processing_time.observe(len(param_res) / self.fps)
-            
-            return video_data
-            
-        except Exception as e:
-            logger.error(f"LiteAvatar处理失败: {e}")
-            raise
+        with timer(avatar_processing_time):
+            try:
+                audio_data = data.get("audio_data")
+                if not audio_data:
+                    raise ValueError("缺少audio_data参数")
+                
+                # 1. 音频转参数
+                logger.info("提取口型参数...")
+                param_res = await self._audio_to_params(audio_data)
+                
+                # 2. 参数转视频帧
+                logger.info(f"渲染{len(param_res)}帧...")
+                frames = await self._params_to_frames(param_res)
+                
+                # 3. 合成视频
+                logger.info("合成视频...")
+                video_data = await self._frames_to_video(frames, audio_data)
+                
+                return video_data
+                
+            except Exception as e:
+                logger.error(f"LiteAvatar处理失败: {e}")
+                raise
     
     async def _audio_to_params(self, audio_data: bytes) -> List[Dict[str, float]]:
         """音频转口型参数"""

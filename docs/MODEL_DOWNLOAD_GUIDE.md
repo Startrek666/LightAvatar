@@ -50,7 +50,7 @@ cd /opt/lite-avatar/data
 # 验证文件存在
 ls -lh sample_data.zip  # 应该显示 ~500MB
 
-# 解压示例数据
+# 解压示例数据（解压后目录名为preload）
 unzip sample_data.zip
 ```
 
@@ -66,14 +66,14 @@ cd /opt/lightavatar
 mkdir -p models/lite_avatar/default
 
 # 复制Avatar数据
-cp /opt/lite-avatar/data/sample_data/net_encode.pt models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/net_decode.pt models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/neutral_pose.npy models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/bg_video.mp4 models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/face_box.txt models/lite_avatar/default/
-cp -r /opt/lite-avatar/data/sample_data/ref_frames models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/net_encode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/net_decode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/neutral_pose.npy models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/bg_video.mp4 models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/face_box.txt models/lite_avatar/default/
+cp -r /opt/lite-avatar/data/preload/ref_frames models/lite_avatar/default/
 
-# 复制模型文件
+# 复制Audio2Mouth模型（只需要这一个）
 cp /opt/lite-avatar/weights/model_1.onnx models/lite_avatar/
 
 # 验证

@@ -17,12 +17,12 @@ unzip sample_data.zip
 cd /opt/lightavatar
 mkdir -p models/lite_avatar/default
 
-cp /opt/lite-avatar/data/sample_data/net_encode.pt models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/net_decode.pt models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/neutral_pose.npy models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/bg_video.mp4 models/lite_avatar/default/
-cp /opt/lite-avatar/data/sample_data/face_box.txt models/lite_avatar/default/
-cp -r /opt/lite-avatar/data/sample_data/ref_frames models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/net_encode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/net_decode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/neutral_pose.npy models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/bg_video.mp4 models/lite_avatar/default/
+cp /opt/lite-avatar/data/preload/face_box.txt models/lite_avatar/default/
+cp -r /opt/lite-avatar/data/preload/ref_frames models/lite_avatar/default/
 
 # 验证
 ls -lh models/lite_avatar/default/
