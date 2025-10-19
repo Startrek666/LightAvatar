@@ -272,6 +272,23 @@ class LiteAvatarHandler(BaseHandler):
                 logger.error(f"LiteAvatar处理失败: {e}")
                 raise
     
+    async def generate(self, audio_data: bytes, template_path: str = None) -> bytes:
+        """
+        生成数字人视频（公共接口）
+        
+        Args:
+            audio_data: 音频字节流（来自TTS）
+            template_path: 模板路径（LiteAvatar不使用此参数）
+        
+        Returns:
+            MP4视频字节流
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        # 调用process方法
+        return await self.process({"audio_data": audio_data})
+    
     async def _audio_to_params(self, audio_data: bytes) -> List[Dict[str, float]]:
         """音频转口型参数"""
         try:
