@@ -570,6 +570,8 @@ class LiteAvatarHandler(BaseHandler):
     
     async def _params_to_frames(self, param_res: List[Dict[str, float]]) -> List[np.ndarray]:
         """参数转视频帧"""
+        logger.debug(f"开始渲染 {len(param_res)} 个参数帧")
+        
         # 清空队列
         while not self.input_queue.empty():
             try:
@@ -593,14 +595,24 @@ class LiteAvatarHandler(BaseHandler):
             
             self.input_queue.put((params, bg_frame_id, ii))
         
+        logger.debug(f"已提交 {len(param_res)} 个渲染任务到队列")
+        
         # 等待渲染完成
         frames = []
-        for _ in range(len(param_res)):
-            frame_data = await asyncio.get_event_loop().run_in_executor(
-                None,
-                self.output_queue.get
-            )
-            frames.append(frame_data)
+        for i in range(len(param_res)):
+            try:
+                frame_data = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    self.output_queue.get
+                )
+                frames.append(frame_data)
+                if (i + 1) % 10 == 0:
+                    logger.debug(f"已接收 {i + 1}/{len(param_res)} 帧")
+            except Exception as e:
+                logger.error(f"等待渲染帧 {i} 失败: {e}")
+                raise
+        
+        logger.debug(f"所有 {len(frames)} 帧渲染完成，开始排序")
         
         # 按帧ID排序
         frames.sort(key=lambda x: x[0])
@@ -609,6 +621,8 @@ class LiteAvatarHandler(BaseHandler):
     def _render_loop(self, thread_id: int, barrier: threading.Barrier,
                     in_queue: queue.Queue, out_queue: queue.Queue):
         """渲染循环（在独立线程中运行）"""
+        logger.debug(f"渲染线程 {thread_id} 已启动")
+        
         while True:
             try:
                 data = in_queue.get(timeout=1)
@@ -616,17 +630,26 @@ class LiteAvatarHandler(BaseHandler):
                 continue
             
             if data is None:
+                logger.debug(f"渲染线程 {thread_id} 收到终止信号")
                 break
             
-            params, bg_frame_id, global_frame_id = data
-            
-            # 参数转图像
-            mouth_img = self._param_to_image(params, bg_frame_id)
-            
-            # 融合到背景
-            full_img, _ = self._merge_mouth_to_bg(mouth_img, bg_frame_id)
-            
-            out_queue.put((global_frame_id, full_img))
+            try:
+                params, bg_frame_id, global_frame_id = data
+                
+                # 参数转图像
+                mouth_img = self._param_to_image(params, bg_frame_id)
+                
+                # 融合到背景
+                full_img, _ = self._merge_mouth_to_bg(mouth_img, bg_frame_id)
+                
+                out_queue.put((global_frame_id, full_img))
+                
+            except Exception as e:
+                logger.error(f"渲染线程 {thread_id} 渲染帧 {global_frame_id} 失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # 放入一个空帧，避免卡住
+                out_queue.put((global_frame_id, np.zeros((512, 512, 3), dtype=np.uint8)))
     
     def _param_to_image(self, params: Dict[str, float], bg_frame_id: int) -> torch.Tensor:
         """参数转嘴部图像"""
