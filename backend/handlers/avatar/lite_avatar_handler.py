@@ -442,11 +442,26 @@ class LiteAvatarHandler(BaseHandler):
             input_au = input_au[np.newaxis, :].astype(np.float32)
             input_ph = input_ph[np.newaxis, :].astype(np.float32)
             
+            # Debug: 打印输入形状
+            logger.debug(f"ONNX输入形状 - input_au: {input_au.shape}, input_ph: {input_ph.shape}")
+            
             # 推理
-            output, feat = self.audio2mouth.run(
-                ['output', 'feat'],
-                {'input_au': input_au, 'input_ph': input_ph, 'input_sp': sp, 'w': w}
-            )
+            try:
+                output, feat = self.audio2mouth.run(
+                    ['output', 'feat'],
+                    {'input_au': input_au, 'input_ph': input_ph, 'input_sp': sp, 'w': w}
+                )
+            except Exception as e:
+                # 打印模型期望的输入形状
+                logger.error(f"ONNX推理失败: {e}")
+                logger.error(f"当前输入形状: input_au={input_au.shape}, input_ph={input_ph.shape}")
+                # 尝试获取模型输入规格
+                try:
+                    for inp in self.audio2mouth.get_inputs():
+                        logger.error(f"模型期望输入 '{inp.name}': shape={inp.shape}, type={inp.type}")
+                except:
+                    pass
+                raise
             
             # 提取参数
             if start_time == 0.0:
