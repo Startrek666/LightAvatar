@@ -545,10 +545,8 @@ class LiteAvatarHandler(BaseHandler):
             if is_end:
                 break
         
-        # 截断到实际帧数（去除padding产生的多余帧）
-        if len(param_res) > actual_frame_count:
-            logger.debug(f"截断帧数：{len(param_res)} → {actual_frame_count}")
-            param_res = param_res[:actual_frame_count]
+        # 推理逻辑已经根据audio_length正确生成了帧数，不需要额外截断
+        logger.debug(f"推理生成 {len(param_res)} 帧参数（音频特征帧数: {actual_frame_count}）")
         
         # 平滑处理
         param_res = self._smooth_params(param_res)
