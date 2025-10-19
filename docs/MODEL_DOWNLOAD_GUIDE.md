@@ -16,57 +16,70 @@
 
 ### 前提条件
 ```bash
-# 确保已克隆lite-avatar-main
-cd d:/Aprojects/Light-avatar
-git clone https://github.com/HumanAIGC/lite-avatar.git lite-avatar-main
+# 克隆 lite-avatar 仓库（包含示例数据）
+cd /opt
+git clone https://github.com/HumanAIGC/lite-avatar.git
 # 或国内镜像
-git clone https://gitee.com/mirrors/lite-avatar.git lite-avatar-main
+git clone https://gitee.com/mirrors/lite-avatar.git
 
 # 安装modelscope CLI
 pip install modelscope
 ```
 
-### 步骤1：下载所有模型到lite-avatar-main
+### 步骤1：下载Audio2Mouth模型
 
 ```bash
-cd d:/Aprojects/Light-avatar/lite-avatar-main
+cd /opt/lite-avatar
 
-# Windows系统
-download_model.bat
-
-# Linux/Mac系统
+# 运行下载脚本
 bash download_model.sh
 ```
 
 **这个脚本会自动下载：**
-- ✅ `model_1.onnx` → `weights/model_1.onnx`
-- ✅ `lm.pb` → `weights/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/lm/`
-- ✅ `model.pb` → `weights/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/`
+- ✅ `model_1.onnx` → `weights/model_1.onnx` (~140MB)
+- ✅ `lm.pb` → `weights/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/lm/` (~10MB)
+- ✅ `model.pb` → `weights/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/` (~400MB)
 
-### 步骤2：准备Avatar数据
+### 步骤2：准备Avatar数据（使用仓库自带示例数据）
+
+**重要**：`sample_data.zip` 已包含在 lite-avatar 仓库中！
 
 ```bash
-cd d:/Aprojects/Light-avatar/lite-avatar-main/data
+cd /opt/lite-avatar/data
 
-# 手动下载sample_data.zip
-# 访问：https://modelscope.cn/models/HumanAIGC-Engineering/LiteAvatarGallery
-# 下载后放置到此目录
+# 验证文件存在
+ls -lh sample_data.zip  # 应该显示 ~500MB
+
+# 解压示例数据
+unzip sample_data.zip
 ```
+
+**说明**：
+- ✅ `sample_data.zip` 已在仓库的 `data/` 目录中
+- ✅ 无需额外下载，克隆仓库时已包含
+- ✅ 包含完整的示例Avatar数据（编码器、背景视频、参考帧等）
 
 ### 步骤3：复制到lightweight-avatar-chat
 
 ```bash
-cd d:/Aprojects/Light-avatar/lightweight-avatar-chat
+cd /opt/lightavatar
+mkdir -p models/lite_avatar/default
 
-# 运行准备脚本，自动复制所有文件
-python scripts/prepare_lite_avatar_data.py
+# 复制Avatar数据
+cp /opt/lite-avatar/data/sample_data/net_encode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/sample_data/net_decode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/sample_data/neutral_pose.npy models/lite_avatar/default/
+cp /opt/lite-avatar/data/sample_data/bg_video.mp4 models/lite_avatar/default/
+cp /opt/lite-avatar/data/sample_data/face_box.txt models/lite_avatar/default/
+cp -r /opt/lite-avatar/data/sample_data/ref_frames models/lite_avatar/default/
+
+# 复制模型文件
+cp /opt/lite-avatar/weights/model_1.onnx models/lite_avatar/
+
+# 验证
+ls -lh models/lite_avatar/
+ls -lh models/lite_avatar/default/
 ```
-
-**准备脚本会自动：**
-1. 解压 `sample_data.zip`
-2. 复制Avatar数据到 `models/lite_avatar/default/`
-3. 从 `lite-avatar-main/weights/` 复制 `model_1.onnx`
-4. 验证数据完整性
 
 ---
 

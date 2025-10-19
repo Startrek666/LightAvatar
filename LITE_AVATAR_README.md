@@ -48,8 +48,17 @@ avatar:
 ### 1. 准备数据
 
 ```bash
-# 运行数据准备脚本
-python scripts/prepare_lite_avatar_data.py
+# 克隆lite-avatar并解压示例数据
+cd /opt
+git clone https://github.com/HumanAIGC/lite-avatar.git
+cd lite-avatar/data
+unzip sample_data.zip
+
+# 复制到lightweight-avatar-chat
+cd /opt/lightavatar
+mkdir -p models/lite_avatar/default
+cp /opt/lite-avatar/data/sample_data/* models/lite_avatar/default/
+cp -r /opt/lite-avatar/data/sample_data/ref_frames models/lite_avatar/default/
 ```
 
 ### 2. 下载模型
@@ -137,8 +146,8 @@ python scripts/test_lite_avatar.py
 
 **Q: 找不到Avatar数据目录？**
 ```bash
-# 运行数据准备脚本
-python scripts/prepare_lite_avatar_data.py
+# 检查目录是否存在
+ls -lh /opt/lightavatar/models/lite_avatar/default/
 ```
 
 **Q: 找不到model_1.onnx？**

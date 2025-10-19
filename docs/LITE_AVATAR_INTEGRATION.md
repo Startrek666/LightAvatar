@@ -60,46 +60,75 @@ models/lite_avatar/default/
 
 **获取方式：**
 
-#### 方式1：从 lite-avatar-main 复制（推荐）
+#### 方式1：使用仓库自带的示例数据（推荐）⭐
+
+lite-avatar 官方仓库中已包含示例数据，这是最简单的方式：
 
 ```bash
-# 使用准备脚本自动复制
-python scripts/prepare_lite_avatar_data.py \
-    --lite-avatar-path "d:/Aprojects/Light-avatar/lite-avatar-main" \
-    --avatar default
+# 1. 克隆 lite-avatar 仓库
+cd /opt
+git clone https://github.com/HumanAIGC/lite-avatar.git
+
+# 2. 解压示例数据（仓库中已包含 sample_data.zip，约500MB）
+cd lite-avatar/data
+unzip sample_data.zip
+
+# 3. 复制Avatar数据到lightweight-avatar-chat
+cd /opt/lightavatar
+mkdir -p models/lite_avatar/default
+
+# 复制编码器和解码器
+cp /opt/lite-avatar/data/sample_data/net_encode.pt models/lite_avatar/default/
+cp /opt/lite-avatar/data/sample_data/net_decode.pt models/lite_avatar/default/
+
+# 复制其他文件
+cp /opt/lite-avatar/data/sample_data/neutral_pose.npy models/lite_avatar/default/
+cp /opt/lite-avatar/data/sample_data/bg_video.mp4 models/lite_avatar/default/
+cp /opt/lite-avatar/data/sample_data/face_box.txt models/lite_avatar/default/
+
+# 复制参考帧目录
+cp -r /opt/lite-avatar/data/sample_data/ref_frames models/lite_avatar/default/
+
+# 验证数据
+ls -lh models/lite_avatar/default/
 ```
 
-#### 方式2：从 ModelScope 下载
+**说明**：
+- ✅ `sample_data.zip` 已包含在仓库中（~500MB）
+- ✅ 包含完整的示例Avatar数据（编码器、背景视频、参考帧等）
+- ✅ 无需额外下载，克隆仓库即可获得
+
+#### 方式2：从 ModelScope 下载（备选）
+
+如果不想克隆完整仓库：
 
 ```bash
-# 访问 ModelScope 下载 Avatar 数据
+# 访问 ModelScope 下载 Avatar 数据包
 # https://modelscope.cn/models/HumanAIGC-Engineering/LiteAvatarGallery
 
-# 解压到 models/lite_avatar/default/
+# 下载后解压到 /opt/lightavatar/models/lite_avatar/default/
 ```
 
 ### 3. 下载 Audio2Mouth 模型
 
-#### 方式1：使用官方脚本（推荐）⭐
+#### 方式1：使用官方下载脚本（推荐）⭐
 
 ```bash
-# 1. 进入lite-avatar-main目录
-cd d:/Aprojects/Light-avatar/lite-avatar-main
+# 1. 进入lite-avatar目录
+cd /opt/lite-avatar
 
 # 2. 安装modelscope CLI（如果未安装）
 pip install modelscope
 
 # 3. 运行官方下载脚本
-# Windows:
-download_model.bat
-
-# Linux/Mac:
 bash download_model.sh
 
-# 4. 脚本会自动下载model_1.onnx到weights目录
-# 重新运行准备脚本，会自动复制
-cd ../lightweight-avatar-chat
-python scripts/prepare_lite_avatar_data.py
+# 4. 复制model_1.onnx到lightweight-avatar-chat
+cp weights/model_1.onnx /opt/lightavatar/models/lite_avatar/
+
+# 验证
+ls -lh /opt/lightavatar/models/lite_avatar/model_1.onnx
+# 应该显示约140MB
 ```
 
 #### 方式2：手动从ModelScope下载
@@ -109,23 +138,20 @@ python scripts/prepare_lite_avatar_data.py
 # https://modelscope.cn/models/HumanAIGC-Engineering/LiteAvatar/files
 
 # 下载后放置到
-# models/lite_avatar/model_1.onnx
+# /opt/lightavatar/models/lite_avatar/model_1.onnx
 ```
 
-#### 方式3：克隆仓库后下载
+#### 方式3：使用modelscope命令行工具
 
 ```bash
-# 克隆官方仓库（如果还没有）
-git clone https://github.com/HumanAIGC/lite-avatar.git
-cd lite-avatar
+cd /opt/lightavatar
 
-# 安装依赖
+# 使用modelscope CLI直接下载
 pip install modelscope
-
-# 运行下载脚本
-bash download_model.sh  # Linux/Mac
-# 或
-download_model.bat      # Windows
+modelscope download \
+    --model HumanAIGC-Engineering/LiteAvatar \
+    lite_avatar_weights/model_1.onnx \
+    --local_dir ./models/lite_avatar
 ```
 
 ## ⚙️ 配置
