@@ -312,8 +312,10 @@ class Session:
             audio_bytes = await self.tts_handler.synthesize(sentence)
             
             if not audio_bytes:
-                logger.warning("TTS returned empty audio")
+                logger.warning(f"TTS returned empty audio for: {sentence[:30]}...")
                 return
+            
+            logger.debug(f"TTS完成，音频大小: {len(audio_bytes)} bytes")
             
             # Avatar generation
             video_bytes = await self.avatar_handler.generate(
@@ -322,8 +324,10 @@ class Session:
             )
             
             if not video_bytes:
-                logger.warning("Avatar generation returned empty video")
+                logger.warning(f"Avatar generation returned empty video for: {sentence[:30]}...")
                 return
+            
+            logger.debug(f"视频生成完成，大小: {len(video_bytes)} bytes")
             
             # Send video chunk to client
             await callback("video_chunk", {
@@ -332,10 +336,12 @@ class Session:
                 "text": sentence
             })
             
-            logger.info(f"Sentence processed: {len(video_bytes)} bytes video")
+            logger.info(f"Sentence processed: {len(video_bytes)} bytes video - '{sentence[:30]}...'")
             
         except Exception as e:
             logger.error(f"Error processing sentence '{sentence[:30]}...': {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             # Don't fail the whole stream, just log the error
     
     async def update_config(self, config: dict):
