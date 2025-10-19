@@ -415,6 +415,8 @@ class LiteAvatarHandler(BaseHandler):
     def _inference_mouth_params(self, au_data: np.ndarray, ph_data: np.ndarray) -> List[Dict[str, float]]:
         """推理口型参数（使用官方逻辑）"""
         param_res = []
+        # 记录实际帧数（用于截断padding的帧）
+        actual_frame_count = au_data.shape[0]
         audio_length = ph_data.shape[0] / 30
         interval = 1.0
         frag = int(interval * 30 / 5 + 0.5)
@@ -518,6 +520,11 @@ class LiteAvatarHandler(BaseHandler):
             end_time = start_time + interval
             if is_end:
                 break
+        
+        # 截断到实际帧数（去除padding产生的多余帧）
+        if len(param_res) > actual_frame_count:
+            logger.debug(f"截断帧数：{len(param_res)} → {actual_frame_count}")
+            param_res = param_res[:actual_frame_count]
         
         # 平滑处理
         param_res = self._smooth_params(param_res)
