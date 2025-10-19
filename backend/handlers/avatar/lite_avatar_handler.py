@@ -348,10 +348,57 @@ class LiteAvatarHandler(BaseHandler):
             from extract_paraformer_feature import extract_para_feature
             return extract_para_feature(audio_array, frame_cnt)
             
-        except ImportError as e:
-            logger.error(f"无法导入Paraformer特征提取: {e}")
-            # Fallback: 返回零特征
-            return np.zeros((frame_cnt, 560))
+        except Exception as e:
+            logger.warning(f"Paraformer特征提取失败，使用MFCC替代: {e}")
+            # Fallback: 使用librosa提取MFCC特征
+            return self._extract_mfcc_feature(audio_array, frame_cnt)
+    
+    def _extract_mfcc_feature(self, audio_array: np.ndarray, frame_cnt: int) -> np.ndarray:
+        """使用MFCC作为音频特征的fallback"""
+        try:
+            import librosa
+            
+            # 提取MFCC特征（560维对应Paraformer特征维度）
+            # 使用更多的MFCC系数来匹配560维
+            n_mfcc = 80  # MFCC系数数量
+            
+            # 计算每帧对应的采样数
+            hop_length = len(audio_array) // frame_cnt if frame_cnt > 0 else 512
+            
+            # 提取MFCC
+            mfcc = librosa.feature.mfcc(
+                y=audio_array,
+                sr=16000,
+                n_mfcc=n_mfcc,
+                hop_length=hop_length,
+                n_fft=2048
+            )
+            
+            # 转置为 (frames, features)
+            mfcc = mfcc.T
+            
+            # 调整到目标帧数
+            if mfcc.shape[0] != frame_cnt:
+                from scipy import interpolate
+                x = np.linspace(0, frame_cnt - 1, mfcc.shape[0])
+                x_new = np.arange(frame_cnt)
+                f = interpolate.interp1d(x, mfcc, axis=0, kind='linear', fill_value='extrapolate')
+                mfcc = f(x_new)
+            
+            # Padding到560维
+            if mfcc.shape[1] < 560:
+                pad_width = 560 - mfcc.shape[1]
+                mfcc = np.pad(mfcc, ((0, 0), (0, pad_width)), mode='constant')
+            else:
+                mfcc = mfcc[:, :560]
+            
+            logger.info(f"使用MFCC特征替代Paraformer: shape={mfcc.shape}")
+            return mfcc.astype(np.float32)
+            
+        except Exception as e:
+            logger.error(f"MFCC提取失败: {e}")
+            # 最后的fallback：零特征
+            return np.zeros((frame_cnt, 560), dtype=np.float32)
     
     def _inference_mouth_params(self, au_data: np.ndarray, ph_data: np.ndarray) -> List[Dict[str, float]]:
         """推理口型参数（使用官方逻辑）"""
