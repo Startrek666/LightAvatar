@@ -439,7 +439,9 @@ class LiteAvatarHandler(BaseHandler):
                     start_frame = 0
                     # Padding到30帧
                     pad_size = 30 - end_frame
-                    input_au = np.pad(au_data, ((0, pad_size), (0, 0)), mode='edge')
+                    # au_data是3D (frames, 50, 512)，需要3个维度的padding
+                    input_au = np.pad(au_data, ((0, pad_size), (0, 0), (0, 0)), mode='edge')
+                    # ph_data是2D (frames, 2)，需要2个维度的padding
                     input_ph = np.pad(ph_data, ((0, pad_size), (0, 0)), mode='edge')
                 else:
                     start_frame = end_frame - int(30 * interval)
