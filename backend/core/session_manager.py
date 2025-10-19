@@ -244,6 +244,7 @@ class Session:
             # Stream LLM response
             full_response = ""
             sentence_buffer = ""
+            pending_sentences = []
             
             async for chunk in self.llm_handler.stream_response(text, self.conversation_history):
                 full_response += chunk
@@ -254,17 +255,17 @@ class Session:
                 
                 # Check if we have a complete sentence
                 if self._is_sentence_end(sentence_buffer):
-                    # Process this sentence immediately
-                    asyncio.create_task(
-                        self._process_sentence(sentence_buffer.strip(), callback)
-                    )
+                    # 收集句子，稍后顺序处理
+                    pending_sentences.append(sentence_buffer.strip())
                     sentence_buffer = ""
             
-            # Process any remaining text
+            # Collect any remaining text
             if sentence_buffer.strip():
-                asyncio.create_task(
-                    self._process_sentence(sentence_buffer.strip(), callback)
-                )
+                pending_sentences.append(sentence_buffer.strip())
+            
+            # 顺序处理所有句子（确保播放顺序正确）
+            for sentence in pending_sentences:
+                await self._process_sentence(sentence, callback)
             
             # Add complete response to history
             self.conversation_history.append({

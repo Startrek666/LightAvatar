@@ -135,14 +135,21 @@ class LiteAvatarHandler(BaseHandler):
                     f"请运行: bash scripts/download_lite_avatar_models.sh"
                 )
             
+            # 配置ONNX推理选项
+            sess_options = onnxruntime.SessionOptions()
+            sess_options.intra_op_num_threads = 4  # 算子内部并行线程数
+            sess_options.inter_op_num_threads = 2  # 算子之间并行线程数
+            sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+            
             # 创建ONNX推理会话
             provider = "CUDAExecutionProvider" if self.use_gpu else "CPUExecutionProvider"
             self.audio2mouth = onnxruntime.InferenceSession(
                 str(model_path),
+                sess_options=sess_options,
                 providers=[provider]
             )
             
-            logger.info(f"Audio2Mouth模型已加载: {provider}")
+            logger.info(f"Audio2Mouth模型已加载: {provider} (CPU线程: {sess_options.intra_op_num_threads})")
             
         except ImportError:
             logger.error("缺少依赖: onnxruntime，请运行: pip install onnxruntime")
@@ -150,6 +157,10 @@ class LiteAvatarHandler(BaseHandler):
     
     async def _load_avatar_model(self):
         """加载Avatar编码器和生成器"""
+        # 配置PyTorch CPU线程数
+        torch.set_num_threads(4)
+        torch.set_num_interop_threads(2)
+        
         # 加载编解码器模型
         encoder_path = self.data_dir / "net_encode.pt"
         decoder_path = self.data_dir / "net_decode.pt"
@@ -248,6 +259,9 @@ class LiteAvatarHandler(BaseHandler):
         Returns:
             视频字节流（MP4格式）
         """
+        import time
+        start_total = time.time()
+        
         with timer(avatar_processing_time):
             try:
                 audio_data = data.get("audio_data")
@@ -256,15 +270,23 @@ class LiteAvatarHandler(BaseHandler):
                 
                 # 1. 音频转参数
                 logger.info("提取口型参数...")
+                start = time.time()
                 param_res = await self._audio_to_params(audio_data)
+                logger.debug(f"口型参数提取耗时: {time.time() - start:.2f}秒")
                 
                 # 2. 参数转视频帧
                 logger.info(f"渲染{len(param_res)}帧...")
+                start = time.time()
                 frames = await self._params_to_frames(param_res)
+                logger.debug(f"帧渲染耗时: {time.time() - start:.2f}秒")
                 
                 # 3. 合成视频
                 logger.info("合成视频...")
+                start = time.time()
                 video_data = await self._frames_to_video(frames, audio_data)
+                logger.debug(f"视频合成耗时: {time.time() - start:.2f}秒")
+                
+                logger.info(f"总耗时: {time.time() - start_total:.2f}秒")
                 
                 return video_data
                 
