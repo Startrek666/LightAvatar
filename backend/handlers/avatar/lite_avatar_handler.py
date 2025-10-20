@@ -244,6 +244,9 @@ class LiteAvatarHandler(BaseHandler):
         self.merge_mask[10:-10, 10:-10, :] *= 0
         self.merge_mask = cv2.GaussianBlur(self.merge_mask, (21, 21), 15)
         self.merge_mask = self.merge_mask / 255
+        logger.info(
+            f"脸部ROI: y=({self.y1},{self.y2}), x=({self.x1},{self.x2}), mask形状={self.merge_mask.shape}"
+        )
     
     async def _load_reference_frames(self):
         """加载并编码参考帧"""
@@ -696,6 +699,10 @@ class LiteAvatarHandler(BaseHandler):
                 
                 # 参数转图像
                 mouth_img = self._param_to_image(params, bg_frame_id)
+                mouth_np = mouth_img.clamp(0, 1).mean().item() if isinstance(mouth_img, torch.Tensor) else 0
+                logger.debug(
+                    f"帧{global_frame_id} 嘴部张量均值: {mouth_np:.4f}"
+                )
                 
                 # 融合到背景
                 full_img, _ = self._merge_mouth_to_bg(mouth_img, bg_frame_id)
