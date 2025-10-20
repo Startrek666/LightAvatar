@@ -3,6 +3,7 @@ import { ref, onUnmounted } from 'vue'
 export function useWebSocket() {
     const ws = ref<WebSocket | null>(null)
     const isConnected = ref(false)
+    const shouldReconnect = ref(true)
     const messageHandler = ref<((data: any) => void) | null>(null)
     const binaryHandler = ref<((data: Blob) => void) | null>(null)
 
@@ -10,6 +11,9 @@ export function useWebSocket() {
         if (ws.value?.readyState === WebSocket.OPEN) {
             return
         }
+
+        // Reset reconnect flag when manually connecting
+        shouldReconnect.value = true
 
         // Build WebSocket URL
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -60,12 +64,14 @@ export function useWebSocket() {
             console.log('WebSocket disconnected')
             isConnected.value = false
 
-            // Attempt to reconnect after 3 seconds
-            setTimeout(() => {
-                if (!isConnected.value) {
-                    connect(url, messageHandler.value || undefined)
-                }
-            }, 3000)
+            // Attempt to reconnect after 3 seconds if allowed
+            if (shouldReconnect.value) {
+                setTimeout(() => {
+                    if (!isConnected.value && shouldReconnect.value) {
+                        connect(url, messageHandler.value || undefined)
+                    }
+                }, 3000)
+            }
         }
     }
 
@@ -93,6 +99,7 @@ export function useWebSocket() {
         connect,
         disconnect,
         send,
-        isConnected
+        isConnected,
+        shouldReconnect
     }
 }

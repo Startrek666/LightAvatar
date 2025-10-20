@@ -453,6 +453,9 @@ class SessionManager:
                         "reason": "inactive",
                         "timeout_seconds": settings.SESSION_TIMEOUT
                     })
+                    logger.info(f"Sent session timeout notification to {session_id}")
+                    # Wait for message to be sent before disconnecting
+                    await asyncio.sleep(0.2)
                 except Exception as e:
                     logger.warning(f"Failed to notify session timeout for {session_id}: {e}")
                 finally:

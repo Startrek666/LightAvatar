@@ -122,7 +122,7 @@ import { useAudioRecorder } from '@/composables/useAudioRecorder'
 // import { useChatStore } from '@/store/chat' // 暂未使用，保留以备将来功能扩展
 
 // const chatStore = useChatStore()
-const { connect, disconnect, send, isConnected } = useWebSocket()
+const { connect, disconnect, send, isConnected, shouldReconnect } = useWebSocket()
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
 
 // Refs
@@ -297,8 +297,11 @@ const handleWebSocketMessage = (data: any) => {
     }
   }
   else if (data.type === 'session_timeout') {
+    console.log('Received session_timeout notification:', data)
     const timeoutSeconds = data.timeout_seconds || settings.value.session_timeout || 300
-    message.warning(`会话已超过 ${timeoutSeconds} 秒无操作，请刷新页面或重新进入继续对话`)
+    message.warning(`会话已超过 ${timeoutSeconds} 秒无操作，请刷新页面或重新进入继续对话`, 0)
+    // Stop auto-reconnect
+    shouldReconnect.value = false
     disconnect()
   }
   else if (data.type === 'video_chunk_meta') {
