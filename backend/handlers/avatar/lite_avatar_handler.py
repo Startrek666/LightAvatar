@@ -677,7 +677,17 @@ class LiteAvatarHandler(BaseHandler):
         
         # 按帧ID排序
         frames.sort(key=lambda x: x[0])
-        return [f[1] for f in frames]
+        result = [f[1] for f in frames]
+        
+        # 清理PyTorch缓存释放内存
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        # CPU模式下强制垃圾回收
+        import gc
+        gc.collect()
+        
+        return result
     
     def _render_loop(self, thread_id: int, barrier: threading.Barrier,
                     in_queue: queue.Queue, out_queue: queue.Queue):
@@ -700,8 +710,8 @@ class LiteAvatarHandler(BaseHandler):
                 # 参数转图像
                 mouth_img = self._param_to_image(params, bg_frame_id)
                 mouth_np = mouth_img.clamp(0, 1).mean().item() if isinstance(mouth_img, torch.Tensor) else 0
-                logger.debug(
-                    f"帧{global_frame_id} 嘴部张量均值: {mouth_np:.4f}"
+                logger.info(
+                    f"帧{global_frame_id}(bg={bg_frame_id}) 嘴部张量均值: {mouth_np:.4f}"
                 )
                 
                 # 融合到背景
@@ -718,6 +728,15 @@ class LiteAvatarHandler(BaseHandler):
     
     def _param_to_image(self, params: Dict[str, float], bg_frame_id: int) -> torch.Tensor:
         """参数转嘴部图像"""
+        # 边界检查
+        if not self.ref_img_list or bg_frame_id >= len(self.ref_img_list):
+            logger.error(
+                f"ref_img_list访问越界: bg_frame_id={bg_frame_id}, "
+                f"ref_img_list长度={len(self.ref_img_list) if self.ref_img_list else 0}"
+            )
+            # 返回零张量避免崩溃
+            return torch.zeros((1, 3, 384, 384))
+        
         param_val = np.array([params[key] for key in self.p_list])
         
         with torch.no_grad():

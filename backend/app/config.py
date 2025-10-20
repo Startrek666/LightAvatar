@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     WS_MESSAGE_QUEUE_SIZE: int = Field(default=100, description="WebSocket message queue size")
     
     # System resources
-    MAX_MEMORY_MB: int = Field(default=4096, description="Maximum memory usage in MB")
+    MAX_MEMORY_MB: int = Field(default=10240, description="Maximum memory usage in MB")
     MAX_SESSIONS: int = Field(default=10, description="Maximum concurrent sessions")
     SESSION_TIMEOUT: int = Field(default=300, description="Session timeout in seconds")
     
