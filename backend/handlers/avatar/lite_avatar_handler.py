@@ -388,6 +388,8 @@ class LiteAvatarHandler(BaseHandler):
                 audio_array,
                 frame_cnt
             )
+            # 清理特征中的NaN/Inf，避免后续推理异常
+            au_data = np.nan_to_num(au_data, nan=0.0, posinf=0.0, neginf=0.0)
             
             # 预测口型参数
             ph_data = np.zeros((au_data.shape[0], 2))
@@ -538,6 +540,10 @@ class LiteAvatarHandler(BaseHandler):
             
             input_au = input_au[np.newaxis, :].astype(np.float32)
             input_ph = input_ph[np.newaxis, :].astype(np.float32)
+
+            # 运行前再次清理NaN/Inf
+            input_au = np.nan_to_num(input_au, nan=0.0, posinf=0.0, neginf=0.0)
+            input_ph = np.nan_to_num(input_ph, nan=0.0, posinf=0.0, neginf=0.0)
             
             # Debug: 打印输入形状
             logger.debug(f"ONNX输入形状 - input_au: {input_au.shape}, input_ph: {input_ph.shape}")
@@ -560,6 +566,9 @@ class LiteAvatarHandler(BaseHandler):
                     pass
                 raise
             
+            # 清理推理输出中的NaN/Inf，避免后续口型为中性
+            output = np.nan_to_num(output, nan=0.0, posinf=0.0, neginf=0.0)
+
             # 提取参数
             if start_time == 0.0:
                 end_idx = int(30 * interval) if not is_end else int(30 * interval)
