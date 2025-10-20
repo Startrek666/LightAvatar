@@ -298,7 +298,7 @@ const handleWebSocketMessage = (data: any) => {
   }
   else if (data.type === 'session_timeout') {
     console.log('Received session_timeout notification:', data)
-    const timeoutSeconds = data.timeout_seconds || settings.value.session_timeout || 300
+    const timeoutSeconds = data.timeout_seconds || 300
     message.warning(`会话已超过 ${timeoutSeconds} 秒无操作，请刷新页面或重新进入继续对话`, 0)
     // Stop auto-reconnect
     shouldReconnect.value = false
