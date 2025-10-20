@@ -206,8 +206,12 @@ class LiteAvatarHandler(BaseHandler):
         # 加载背景视频
         await self._load_background_video()
         
-        # 加载参考帧
+        # 加载并编码参考帧
         await self._load_reference_frames()
+        
+        # Warm-up推理：避免第一次推理输出NaN
+        logger.info("执行模型warm-up推理...")
+        await self._warmup_model()
         
         logger.info(f"Avatar模型已加载 - 背景帧数: {self.bg_video_frame_count}, 参考帧数: {len(self.ref_img_list)}")
     
@@ -272,6 +276,27 @@ class LiteAvatarHandler(BaseHandler):
             with torch.no_grad():
                 x = self.encoder(encoder_input)
             self.ref_img_list.append(x)
+    
+    async def _warmup_model(self):
+        """执行warm-up推理避免NaN"""
+        try:
+            # 使用中性参数执行一次推理
+            neutral_params = {key: 0.0 for key in self.p_list}
+            
+            # 使用第一个参考帧
+            if self.ref_img_list:
+                with torch.no_grad():
+                    test_output = self.generator(
+                        self.ref_img_list[0],
+                        torch.zeros(1, 32).float().to(self.device)
+                    )
+                    # 检查输出
+                    if torch.isnan(test_output).any():
+                        logger.warning("Warm-up推理仍包含NaN，将在运行时处理")
+                    else:
+                        logger.info("Warm-up推理成功")
+        except Exception as e:
+            logger.warning(f"Warm-up推理失败: {e}，继续启动")
     
     async def process(self, data: Dict[str, Any]) -> bytes:
         """
@@ -739,11 +764,21 @@ class LiteAvatarHandler(BaseHandler):
         
         param_val = np.array([params[key] for key in self.p_list])
         
+        # 检测参数中的NaN
+        if np.isnan(param_val).any():
+            logger.warning(f"口型参数包含NaN，使用中性值替代")
+            param_val = np.nan_to_num(param_val, nan=0.0)
+        
         with torch.no_grad():
             output = self.generator(
                 self.ref_img_list[bg_frame_id],
                 torch.from_numpy(param_val).unsqueeze(0).float().to(self.device)
             )
+            
+            # 检测输出中的NaN
+            if torch.isnan(output).any():
+                logger.error(f"生成器输出包含NaN (bg_frame_id={bg_frame_id})，使用零张量替代")
+                output = torch.zeros_like(output)
         
         return output.detach().cpu()
     
