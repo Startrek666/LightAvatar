@@ -23,6 +23,28 @@ from backend.core.health_monitor import timer, avatar_processing_time
 from backend.utils.audio_utils import AudioProcessor
 
 
+_TORCH_THREADS_CONFIGURED = False
+_TORCH_THREADS_LOCK = threading.Lock()
+
+
+def _configure_torch_threads(intra_threads: int = 4, inter_threads: int = 2) -> None:
+    """确保PyTorch线程数只配置一次，避免重复调用导致的RuntimeError"""
+    global _TORCH_THREADS_CONFIGURED
+    if _TORCH_THREADS_CONFIGURED:
+        return
+    with _TORCH_THREADS_LOCK:
+        if _TORCH_THREADS_CONFIGURED:
+            return
+        try:
+            torch.set_num_threads(intra_threads)
+            torch.set_num_interop_threads(inter_threads)
+            logger.info(f"PyTorch线程配置: intra={intra_threads}, inter={inter_threads}")
+        except RuntimeError as exc:
+            logger.warning(f"PyTorch线程配置失败，使用默认线程设置: {exc}")
+        finally:
+            _TORCH_THREADS_CONFIGURED = True
+
+
 class LiteAvatarHandler(BaseHandler):
     """
     LiteAvatar数字人驱动Handler
@@ -96,9 +118,8 @@ class LiteAvatarHandler(BaseHandler):
                     f"请运行: python scripts/prepare_lite_avatar_data.py --avatar {avatar_name}"
                 )
             
-            # 配置PyTorch线程数（必须在加载任何模型之前设置）
-            torch.set_num_threads(4)
-            torch.set_num_interop_threads(2)
+            # 配置PyTorch线程数（确保只执行一次）
+            _configure_torch_threads()
             
             # 2. 加载Audio2Mouth模型
             logger.info("加载Audio2Mouth模型...")

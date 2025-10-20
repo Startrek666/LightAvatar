@@ -128,7 +128,7 @@ bash download_model.sh
 # - model.pb (~400MB) - Paraformer ASR模型 ❌ 不需要
 
 # 4. 只复制model_1.onnx到lightweight-avatar-chat
-cp weights/model_1.onnx /opt/lightavatar/models/lite_avatar/
+cp lite_avatar_weights/model_1.onnx /opt/lightavatar/models/lite_avatar/
 
 # 验证
 ls -lh /opt/lightavatar/models/lite_avatar/model_1.onnx
@@ -196,10 +196,10 @@ export AVATAR_NAME=default
 
 ```bash
 # 启动后端
-cd backend
-python app/main.py
+sudo systemctl restart lightavatar-backend
 
 # 查看日志确认
+sudo tail -f /var/log/lightavatar/backend.log
 # 应该看到：Using LiteAvatar engine for session xxx
 ```
 
