@@ -299,6 +299,8 @@ class LiteAvatarHandler(BaseHandler):
                 logger.info(f"渲染{len(param_res)}帧...")
                 start = time.time()
                 frames = await self._params_to_frames(param_res)
+                video_duration = len(frames) / self.fps if self.fps else 0
+                logger.info(f"视频帧数: {len(frames)}, 预期时长: {video_duration:.2f}秒")
                 logger.debug(f"帧渲染耗时: {time.time() - start:.2f}秒")
                 
                 # 3. 合成视频
@@ -335,12 +337,18 @@ class LiteAvatarHandler(BaseHandler):
     async def _audio_to_params(self, audio_data: bytes) -> List[Dict[str, float]]:
         """音频转口型参数"""
         try:
-            # 添加WAV头
-            headinfo = self._generate_wav_header(16000, 16, len(audio_data))
-            audio_with_header = headinfo + audio_data
-            
-            # 读取音频
-            audio_array, sr = sf.read(BytesIO(audio_with_header))
+            # 将TTS音频（默认MP3）转换为16k单声道WAV
+            wav_bytes = await self.audio_processor.convert_to_wav(audio_data, input_format="mp3")
+            if not wav_bytes:
+                raise ValueError("音频转换失败")
+
+            audio_array, sr = sf.read(BytesIO(wav_bytes))
+            if sr != 16000:
+                # 双重保险：ffmpeg应已转换为16k，如果仍不一致则强制重采样
+                audio_array = self.audio_processor.resample_audio(audio_array, sr, 16000)
+                sr = 16000
+            audio_duration = len(audio_array) / sr if sr else 0
+            logger.info(f"音频时长: {audio_duration:.2f}秒, 采样率: {sr}")
             
             # 提取Paraformer特征
             # 向上取整确保视频时长 >= 音频时长
