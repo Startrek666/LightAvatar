@@ -743,10 +743,6 @@ class LiteAvatarHandler(BaseHandler):
                 
                 # 参数转图像
                 mouth_img = self._param_to_image(params, bg_frame_id)
-                mouth_np = mouth_img.clamp(0, 1).mean().item() if isinstance(mouth_img, torch.Tensor) else 0
-                logger.info(
-                    f"帧{global_frame_id}(bg={bg_frame_id}) 嘴部张量均值: {mouth_np:.4f}"
-                )
                 
                 # 融合到背景
                 full_img, _ = self._merge_mouth_to_bg(mouth_img, bg_frame_id)

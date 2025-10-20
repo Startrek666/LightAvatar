@@ -106,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, h, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   SettingOutlined,
@@ -162,6 +162,27 @@ const settings = ref({
   }
 })
 
+const shouldSyncConfig = ref(false)
+
+const syncConfig = () => {
+  if (!settings.value) return
+  if (isConnected.value) {
+    send({
+      type: 'config',
+      config: settings.value
+    })
+    shouldSyncConfig.value = false
+  } else {
+    shouldSyncConfig.value = true
+  }
+}
+
+watch(isConnected, (connected) => {
+  if (connected && shouldSyncConfig.value) {
+    syncConfig()
+  }
+})
+
 // Methods
 const showSettings = () => {
   settingsVisible.value = true
@@ -178,14 +199,7 @@ const saveSettings = async () => {
     if (response.ok) {
       message.success('设置已保存')
       settingsVisible.value = false
-
-      // Send config update through WebSocket
-      if (isConnected.value) {
-        send({
-          type: 'config',
-          config: settings.value
-        })
-      }
+      syncConfig()
     } else {
       message.error('保存设置失败')
     }
@@ -368,11 +382,13 @@ onMounted(async () => {
       settings.value = config
       // Save to localStorage as backup
       localStorage.setItem('avatar-chat-settings', JSON.stringify(config))
+      syncConfig()
     } else {
       // Fallback to localStorage
       const savedSettings = localStorage.getItem('avatar-chat-settings')
       if (savedSettings) {
         settings.value = JSON.parse(savedSettings)
+        syncConfig()
       }
     }
   } catch (error) {
@@ -382,6 +398,7 @@ onMounted(async () => {
       const savedSettings = localStorage.getItem('avatar-chat-settings')
       if (savedSettings) {
         settings.value = JSON.parse(savedSettings)
+        syncConfig()
       }
     } catch (e) {
       console.error('Failed to load settings from localStorage:', error)
