@@ -28,7 +28,10 @@ setup_logger()
 
 # Initialize managers
 websocket_manager = WebSocketManager()
-session_manager = SessionManager(max_memory_mb=settings.MAX_MEMORY_MB)
+session_manager = SessionManager(
+    max_memory_mb=settings.MAX_MEMORY_MB,
+    websocket_manager=websocket_manager
+)
 health_monitor = HealthMonitor()
 
 

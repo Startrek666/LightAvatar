@@ -18,6 +18,7 @@ from backend.handlers.tts.edge_tts_handler import EdgeTTSHandler
 from backend.handlers.avatar.wav2lip_handler import Wav2LipHandler
 from backend.handlers.avatar.lite_avatar_handler import LiteAvatarHandler
 from backend.app.config import settings
+from backend.app.websocket import WebSocketManager
 
 
 @dataclass
@@ -385,10 +386,11 @@ class Session:
 class SessionManager:
     """Manages all active sessions with memory control"""
     
-    def __init__(self, max_memory_mb: int = 4096):
+    def __init__(self, max_memory_mb: int = 4096, websocket_manager: Optional[WebSocketManager] = None):
         self.sessions: Dict[str, Session] = {}
         self.max_memory_mb = max_memory_mb
         self._lock = asyncio.Lock()
+        self.websocket_manager = websocket_manager
     
     async def create_session(self, session_id: str) -> Session:
         """Create a new session"""
@@ -444,6 +446,17 @@ class SessionManager:
                 to_remove.append(session_id)
         
         for session_id in to_remove:
+            if self.websocket_manager and self.websocket_manager.is_connected(session_id):
+                try:
+                    await self.websocket_manager.send_json(session_id, {
+                        "type": "session_timeout",
+                        "reason": "inactive",
+                        "timeout_seconds": settings.SESSION_TIMEOUT
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to notify session timeout for {session_id}: {e}")
+                finally:
+                    self.websocket_manager.disconnect(session_id)
             await self.remove_session(session_id)
         
         if to_remove:

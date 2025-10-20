@@ -296,6 +296,11 @@ const handleWebSocketMessage = (data: any) => {
       scrollToBottom()
     }
   }
+  else if (data.type === 'session_timeout') {
+    const timeoutSeconds = data.timeout_seconds || settings.value.session_timeout || 300
+    message.warning(`会话已超过 ${timeoutSeconds} 秒无操作，请刷新页面或重新进入继续对话`)
+    disconnect()
+  }
   else if (data.type === 'video_chunk_meta') {
     // Video chunk metadata received, binary data will follow
     console.log('Video chunk incoming:', data.data.size, 'bytes')
