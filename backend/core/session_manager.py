@@ -268,9 +268,9 @@ class Session:
             if sentence_buffer.strip():
                 pending_sentences.append(sentence_buffer.strip())
             
-            # 顺序处理所有句子（确保播放顺序正确）
-            for sentence in pending_sentences:
-                await self._process_sentence(sentence, callback)
+            # 并行预加载优化：生成第N句时预加载第N+1句
+            if pending_sentences:
+                await self._process_sentences_with_preload(pending_sentences, callback)
             
             # Add complete response to history
             self.conversation_history.append({
@@ -292,16 +292,116 @@ class Session:
             logger.error(f"Error in streaming text processing: {e}")
             await callback("error", {"message": str(e)})
     
-    def _is_sentence_end(self, text: str) -> bool:
-        """Check if text ends with sentence delimiter"""
+    async def _process_sentences_with_preload(self, sentences: list, callback):
+        """
+        并行预加载处理多个句子
+        
+        策略：在播放第N句时，后台并行生成第N+1句，实现流水线处理
+        """
+        if not sentences:
+            return
+        
+        # 第一句立即处理
+        if len(sentences) == 1:
+            await self._process_sentence(sentences[0], callback)
+            return
+        
+        # 多句处理：流水线并行
+        next_task = None
+        
+        for i, sentence in enumerate(sentences):
+            # 如果有预加载任务，等待完成
+            if next_task:
+                result = await next_task
+                if result:
+                    await callback("video_chunk", result)
+                    logger.info(f"Sentence processed: {len(result['video'])} bytes video - '{result['text'][:30]}...'")
+            else:
+                # 第一句：立即处理
+                await self._process_sentence(sentence, callback)
+            
+            # 启动下一句的预加载（如果还有）
+            if i + 1 < len(sentences):
+                next_sentence = sentences[i + 1]
+                next_task = asyncio.create_task(
+                    self._generate_sentence_data(next_sentence)
+                )
+                logger.debug(f"Started preloading next sentence: {next_sentence[:30]}...")
+            else:
+                next_task = None
+    
+    async def _generate_sentence_data(self, sentence: str) -> dict:
+        """
+        生成句子的视频数据（不发送），用于预加载
+        
+        Returns:
+            dict with 'video', 'audio', 'text' or None if failed
+        """
+        try:
+            logger.info(f"Preloading sentence: {sentence[:50]}...")
+            
+            # TTS synthesis
+            audio_bytes = await self.tts_handler.synthesize(sentence)
+            if not audio_bytes:
+                logger.warning(f"TTS returned empty audio for: {sentence[:30]}...")
+                return None
+            
+            # Avatar generation
+            video_bytes = await self.avatar_handler.generate(
+                audio_bytes,
+                self.config.get("avatar_template", settings.AVATAR_TEMPLATE)
+            )
+            if not video_bytes:
+                logger.warning(f"Avatar generation returned empty video for: {sentence[:30]}...")
+                return None
+            
+            return {
+                "video": video_bytes,
+                "audio": audio_bytes,
+                "text": sentence
+            }
+        except Exception as e:
+            logger.error(f"Error preloading sentence '{sentence[:30]}...': {e}")
+            return None
+    
+    def _is_sentence_end(self, text: str, min_length: int = 10, max_length: int = 25) -> bool:
+        """
+        智能判断是否应该分割句子
+        
+        策略：
+        1. 长度 < min_length：不分割（避免过短）
+        2. 长度 > max_length 且有逗号：在逗号处分割
+        3. 遇到句号等强标点：分割
+        
+        Args:
+            text: 当前累积的文本
+            min_length: 最小分割长度（字符数）
+            max_length: 最大分割长度（字符数）
+        """
         if not text:
             return False
         
-        # Chinese and English sentence delimiters
-        delimiters = ['。', '！', '？', '.', '!', '?', '；', ';', '\n']
+        text = text.rstrip()
+        text_len = len(text)
         
-        # Check last character
-        return any(text.rstrip().endswith(d) for d in delimiters)
+        # 强制分割标点（句号、问号、感叹号）
+        strong_delimiters = ['。', '！', '？', '.', '!', '?', '\n']
+        has_strong_delimiter = any(text.endswith(d) for d in strong_delimiters)
+        
+        # 弱分割标点（逗号、分号）
+        weak_delimiters = ['，', '；', ',', ';']
+        has_weak_delimiter = any(text.endswith(d) for d in weak_delimiters)
+        
+        # 策略1：太短不分割（除非是强标点）
+        if text_len < min_length:
+            return has_strong_delimiter
+        
+        # 策略2：超长强制分割（在逗号或任意标点处）
+        if text_len > max_length:
+            return has_weak_delimiter or has_strong_delimiter
+        
+        # 策略3：中等长度，遇到强标点就分割
+        return has_strong_delimiter
     
     async def _process_sentence(self, sentence: str, callback):
         """
