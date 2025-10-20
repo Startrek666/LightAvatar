@@ -140,6 +140,7 @@ const showChatHistory = ref(true)   // 对话记录显示开关
 // Video playback queue for streaming
 const videoQueue = ref<Blob[]>([])
 const isPlayingVideo = ref(false)
+const configLoaded = ref(false)
 
 // Data
 const messages = ref<Array<{
@@ -162,27 +163,6 @@ const settings = ref({
   }
 })
 
-const shouldSyncConfig = ref(false)
-
-const syncConfig = () => {
-  if (!settings.value) return
-  if (isConnected.value) {
-    send({
-      type: 'config',
-      config: settings.value
-    })
-    shouldSyncConfig.value = false
-  } else {
-    shouldSyncConfig.value = true
-  }
-}
-
-watch(isConnected, (connected) => {
-  if (connected && shouldSyncConfig.value) {
-    syncConfig()
-  }
-})
-
 // Methods
 const showSettings = () => {
   settingsVisible.value = true
@@ -199,7 +179,14 @@ const saveSettings = async () => {
     if (response.ok) {
       message.success('设置已保存')
       settingsVisible.value = false
-      syncConfig()
+
+      // Send config update through WebSocket
+      if (isConnected.value) {
+        send({
+          type: 'config',
+          config: settings.value
+        })
+      }
     } else {
       message.error('保存设置失败')
     }
@@ -382,13 +369,13 @@ onMounted(async () => {
       settings.value = config
       // Save to localStorage as backup
       localStorage.setItem('avatar-chat-settings', JSON.stringify(config))
-      syncConfig()
+      configLoaded.value = true
     } else {
       // Fallback to localStorage
       const savedSettings = localStorage.getItem('avatar-chat-settings')
       if (savedSettings) {
         settings.value = JSON.parse(savedSettings)
-        syncConfig()
+        configLoaded.value = true
       }
     }
   } catch (error) {
@@ -398,11 +385,23 @@ onMounted(async () => {
       const savedSettings = localStorage.getItem('avatar-chat-settings')
       if (savedSettings) {
         settings.value = JSON.parse(savedSettings)
-        syncConfig()
+        configLoaded.value = true
       }
     } catch (e) {
       console.error('Failed to load settings from localStorage:', error)
     }
+  }
+})
+
+// Watch for WebSocket connection and send config when ready
+watch(isConnected, (connected: boolean) => {
+  if (connected && configLoaded.value) {
+    // Send config to backend when connection is established
+    send({
+      type: 'config',
+      config: settings.value
+    })
+    console.log('Configuration sent to backend')
   }
 })
 
