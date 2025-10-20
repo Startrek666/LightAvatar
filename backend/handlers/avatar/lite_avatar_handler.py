@@ -57,7 +57,7 @@ class LiteAvatarHandler(BaseHandler):
     """
     
     def __init__(self,
-                 fps: int = 30,
+                 fps: int = 20,
                  resolution: Tuple[int, int] = (512, 512),
                  config: Optional[dict] = None):
         super().__init__(config)
@@ -381,7 +381,7 @@ class LiteAvatarHandler(BaseHandler):
             # 提取Paraformer特征
             # 向上取整确保视频时长 >= 音频时长
             import math
-            frame_cnt = math.ceil(len(audio_array) / 16000 * 30)
+            frame_cnt = math.ceil(len(audio_array) / 16000 * self.fps)
             au_data = await asyncio.get_event_loop().run_in_executor(
                 self.executor,
                 self._extract_paraformer_feature,
