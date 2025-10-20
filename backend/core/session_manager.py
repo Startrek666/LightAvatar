@@ -73,11 +73,14 @@ class Session:
                 api_key=settings.LLM_API_KEY,
                 model=settings.LLM_MODEL
             )
+            await self.llm_handler.initialize()
+            
             self.tts_handler = EdgeTTSHandler(
                 voice=settings.TTS_VOICE,
                 rate=settings.TTS_RATE,
                 pitch=settings.TTS_PITCH
             )
+            await self.tts_handler.initialize()
             
             # 根据配置选择 Avatar Handler
             avatar_engine = settings.AVATAR_ENGINE.lower()
@@ -106,6 +109,7 @@ class Session:
                         "cpu_threads": settings.CPU_THREADS
                     }
                 )
+            await self.avatar_handler.initialize()
             
             logger.info(f"Session {self.session_id} handlers initialized (ASR: {asr_backend}, Avatar: {avatar_engine})")
         except Exception as e:
