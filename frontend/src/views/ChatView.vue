@@ -368,10 +368,21 @@ const playNextVideo = async () => {
     nextVideo.loop = false
     nextVideo.muted = false
     
-    // 等待加载完成
+    // 等待加载并播放
     try {
-      await nextVideo.load()
-      await nextVideo.play()
+      await new Promise((resolve, reject) => {
+        nextVideo.onloadeddata = () => {
+          nextVideo.play().then(resolve).catch(reject)
+        }
+        nextVideo.onerror = reject
+        nextVideo.load()
+        
+        // 超时保护
+        setTimeout(() => reject(new Error('Video load timeout')), 10000)
+      })
+      
+      // 等待一帧，确保视频已渲染
+      await new Promise(resolve => requestAnimationFrame(resolve))
       
       // 切换显示的video（无缝切换）
       currentVideoIndex.value = currentVideoIndex.value === 0 ? 1 : 0
@@ -406,49 +417,63 @@ const playNextVideo = async () => {
   }
 }
 
-// 播放待机视频
+// 播放待机视频（使用双video无缝切换）
 const playIdleVideo = async () => {
   if (!idleVideoUrl.value) {
     console.warn('Idle video URL not available')
     return
   }
   
-  const video = currentVideoIndex.value === 0 ? avatarVideo1.value : avatarVideo2.value
-  if (!video) {
+  // 获取当前和下一个video元素
+  const currentVideo = currentVideoIndex.value === 0 ? avatarVideo1.value : avatarVideo2.value
+  const nextVideo = currentVideoIndex.value === 0 ? avatarVideo2.value : avatarVideo1.value
+  
+  if (!nextVideo) {
     console.error('Video element not ready')
     return
   }
   
   try {
-    // 设置视频属性
-    video.loop = true
-    video.muted = true
-    video.autoplay = true
+    // 设置下一个video为待机视频
+    nextVideo.src = idleVideoUrl.value
+    nextVideo.loop = true
+    nextVideo.muted = true
+    nextVideo.autoplay = true
     
-    // 设置src
-    video.src = idleVideoUrl.value
     console.log('Loading idle video:', idleVideoUrl.value)
     
-    // 等待视频元数据加载
+    // 等待视频加载并开始播放
     await new Promise((resolve, reject) => {
-      video.onloadeddata = resolve
-      video.onerror = reject
-      video.load()
+      nextVideo.onloadeddata = () => {
+        nextVideo.play().then(resolve).catch(reject)
+      }
+      nextVideo.onerror = reject
+      nextVideo.load()
       
       // 超时保护
       setTimeout(() => reject(new Error('Video load timeout')), 10000)
     })
     
-    // 播放视频
-    await video.play()
+    // 等待一帧，确保视频已渲染
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    
+    // 切换显示（无缝过渡）
+    currentVideoIndex.value = currentVideoIndex.value === 0 ? 1 : 0
+    
+    // 停止并清理旧video（如果是语音视频）
+    if (currentVideo && currentVideo.src && currentVideo.src !== idleVideoUrl.value) {
+      currentVideo.pause()
+      if (currentVideo.src.startsWith('blob:')) {
+        URL.revokeObjectURL(currentVideo.src)
+      }
+      currentVideo.src = ''
+    }
     
     isPlayingIdleVideo.value = true
     console.log('Idle video playing successfully')
   } catch (err) {
     console.error('Failed to play idle video:', err)
-    console.error('Video src:', video.src)
-    console.error('Video readyState:', video.readyState)
-    console.error('Video error:', video.error)
+    console.error('Video error:', nextVideo.error)
     
     // 清理blob URL
     if (idleVideoUrl.value && idleVideoUrl.value.startsWith('blob:')) {
@@ -629,13 +654,17 @@ onUnmounted(() => {
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  z-index: 1;
+  pointer-events: none;
+  transition: opacity 0.5s ease-in-out;
 }
 
 .avatar-video.active {
   opacity: 1;
+  z-index: 2;
+  pointer-events: auto;
 }
 
 .processing-indicator {
@@ -645,6 +674,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 10;
 }
 
 .chat-messages {
