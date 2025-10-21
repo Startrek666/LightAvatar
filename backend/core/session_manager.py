@@ -19,6 +19,7 @@ from backend.handlers.avatar.wav2lip_handler import Wav2LipHandler
 from backend.handlers.avatar.lite_avatar_handler import LiteAvatarHandler
 from backend.app.config import settings
 from backend.app.websocket import WebSocketManager
+from backend.utils.text_utils import clean_markdown_for_tts
 
 
 @dataclass
@@ -246,11 +247,65 @@ class Session:
             # Send user message confirmation
             await callback("user_message", {"text": text})
             
-            # Stream LLM response
+            # Stream LLM response with real-time sentence processing
             full_response = ""
             sentence_buffer = ""
-            pending_sentences = []
             
+            # 实时句子处理队列
+            sentence_queue = asyncio.Queue()
+            processing_task = None
+            
+            # 启动句子处理任务
+            async def process_sentence_queue():
+                """后台处理句子队列"""
+                sentence_index = 0
+                pending_tasks = {}  # {index: task}
+                next_to_send = 0
+                next_to_start = 0
+                MAX_CONCURRENT = 2
+                
+                while True:
+                    # 从队列获取句子
+                    sentence = await sentence_queue.get()
+                    
+                    if sentence is None:  # 结束信号
+                        break
+                    
+                    # 启动生成任务
+                    if next_to_start - next_to_send < MAX_CONCURRENT:
+                        task = asyncio.create_task(self._generate_sentence_data(sentence))
+                        pending_tasks[sentence_index] = task
+                        logger.debug(f"[实时] 启动句子 {sentence_index + 1} 生成: {sentence[:30]}...")
+                        next_to_start = sentence_index + 1
+                    
+                    # 等待并发送已完成的任务
+                    while next_to_send in pending_tasks:
+                        result = await pending_tasks[next_to_send]
+                        del pending_tasks[next_to_send]
+                        
+                        if result:
+                            await callback("video_chunk", result)
+                            logger.info(f"[实时] 句子 {next_to_send + 1} 已发送: {len(result['video'])} bytes")
+                        
+                        next_to_send += 1
+                    
+                    sentence_index += 1
+                
+                # 处理剩余任务
+                while next_to_send < sentence_index:
+                    if next_to_send in pending_tasks:
+                        result = await pending_tasks[next_to_send]
+                        del pending_tasks[next_to_send]
+                        
+                        if result:
+                            await callback("video_chunk", result)
+                            logger.info(f"[实时] 句子 {next_to_send + 1} 已发送（剩余）")
+                    
+                    next_to_send += 1
+            
+            processing_task = asyncio.create_task(process_sentence_queue())
+            
+            # 流式接收LLM输出
             async for chunk in self.llm_handler.stream_response(text, self.conversation_history):
                 full_response += chunk
                 sentence_buffer += chunk
@@ -260,17 +315,27 @@ class Session:
                 
                 # Check if we have a complete sentence
                 if self._is_sentence_end(sentence_buffer):
-                    # 收集句子，稍后顺序处理
-                    pending_sentences.append(sentence_buffer.strip())
+                    # 立即将句子加入处理队列（清理Markdown格式）
+                    clean_sentence = sentence_buffer.strip()
+                    if clean_sentence:
+                        # 清理Markdown格式（去除**、*等符号）
+                        clean_sentence = clean_markdown_for_tts(clean_sentence)
+                        await sentence_queue.put(clean_sentence)
+                        logger.debug(f"[实时] 句子入队: {clean_sentence[:30]}...")
                     sentence_buffer = ""
             
             # Collect any remaining text
             if sentence_buffer.strip():
-                pending_sentences.append(sentence_buffer.strip())
+                clean_sentence = clean_markdown_for_tts(sentence_buffer.strip())
+                await sentence_queue.put(clean_sentence)
+                logger.debug(f"[实时] 剩余文字入队: {clean_sentence[:30]}...")
             
-            # 并行预加载优化：生成第N句时预加载第N+1句
-            if pending_sentences:
-                await self._process_sentences_with_preload(pending_sentences, callback)
+            # 发送结束信号
+            await sentence_queue.put(None)
+            
+            # 等待所有句子处理完成
+            if processing_task:
+                await processing_task
             
             # Add complete response to history
             self.conversation_history.append({
