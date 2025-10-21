@@ -26,6 +26,10 @@ from backend.utils.logger import setup_logger
 # Setup logging
 setup_logger()
 
+# Log project root for debugging
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+logger.info(f"Project root directory: {PROJECT_ROOT}")
+
 # Initialize managers
 websocket_manager = WebSocketManager()
 session_manager = SessionManager(
@@ -310,27 +314,33 @@ async def get_idle_video():
     from fastapi.responses import FileResponse
     
     # Try LiteAvatar background video first
-    idle_video_path = Path("models/lite_avatar/default/bg_video.mp4")
+    idle_video_path = PROJECT_ROOT / "models" / "lite_avatar" / "default" / "bg_video.mp4"
+    
+    logger.info(f"Looking for idle video at: {idle_video_path}")
+    logger.info(f"File exists: {idle_video_path.exists()}")
     
     if not idle_video_path.exists():
         # Fallback to other locations
         fallback_paths = [
-            Path("models/avatars/default.mp4"),
-            Path("static/default_avatar.mp4")
+            PROJECT_ROOT / "models" / "avatars" / "default.mp4",
+            PROJECT_ROOT / "static" / "default_avatar.mp4"
         ]
         for fallback in fallback_paths:
+            logger.info(f"Trying fallback: {fallback}")
             if fallback.exists():
                 idle_video_path = fallback
                 break
     
     if idle_video_path.exists():
+        logger.info(f"Serving idle video: {idle_video_path}")
         return FileResponse(
-            idle_video_path,
+            str(idle_video_path),
             media_type="video/mp4",
             headers={"Content-Disposition": "inline"}
         )
     else:
-        raise HTTPException(status_code=404, detail="Idle video not found")
+        logger.error(f"Idle video not found. Searched paths: {idle_video_path}")
+        raise HTTPException(status_code=404, detail=f"Idle video not found at: {idle_video_path}")
 
 
 # Mount static files

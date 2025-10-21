@@ -400,31 +400,83 @@ const playNextVideo = async () => {
 }
 
 // 播放待机视频
-const playIdleVideo = () => {
-  if (!idleVideoUrl.value) return
+const playIdleVideo = async () => {
+  if (!idleVideoUrl.value) {
+    console.warn('Idle video URL not available')
+    return
+  }
   
   const video = currentVideoIndex.value === 0 ? avatarVideo1.value : avatarVideo2.value
-  if (video && video.src !== idleVideoUrl.value) {
-    video.src = idleVideoUrl.value
+  if (!video) {
+    console.error('Video element not ready')
+    return
+  }
+  
+  try {
+    // 设置视频属性
     video.loop = true
     video.muted = true
-    video.play().catch((err: Error) => console.error('Failed to play idle video:', err))
+    video.autoplay = true
+    
+    // 设置src
+    video.src = idleVideoUrl.value
+    console.log('Loading idle video:', idleVideoUrl.value)
+    
+    // 等待视频元数据加载
+    await new Promise((resolve, reject) => {
+      video.onloadeddata = resolve
+      video.onerror = reject
+      video.load()
+      
+      // 超时保护
+      setTimeout(() => reject(new Error('Video load timeout')), 10000)
+    })
+    
+    // 播放视频
+    await video.play()
+    
     isPlayingIdleVideo.value = true
+    console.log('Idle video playing successfully')
+  } catch (err) {
+    console.error('Failed to play idle video:', err)
+    console.error('Video src:', video.src)
+    console.error('Video readyState:', video.readyState)
+    console.error('Video error:', video.error)
+    
+    // 清理blob URL
+    if (idleVideoUrl.value && idleVideoUrl.value.startsWith('blob:')) {
+      URL.revokeObjectURL(idleVideoUrl.value)
+      idleVideoUrl.value = ''
+    }
   }
 }
 
 // 下载待机视频
 const downloadIdleVideo = async () => {
   try {
+    console.log('Downloading idle video...')
     const response = await fetch('/api/idle-video')
-    if (response.ok) {
-      const blob = await response.blob()
-      idleVideoUrl.value = URL.createObjectURL(blob)
-      console.log('Idle video downloaded')
-      
-      // 立即播放待机视频
-      playIdleVideo()
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
+    
+    const blob = await response.blob()
+    console.log('Downloaded blob:', blob.size, 'bytes, type:', blob.type)
+    
+    // 验证blob类型
+    if (!blob.type.startsWith('video/')) {
+      console.warn('Unexpected blob type:', blob.type)
+    }
+    
+    idleVideoUrl.value = URL.createObjectURL(blob)
+    console.log('Idle video blob URL created:', idleVideoUrl.value)
+    
+    // 等待下一帧确保video元素已挂载
+    await nextTick()
+    
+    // 播放待机视频
+    await playIdleVideo()
   } catch (error) {
     console.error('Failed to download idle video:', error)
   }
@@ -432,6 +484,14 @@ const downloadIdleVideo = async () => {
 
 // Lifecycle
 onMounted(async () => {
+  // 等待video元素挂载完成
+  await nextTick()
+  
+  console.log('Video elements ready:', {
+    video1: !!avatarVideo1.value,
+    video2: !!avatarVideo2.value
+  })
+  
   // 下载待机视频
   await downloadIdleVideo()
   
