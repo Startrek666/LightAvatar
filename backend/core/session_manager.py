@@ -382,9 +382,10 @@ class Session:
         智能判断是否应该分割句子
         
         策略：
-        1. 长度 < min_length：不分割（避免过短）
+        0. 长度 < 5字：绝对不分割（避免"你好！"这种极短句）
+        1. 长度 5-10字：遇到强标点分割
         2. 长度 > max_length 且有逗号：在逗号处分割
-        3. 遇到句号等强标点：分割
+        3. 中等长度：遇到句号等强标点分割
         
         Args:
             text: 当前累积的文本
@@ -405,7 +406,12 @@ class Session:
         weak_delimiters = ['，', '；', ',', ';']
         has_weak_delimiter = any(text.endswith(d) for d in weak_delimiters)
         
-        # 策略1：太短不分割（除非是强标点）
+        # 策略0：绝对最小长度（避免极短句如"你好！"被分割）
+        ABSOLUTE_MIN = 5
+        if text_len < ABSOLUTE_MIN:
+            return False  # 无论有无标点，都不分割
+        
+        # 策略1：短句（5-10字）遇到强标点分割
         if text_len < min_length:
             return has_strong_delimiter
         
