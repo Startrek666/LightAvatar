@@ -400,11 +400,25 @@ class Session:
         
         # 强制分割标点（句号、问号、感叹号）
         strong_delimiters = ['。', '！', '？', '.', '!', '?', '\n']
+        
+        # 检测标点（包括引号内的标点）
+        # 例如："你好！" 或 「你好！」
+        quote_pairs = ['"', '"', '」', "'", '"']
         has_strong_delimiter = any(text.endswith(d) for d in strong_delimiters)
+        
+        # 如果结尾是引号，检查引号前的字符
+        if not has_strong_delimiter and len(text) >= 2:
+            if text[-1] in quote_pairs:
+                has_strong_delimiter = any(text[-2] == d for d in strong_delimiters)
         
         # 弱分割标点（逗号、分号）
         weak_delimiters = ['，', '；', ',', ';']
         has_weak_delimiter = any(text.endswith(d) for d in weak_delimiters)
+        
+        # 引号内的逗号
+        if not has_weak_delimiter and len(text) >= 2:
+            if text[-1] in quote_pairs:
+                has_weak_delimiter = any(text[-2] == d for d in weak_delimiters)
         
         # 策略0：绝对最小长度（避免极短句如"你好！"被分割）
         ABSOLUTE_MIN = 5
