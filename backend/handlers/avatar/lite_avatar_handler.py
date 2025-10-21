@@ -829,34 +829,106 @@ class LiteAvatarHandler(BaseHandler):
         return full_img.astype(np.uint8), mouth_image.astype(np.uint8)
     
     async def _frames_to_video(self, frames: List[np.ndarray], audio_data: bytes) -> bytes:
-        """帧序列合成视频"""
+        """帧序列合成视频（优化版：FFmpeg管道编码 + Fallback）"""
+        import subprocess
+        
+        height, width = frames[0].shape[:2]
+        
+        # 准备音频临时文件
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_audio:
+            headinfo = self._generate_wav_header(16000, 16, len(audio_data))
+            tmp_audio.write(headinfo + audio_data)
+            audio_path = tmp_audio.name
+        
+        # 输出视频临时文件
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_video:
+            video_path = tmp_video.name
+        
         try:
-            import subprocess
+            # 方法1：FFmpeg管道编码（最快）
+            logger.debug("尝试FFmpeg管道编码...")
+            cmd = [
+                'ffmpeg', '-y',
+                '-f', 'rawvideo',
+                '-vcodec', 'rawvideo',
+                '-pix_fmt', 'bgr24',
+                '-s', f'{width}x{height}',
+                '-r', str(self.fps),
+                '-i', '-',
+                '-i', audio_path,
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-crf', '28',
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-movflags', 'frag_keyframe+empty_moov',
+                '-loglevel', 'error',
+                video_path
+            ]
             
-            # 创建临时文件
-            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_video:
-                video_path = tmp_video.name
+            # 将帧数据转为字节流
+            try:
+                frame_bytes = b''.join([frame.tobytes() for frame in frames])
+            except Exception as e:
+                logger.error(f"帧数据准备失败: {e}，使用fallback方法")
+                raise
             
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_audio:
-                # 写入音频
-                headinfo = self._generate_wav_header(16000, 16, len(audio_data))
-                tmp_audio.write(headinfo + audio_data)
-                audio_path = tmp_audio.name
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, input=frame_bytes, capture_output=True, timeout=30)
+            )
             
-            # 使用OpenCV写入视频
-            height, width = frames[0].shape[:2]
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            if result.returncode != 0:
+                stderr_msg = result.stderr.decode() if result.stderr else "Unknown error"
+                logger.warning(f"FFmpeg管道编码失败: {stderr_msg}，使用fallback方法")
+                raise RuntimeError("FFmpeg管道编码失败")
             
+            # 读取视频数据
+            with open(video_path, 'rb') as f:
+                video_data = f.read()
+            
+            if len(video_data) == 0:
+                logger.warning("FFmpeg生成空视频，使用fallback方法")
+                raise RuntimeError("空视频")
+            
+            logger.debug(f"FFmpeg管道编码成功: {len(video_data)} bytes")
+            
+        except (FileNotFoundError, subprocess.TimeoutExpired, RuntimeError, Exception) as e:
+            # Fallback：使用OpenCV编码 + FFmpeg合并音频（兼容性更好）
+            logger.warning(f"FFmpeg管道失败 ({e})，使用OpenCV fallback")
+            video_data = await self._frames_to_video_fallback(frames, audio_data, audio_path, video_path)
+        
+        finally:
+            # 清理临时文件
+            Path(video_path).unlink(missing_ok=True)
+            Path(audio_path).unlink(missing_ok=True)
+        
+        return video_data
+    
+    async def _frames_to_video_fallback(self, frames: List[np.ndarray], audio_data: bytes, 
+                                       audio_path: str, video_path: str) -> bytes:
+        """Fallback方法：OpenCV编码 + FFmpeg合并音频"""
+        import subprocess
+        
+        height, width = frames[0].shape[:2]
+        
+        try:
+            # 使用OpenCV写入视频（无音频）
             with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_video_no_audio:
                 video_no_audio_path = tmp_video_no_audio.name
             
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(video_no_audio_path, fourcc, self.fps, (width, height))
+            
+            if not out.isOpened():
+                logger.error("OpenCV VideoWriter初始化失败")
+                raise RuntimeError("OpenCV初始化失败")
+            
             for frame in frames:
                 out.write(frame)
             out.release()
             
             # 使用FFmpeg合并音视频
-            # 注意：移除-shortest，让视频和音频完整合并
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_no_audio_path,
@@ -871,27 +943,26 @@ class LiteAvatarHandler(BaseHandler):
             
             result = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: subprocess.run(cmd, capture_output=True)
+                lambda: subprocess.run(cmd, capture_output=True, timeout=30)
             )
             
             if result.returncode != 0:
-                logger.error(f"FFmpeg错误: {result.stderr.decode()}")
-                raise RuntimeError("视频合成失败")
+                logger.error(f"FFmpeg音视频合并失败: {result.stderr.decode()}")
+                raise RuntimeError("音视频合并失败")
             
             # 读取视频数据
             with open(video_path, 'rb') as f:
                 video_data = f.read()
             
-            # 清理临时文件
-            Path(video_path).unlink(missing_ok=True)
-            Path(audio_path).unlink(missing_ok=True)
+            # 清理OpenCV临时文件
             Path(video_no_audio_path).unlink(missing_ok=True)
             
+            logger.info(f"OpenCV fallback成功: {len(video_data)} bytes")
             return video_data
             
         except Exception as e:
-            logger.error(f"视频合成失败: {e}")
-            raise
+            logger.error(f"Fallback方法也失败: {e}")
+            raise RuntimeError(f"视频合成完全失败: {e}")
     
     def _generate_wav_header(self, sample_rate: int, bits: int, sample_num: int) -> bytes:
         """生成WAV文件头"""
