@@ -375,14 +375,21 @@ const playNextVideo = async () => {
       
       // 切换显示的video（无缝切换）
       currentVideoIndex.value = currentVideoIndex.value === 0 ? 1 : 0
-      
+
       // 停止并清理旧video
       if (currentVideo) {
         currentVideo.pause()
-        if (currentVideo.src && currentVideo.src.startsWith('blob:')) {
+        if (
+          currentVideo.src &&
+          currentVideo.src.startsWith('blob:') &&
+          currentVideo.src !== idleVideoUrl.value
+        ) {
           URL.revokeObjectURL(currentVideo.src)
         }
       }
+
+      // 切换到语音视频时，标记待机状态为false
+      isPlayingIdleVideo.value = false
 
       // When video ends, play next
       nextVideo.onended = () => {
