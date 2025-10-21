@@ -32,8 +32,13 @@
         <div class="video-chat-area">
           <!-- Avatar Video Display -->
           <div class="avatar-display">
-            <video ref="avatarVideo" class="avatar-video" autoplay playsinline :poster="avatarPoster" />
-            <div v-if="isProcessing" class="processing-indicator">
+            <!-- 双video元素交替显示，避免切换黑屏 -->
+            <video ref="avatarVideo1" class="avatar-video" :class="{active: currentVideoIndex === 0}" 
+                   autoplay playsinline loop muted />
+            <video ref="avatarVideo2" class="avatar-video" :class="{active: currentVideoIndex === 1}" 
+                   autoplay playsinline loop muted />
+            <!-- 只在无视频播放且正在处理时显示蒙层 -->
+            <div v-if="showProcessingIndicator" class="processing-indicator">
               <a-spin size="large" tip="处理中..." />
             </div>
           </div>
@@ -106,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, h, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   SettingOutlined,
@@ -126,12 +131,14 @@ const { connect, disconnect, send, isConnected, shouldReconnect } = useWebSocket
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
 
 // Refs
-const avatarVideo = ref<HTMLVideoElement>()
+const avatarVideo1 = ref<HTMLVideoElement>()
+const avatarVideo2 = ref<HTMLVideoElement>()
+const currentVideoIndex = ref(0)  // 0: video1, 1: video2
 const messagesContainer = ref<HTMLElement>()
 const inputText = ref('')
 const isProcessing = ref(false)
+const isPlayingIdleVideo = ref(false)
 const settingsVisible = ref(false)
-const avatarPoster = ref('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="512" height="512"%3E%3Crect fill="%23333" width="512" height="512"/%3E%3Ctext fill="%23fff" font-size="24" x="50%25" y="50%25" text-anchor="middle" dominant-baseline="middle"%3EAvatar%3C/text%3E%3C/svg%3E')
 
 // Feature toggles
 const enableVoiceInput = ref(true)  // 语音输入开关
@@ -139,8 +146,14 @@ const showChatHistory = ref(true)   // 对话记录显示开关
 
 // Video playback queue for streaming
 const videoQueue = ref<Blob[]>([])
-const isPlayingVideo = ref(false)
+const isPlayingSpeechVideo = ref(false)
 const configLoaded = ref(false)
+const idleVideoUrl = ref('')
+
+// 计算属性：只在真正等待且无视频时显示"处理中"
+const showProcessingIndicator = computed(() => {
+  return isProcessing.value && !isPlayingSpeechVideo.value && !isPlayingIdleVideo.value
+})
 
 // Data
 const messages = ref<Array<{
@@ -326,7 +339,7 @@ const handleWebSocketBinary = (videoBlob: Blob) => {
   videoQueue.value.push(videoBlob)
 
   // Start playing if not already playing
-  if (!isPlayingVideo.value) {
+  if (!isPlayingSpeechVideo.value) {
     playNextVideo()
   }
 }
@@ -334,23 +347,46 @@ const handleWebSocketBinary = (videoBlob: Blob) => {
 // Play next video in queue
 const playNextVideo = async () => {
   if (videoQueue.value.length === 0) {
-    isPlayingVideo.value = false
+    isPlayingSpeechVideo.value = false
+    // 播放完所有视频后，回到待机视频
+    playIdleVideo()
     return
   }
 
-  isPlayingVideo.value = true
+  isPlayingSpeechVideo.value = true
   const videoBlob = videoQueue.value.shift()
 
-  if (videoBlob && avatarVideo.value) {
-    const url = URL.createObjectURL(videoBlob)
-    avatarVideo.value.src = url
+  // 获取当前和下一个video元素
+  const currentVideo = currentVideoIndex.value === 0 ? avatarVideo1.value : avatarVideo2.value
+  const nextVideo = currentVideoIndex.value === 0 ? avatarVideo2.value : avatarVideo1.value
 
+  if (videoBlob && nextVideo) {
+    const url = URL.createObjectURL(videoBlob)
+    
+    // 预加载下一个视频
+    nextVideo.src = url
+    nextVideo.loop = false
+    nextVideo.muted = false
+    
+    // 等待加载完成
     try {
-      await avatarVideo.value.play()
+      await nextVideo.load()
+      await nextVideo.play()
+      
+      // 切换显示的video（无缝切换）
+      currentVideoIndex.value = currentVideoIndex.value === 0 ? 1 : 0
+      
+      // 停止并清理旧video
+      if (currentVideo) {
+        currentVideo.pause()
+        if (currentVideo.src && currentVideo.src.startsWith('blob:')) {
+          URL.revokeObjectURL(currentVideo.src)
+        }
+      }
 
       // When video ends, play next
-      avatarVideo.value.onended = () => {
-        URL.revokeObjectURL(url)  // Clean up
+      nextVideo.onended = () => {
+        URL.revokeObjectURL(url)
         playNextVideo()
       }
     } catch (error) {
@@ -363,8 +399,42 @@ const playNextVideo = async () => {
   }
 }
 
+// 播放待机视频
+const playIdleVideo = () => {
+  if (!idleVideoUrl.value) return
+  
+  const video = currentVideoIndex.value === 0 ? avatarVideo1.value : avatarVideo2.value
+  if (video && video.src !== idleVideoUrl.value) {
+    video.src = idleVideoUrl.value
+    video.loop = true
+    video.muted = true
+    video.play().catch((err: Error) => console.error('Failed to play idle video:', err))
+    isPlayingIdleVideo.value = true
+  }
+}
+
+// 下载待机视频
+const downloadIdleVideo = async () => {
+  try {
+    const response = await fetch('/api/idle-video')
+    if (response.ok) {
+      const blob = await response.blob()
+      idleVideoUrl.value = URL.createObjectURL(blob)
+      console.log('Idle video downloaded')
+      
+      // 立即播放待机视频
+      playIdleVideo()
+    }
+  } catch (error) {
+    console.error('Failed to download idle video:', error)
+  }
+}
+
 // Lifecycle
 onMounted(async () => {
+  // 下载待机视频
+  await downloadIdleVideo()
+  
   // Connect WebSocket with binary handler
   const sessionId = Date.now().toString()
   connect(`/ws/${sessionId}`, handleWebSocketMessage, handleWebSocketBinary)
@@ -487,9 +557,18 @@ onUnmounted(() => {
 }
 
 .avatar-video {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.avatar-video.active {
+  opacity: 1;
 }
 
 .processing-indicator {

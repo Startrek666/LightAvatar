@@ -304,6 +304,35 @@ async def get_available_models():
     return models
 
 
+@app.get("/api/idle-video")
+async def get_idle_video():
+    """Get idle/background video for avatar"""
+    from fastapi.responses import FileResponse
+    
+    # Try LiteAvatar background video first
+    idle_video_path = Path("models/lite_avatar/default/bg_video.mp4")
+    
+    if not idle_video_path.exists():
+        # Fallback to other locations
+        fallback_paths = [
+            Path("models/avatars/default.mp4"),
+            Path("static/default_avatar.mp4")
+        ]
+        for fallback in fallback_paths:
+            if fallback.exists():
+                idle_video_path = fallback
+                break
+    
+    if idle_video_path.exists():
+        return FileResponse(
+            idle_video_path,
+            media_type="video/mp4",
+            headers={"Content-Disposition": "inline"}
+        )
+    else:
+        raise HTTPException(status_code=404, detail="Idle video not found")
+
+
 # Mount static files
 if Path("static").exists():
     app.mount("/static", StaticFiles(directory="static"), name="static")
