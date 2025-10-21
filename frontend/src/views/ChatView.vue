@@ -382,7 +382,7 @@ const playNextVideo = async () => {
       })
       
       // 等待一帧，确保视频已渲染
-      await new Promise(resolve => requestAnimationFrame(resolve))
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       
       // 切换显示的video（无缝切换）
       currentVideoIndex.value = currentVideoIndex.value === 0 ? 1 : 0
@@ -455,7 +455,7 @@ const playIdleVideo = async () => {
     })
     
     // 等待一帧，确保视频已渲染
-    await new Promise(resolve => requestAnimationFrame(resolve))
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     
     // 切换显示（无缝过渡）
     currentVideoIndex.value = currentVideoIndex.value === 0 ? 1 : 0
@@ -628,7 +628,7 @@ onUnmounted(() => {
 
 .avatar-display {
   flex: 0 0 40%;
-  background: #000;
+  background: #fff;
   border-radius: 8px;
   overflow: hidden;
   position: relative;
@@ -654,11 +654,12 @@ onUnmounted(() => {
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background-color: #fff;
   opacity: 0;
   z-index: 1;
   pointer-events: none;
-  transition: opacity 0.5s ease-in-out;
+  transition: none;
 }
 
 .avatar-video.active {
