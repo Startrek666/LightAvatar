@@ -83,6 +83,9 @@ class LiteAvatarHandler(BaseHandler):
         self.audio2mouth = None
         self.encoder = None
         self.generator = None
+
+        # 渲染锁：避免并行任务竞争共享队列导致死锁
+        self.render_lock = asyncio.Lock()
         
         # Avatar数据
         self.data_dir = None
@@ -329,33 +332,35 @@ class LiteAvatarHandler(BaseHandler):
         
         with timer(avatar_processing_time):
             try:
-                audio_data = data.get("audio_data")
-                if not audio_data:
-                    raise ValueError("缺少audio_data参数")
-                
-                # 1. 音频转参数
-                logger.info("提取口型参数...")
-                start = time.time()
-                param_res = await self._audio_to_params(audio_data)
-                logger.debug(f"口型参数提取耗时: {time.time() - start:.2f}秒")
-                
-                # 2. 参数转视频帧
-                logger.info(f"渲染{len(param_res)}帧...")
-                start = time.time()
-                frames = await self._params_to_frames(param_res)
-                video_duration = len(frames) / self.fps if self.fps else 0
-                logger.info(f"视频帧数: {len(frames)}, 预期时长: {video_duration:.2f}秒")
-                logger.debug(f"帧渲染耗时: {time.time() - start:.2f}秒")
-                
-                # 3. 合成视频
-                logger.info("合成视频...")
-                start = time.time()
-                video_data = await self._frames_to_video(frames, audio_data)
-                logger.debug(f"视频合成耗时: {time.time() - start:.2f}秒")
-                
-                logger.info(f"总耗时: {time.time() - start_total:.2f}秒")
-                
-                return video_data
+                # 串行化渲染流程，避免共享队列被并发访问
+                async with self.render_lock:
+                    audio_data = data.get("audio_data")
+                    if not audio_data:
+                        raise ValueError("缺少audio_data参数")
+                    
+                    # 1. 音频转参数
+                    logger.info("提取口型参数...")
+                    start = time.time()
+                    param_res = await self._audio_to_params(audio_data)
+                    logger.debug(f"口型参数提取耗时: {time.time() - start:.2f}秒")
+                    
+                    # 2. 参数转视频帧
+                    logger.info(f"渲染{len(param_res)}帧...")
+                    start = time.time()
+                    frames = await self._params_to_frames(param_res)
+                    video_duration = len(frames) / self.fps if self.fps else 0
+                    logger.info(f"视频帧数: {len(frames)}, 预期时长: {video_duration:.2f}秒")
+                    logger.debug(f"帧渲染耗时: {time.time() - start:.2f}秒")
+                    
+                    # 3. 合成视频
+                    logger.info("合成视频...")
+                    start = time.time()
+                    video_data = await self._frames_to_video(frames, audio_data)
+                    logger.debug(f"视频合成耗时: {time.time() - start:.2f}秒")
+                    
+                    logger.info(f"总耗时: {time.time() - start_total:.2f}秒")
+                    
+                    return video_data
                 
             except Exception as e:
                 logger.error(f"LiteAvatar处理失败: {e}")
