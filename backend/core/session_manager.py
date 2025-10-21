@@ -306,29 +306,42 @@ class Session:
             await self._process_sentence(sentences[0], callback)
             return
         
-        # 多句处理：流水线并行
-        next_task = None
+        # 多句处理：限制并发数为2
+        # 策略：使用滑动窗口，最多同时生成2个视频
+        MAX_CONCURRENT = 2
+        pending_tasks = {}  # {index: task}
+        next_to_send = 0  # 下一个要发送的句子索引
+        next_to_start = 0  # 下一个要启动的句子索引
         
-        for i, sentence in enumerate(sentences):
-            # 如果有预加载任务，等待完成
-            if next_task:
-                result = await next_task
+        # 初始启动前2个任务
+        while next_to_start < len(sentences) and next_to_start < MAX_CONCURRENT:
+            task = asyncio.create_task(self._generate_sentence_data(sentences[next_to_start]))
+            pending_tasks[next_to_start] = task
+            logger.debug(f"Started generating sentence {next_to_start + 1}: {sentences[next_to_start][:30]}...")
+            next_to_start += 1
+        
+        # 循环：等待、发送、启动新任务
+        while next_to_send < len(sentences):
+            # 等待当前要发送的任务完成
+            if next_to_send in pending_tasks:
+                result = await pending_tasks[next_to_send]
+                del pending_tasks[next_to_send]
+                
                 if result:
                     await callback("video_chunk", result)
-                    logger.info(f"Sentence processed: {len(result['video'])} bytes video - '{result['text'][:30]}...'")
+                    logger.info(f"Sentence {next_to_send + 1}/{len(sentences)} processed: {len(result['video'])} bytes video - '{result['text'][:30]}...'")
+                
+                next_to_send += 1
+                
+                # 启动新任务（如果还有）
+                if next_to_start < len(sentences):
+                    task = asyncio.create_task(self._generate_sentence_data(sentences[next_to_start]))
+                    pending_tasks[next_to_start] = task
+                    logger.debug(f"Started generating sentence {next_to_start + 1}: {sentences[next_to_start][:30]}...")
+                    next_to_start += 1
             else:
-                # 第一句：立即处理
-                await self._process_sentence(sentence, callback)
-            
-            # 启动下一句的预加载（如果还有）
-            if i + 1 < len(sentences):
-                next_sentence = sentences[i + 1]
-                next_task = asyncio.create_task(
-                    self._generate_sentence_data(next_sentence)
-                )
-                logger.debug(f"Started preloading next sentence: {next_sentence[:30]}...")
-            else:
-                next_task = None
+                # 任务不存在，跳过
+                next_to_send += 1
     
     async def _generate_sentence_data(self, sentence: str) -> dict:
         """
@@ -364,7 +377,7 @@ class Session:
             logger.error(f"Error preloading sentence '{sentence[:30]}...': {e}")
             return None
     
-    def _is_sentence_end(self, text: str, min_length: int = 10, max_length: int = 25) -> bool:
+    def _is_sentence_end(self, text: str, min_length: int = 10, max_length: int = 20) -> bool:
         """
         智能判断是否应该分割句子
         

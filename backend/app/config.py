@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     AVATAR_RENDER_THREADS: int = Field(default=1, description="Number of render threads for LiteAvatar")
     AVATAR_BG_FRAME_COUNT: int = Field(default=150, description="Background frame count to use")
     
+    # PyTorch performance settings
+    PYTORCH_INTRA_THREADS: int = Field(default=6, description="PyTorch intra-op parallelism threads")
+    PYTORCH_INTER_THREADS: int = Field(default=2, description="PyTorch inter-op parallelism threads")
+    
     # Buffer settings
     AUDIO_BUFFER_SIZE: int = Field(default=50, description="Audio buffer size (frames)")
     VIDEO_BUFFER_SIZE: int = Field(default=75, description="Video buffer size (frames)")

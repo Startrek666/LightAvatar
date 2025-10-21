@@ -27,14 +27,29 @@ _TORCH_THREADS_CONFIGURED = False
 _TORCH_THREADS_LOCK = threading.Lock()
 
 
-def _configure_torch_threads(intra_threads: int = 4, inter_threads: int = 2) -> None:
-    """确保PyTorch线程数只配置一次，避免重复调用导致的RuntimeError"""
+def _configure_torch_threads(intra_threads: int = None, inter_threads: int = None) -> None:
+    """
+    确保PyTorch线程数只配置一次，避免重复调用导致的RuntimeError
+    
+    Args:
+        intra_threads: 内部操作并行线程数（单个操作内的并行），默认从settings读取
+        inter_threads: 操作间并行线程数（多个操作间的并行），默认从settings读取
+    """
     global _TORCH_THREADS_CONFIGURED
     if _TORCH_THREADS_CONFIGURED:
         return
+    
     with _TORCH_THREADS_LOCK:
         if _TORCH_THREADS_CONFIGURED:
             return
+        
+        # 从settings读取配置
+        from backend.app.config import settings
+        if intra_threads is None:
+            intra_threads = settings.PYTORCH_INTRA_THREADS
+        if inter_threads is None:
+            inter_threads = settings.PYTORCH_INTER_THREADS
+        
         try:
             torch.set_num_threads(intra_threads)
             torch.set_num_interop_threads(inter_threads)
@@ -160,10 +175,11 @@ class LiteAvatarHandler(BaseHandler):
                     f"请运行: bash scripts/download_lite_avatar_models.sh"
                 )
             
-            # 配置ONNX推理选项
+            # 配置ONNX推理选项（从settings读取线程配置）
+            from backend.app.config import settings
             sess_options = onnxruntime.SessionOptions()
-            sess_options.intra_op_num_threads = 4  # 算子内部并行线程数
-            sess_options.inter_op_num_threads = 2  # 算子之间并行线程数
+            sess_options.intra_op_num_threads = settings.PYTORCH_INTRA_THREADS  # 算子内部并行线程数
+            sess_options.inter_op_num_threads = settings.PYTORCH_INTER_THREADS  # 算子之间并行线程数
             sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
             
             # 创建ONNX推理会话
