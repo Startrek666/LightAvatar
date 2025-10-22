@@ -53,15 +53,7 @@ class Settings(BaseSettings):
     SKYNET_WHISPER_PARTICIPANT_ID: str = Field(default="avatar-user", description="Participant ID for Skynet")
     
     # LLM settings
-    LLM_API_URL: str = Field(
-        default="http://localhost:8080/v1",
-        description="LLM API URL (OpenAI compatible)"
-    )
-    LLM_API_KEY: str = Field(
-        default=os.getenv("LLM_API_KEY", ""),
-        description="LLM API key"
-    )
-    LLM_MODEL: str = Field(default="qwen-plus", description="LLM model name")
+    LLM_MODEL: str = Field(default="qwen", description="LLM model selection (qwen or gemma)")
     LLM_TEMPERATURE: float = Field(default=0.7, description="LLM temperature")
     LLM_MAX_TOKENS: int = Field(default=500, description="Maximum tokens for LLM response")
     LLM_SYSTEM_PROMPT: str = Field(
@@ -69,6 +61,36 @@ class Settings(BaseSettings):
         description="System prompt for LLM"
     )
     LLM_MAX_HISTORY: int = Field(default=10, description="Maximum conversation history to keep")
+    
+    # 模型配置（从config.yaml读取）
+    LLM_MODELS: dict = Field(
+        default={
+            "qwen": {
+                "api_url": "https://api-llm.lemomate.com/v1/qwen",
+                "api_key": "L5kGzmjwqXbk0ViD@",
+                "model_name": "qwen-2.5b-instruct"
+            },
+            "gemma": {
+                "api_url": "https://api-llm.lemomate.com/v1/gemma",
+                "api_key": "L5kGzmjwqXbk0ViD@",
+                "model_name": "gemma-3b-it"
+            }
+        },
+        description="LLM model configurations"
+    )
+    
+    # 动态获取当前选择模型的配置
+    @property
+    def LLM_API_URL(self) -> str:
+        return self.LLM_MODELS.get(self.LLM_MODEL, {}).get("api_url", "")
+    
+    @property
+    def LLM_API_KEY(self) -> str:
+        return self.LLM_MODELS.get(self.LLM_MODEL, {}).get("api_key", "")
+    
+    @property
+    def LLM_MODEL_NAME(self) -> str:
+        return self.LLM_MODELS.get(self.LLM_MODEL, {}).get("model_name", "")
     
     # TTS settings
     TTS_VOICE: str = Field(default="zh-CN-XiaoxiaoNeural", description="Edge TTS voice")

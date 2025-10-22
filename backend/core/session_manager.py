@@ -73,7 +73,7 @@ class Session:
             self.llm_handler = OpenAIHandler(
                 api_url=settings.LLM_API_URL,
                 api_key=settings.LLM_API_KEY,
-                model=settings.LLM_MODEL
+                model=settings.LLM_MODEL_NAME
             )
             await self.llm_handler.initialize()
             
@@ -623,8 +623,21 @@ class Session:
         self.config.update(config)
         
         # Update handler configurations
-        if "llm" in config and self.llm_handler:
-            self.llm_handler.update_config(config["llm"])
+        if "llm" in config:
+            # 如果模型选择改变，需要重新创建LLM handler
+            if "model" in config["llm"]:
+                settings.LLM_MODEL = config["llm"]["model"]
+                logger.info(f"Switching LLM model to: {settings.LLM_MODEL}")
+                
+                # 重新创建LLM handler
+                self.llm_handler = OpenAIHandler(
+                    api_url=settings.LLM_API_URL,
+                    api_key=settings.LLM_API_KEY,
+                    model=settings.LLM_MODEL_NAME
+                )
+                await self.llm_handler.initialize()
+            elif self.llm_handler:
+                self.llm_handler.update_config(config["llm"])
         
         if "tts" in config and self.tts_handler:
             self.tts_handler.update_config(config["tts"])

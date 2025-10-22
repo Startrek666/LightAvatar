@@ -9,21 +9,13 @@
       <a-tabs v-model:activeKey="activeTab">
         <a-tab-pane key="llm" tab="语言模型">
           <a-form :model="settings.llm" layout="vertical">
-            <a-form-item label="API 地址">
-              <a-input v-model:value="settings.llm.api_url" />
+            <a-form-item label="选择模型">
+              <a-select v-model:value="settings.llm.model">
+                <a-select-option value="qwen">Qwen 2.5B（通用对话）</a-select-option>
+                <a-select-option value="gemma">Gemma 3B（英文优化）</a-select-option>
+              </a-select>
               <template #extra>
-                OpenAI兼容的API地址，如: http://localhost:8080/v1
-              </template>
-            </a-form-item>
-            
-            <a-form-item label="API Key">
-              <a-input-password v-model:value="settings.llm.api_key" />
-            </a-form-item>
-            
-            <a-form-item label="模型名称">
-              <a-input v-model:value="settings.llm.model" />
-              <template #extra>
-                如: gpt-3.5-turbo, qwen-plus 等
+                选择适合您需求的大语言模型
               </template>
             </a-form-item>
             

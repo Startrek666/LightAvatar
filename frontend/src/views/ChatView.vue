@@ -81,14 +81,11 @@
     <!-- Settings Modal -->
     <a-modal v-model:open="settingsVisible" title="设置" width="600px" @ok="saveSettings">
       <a-form :model="settings" layout="vertical">
-        <a-form-item label="LLM API 地址">
-          <a-input v-model:value="settings.llm.api_url" placeholder="http://localhost:8080/v1" />
-        </a-form-item>
-        <a-form-item label="LLM API Key">
-          <a-input-password v-model:value="settings.llm.api_key" placeholder="输入API Key" />
-        </a-form-item>
-        <a-form-item label="LLM 模型">
-          <a-input v-model:value="settings.llm.model" placeholder="qwen-plus" />
+        <a-form-item label="LLM 大模型">
+          <a-select v-model:value="settings.llm.model">
+            <a-select-option value="qwen">Qwen 2.5B（通用对话）</a-select-option>
+            <a-select-option value="gemma">Gemma 3B（英文优化）</a-select-option>
+          </a-select>
         </a-form-item>
         <a-form-item label="TTS 语音">
           <a-select v-model:value="settings.tts.voice">
@@ -164,9 +161,7 @@ const messages = ref<Array<{
 
 const settings = ref({
   llm: {
-    api_url: 'http://localhost:8080/v1',
-    api_key: '',
-    model: 'qwen-plus'
+    model: 'qwen'
   },
   tts: {
     voice: 'zh-CN-XiaoxiaoNeural'
@@ -214,8 +209,7 @@ const sendTextMessage = () => {
   }
 
   const messageText = inputText.value.trim()
-  inputText.value = ''
-
+  
   // Add user message
   messages.value.push({
     role: 'user',
@@ -230,6 +224,9 @@ const sendTextMessage = () => {
     timestamp: new Date()
   }
   messages.value.push(assistantMessage)
+
+  // Clear input after sending
+  inputText.value = ''
 
   // Send to server with streaming enabled
   isProcessing.value = true
