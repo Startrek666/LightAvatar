@@ -262,8 +262,9 @@ class Session:
                 pending_tasks = {}  # {index: task}
                 next_to_send = 0
                 next_to_start = 0
-                MAX_CONCURRENT = 2
+                MAX_CONCURRENT = settings.MAX_CONCURRENT_VIDEOS
                 input_done = False
+                logger.info(f"[实时] 句子处理队列启动，最大并发数: {MAX_CONCURRENT}")
                 
                 async def send_completed_tasks():
                     """异步发送已完成的任务，不阻塞新任务启动"""
@@ -392,9 +393,9 @@ class Session:
             await self._process_sentence(sentences[0], callback)
             return
         
-        # 多句处理：限制并发数为2
-        # 策略：使用滑动窗口，最多同时生成2个视频
-        MAX_CONCURRENT = 2
+        # 多句处理：限制并发数（从配置读取）
+        # 策略：使用滑动窗口，最多同时生成N个视频
+        MAX_CONCURRENT = settings.MAX_CONCURRENT_VIDEOS
         pending_tasks = {}  # {index: task}
         next_to_send = 0  # 下一个要发送的句子索引
         next_to_start = 0  # 下一个要启动的句子索引
