@@ -267,8 +267,12 @@ class Session:
                 logger.info(f"[实时] 句子处理队列启动，最大并发数: {MAX_CONCURRENT}")
                 
                 async def send_completed_tasks():
-                    """异步发送已完成的任务，不阻塞新任务启动"""
+                    """异步发送已完成的任务，实现预缓冲策略"""
                     nonlocal next_to_send
+                    
+                    # 预缓冲策略：等待前N个视频完成后才开始发送
+                    PREBUFFER_COUNT = settings.PREBUFFER_COUNT
+                    
                     while next_to_send in pending_tasks:
                         task = pending_tasks[next_to_send]
                         
@@ -276,13 +280,32 @@ class Session:
                         if not task.done():
                             break  # 等待这个任务，不跳过后面的
                         
+                        # 预缓冲检查：如果是前几个视频，检查是否已经有足够的缓冲
+                        if next_to_send < PREBUFFER_COUNT:
+                            # 检查后续视频的完成情况
+                            buffered_count = 0
+                            for i in range(next_to_send, min(next_to_send + PREBUFFER_COUNT, sentence_index)):
+                                if i in pending_tasks and pending_tasks[i].done():
+                                    buffered_count += 1
+                                elif i in pending_tasks:
+                                    # 有未完成的任务
+                                    break
+                            
+                            # 如果缓冲不足，暂不发送
+                            if buffered_count < PREBUFFER_COUNT and next_to_send == 0:
+                                logger.debug(f"[实时] 预缓冲中: {buffered_count}/{PREBUFFER_COUNT} 个视频已完成")
+                                break
+                        
                         try:
                             result = await task  # 已完成，立即返回
                             del pending_tasks[next_to_send]
                             
                             if result:
                                 await callback("video_chunk", result)
-                                logger.info(f"[实时] 句子 {next_to_send + 1} 已发送: {len(result['video'])} bytes")
+                                if next_to_send == 0:
+                                    logger.info(f"[实时] 句子 1 开始播放（已预缓冲 {PREBUFFER_COUNT} 个视频）: {len(result['video'])} bytes")
+                                else:
+                                    logger.info(f"[实时] 句子 {next_to_send + 1} 已发送: {len(result['video'])} bytes")
                             
                             next_to_send += 1
                         except Exception as e:

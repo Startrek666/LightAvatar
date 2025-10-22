@@ -99,6 +99,7 @@ class Settings(BaseSettings):
     
     # Concurrent video generation settings
     MAX_CONCURRENT_VIDEOS: int = Field(default=2, description="Maximum concurrent video generation tasks")
+    PREBUFFER_COUNT: int = Field(default=2, description="Number of videos to prebuffer before starting playback")
     
     # PyTorch performance settings
     PYTORCH_INTRA_THREADS: int = Field(default=6, description="PyTorch intra-op parallelism threads")
