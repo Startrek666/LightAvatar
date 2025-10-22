@@ -298,10 +298,14 @@ class Session:
                                     # 有未完成的任务，继续等待
                                     break
                             
-                            # 如果缓冲不足，暂不发送
+                            # 如果缓冲不足，检查是否应该发送
                             if buffered_count < PREBUFFER_COUNT and next_to_send == 0:
-                                logger.debug(f"[实时] 预缓冲中: {buffered_count}/{PREBUFFER_COUNT} 个成功视频（跳过失败任务）")
-                                break
+                                # 特殊情况：如果LLM已完成且所有视频都已生成，直接发送
+                                if input_done and next_to_start >= sentence_index:
+                                    logger.info(f"[实时] LLM输出完成，立即发送已有的 {buffered_count} 个视频（无需等待预缓冲）")
+                                else:
+                                    logger.debug(f"[实时] 预缓冲中: {buffered_count}/{PREBUFFER_COUNT} 个成功视频（跳过失败任务）")
+                                    break
                         
                         try:
                             result = await task  # 已完成，立即返回
@@ -310,7 +314,9 @@ class Session:
                             if result:
                                 await callback("video_chunk", result)
                                 if next_to_send == 0:
-                                    logger.info(f"[实时] 句子 1 开始播放（已预缓冲 {PREBUFFER_COUNT} 个视频）: {len(result['video'])} bytes")
+                                    # 计算实际预缓冲的视频数量
+                                    actual_buffered = sum(1 for i in range(sentence_index) if i in pending_tasks and pending_tasks[i].done())
+                                    logger.info(f"[实时] 句子 1 开始播放（已预缓冲 {actual_buffered} 个视频）: {len(result['video'])} bytes")
                                 else:
                                     logger.info(f"[实时] 句子 {next_to_send + 1} 已发送: {len(result['video'])} bytes")
                             
