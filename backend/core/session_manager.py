@@ -257,51 +257,72 @@ class Session:
             
             # 启动句子处理任务
             async def process_sentence_queue():
-                """后台处理句子队列"""
+                """后台处理句子队列 - 真正的异步非阻塞"""
                 sentence_index = 0
                 pending_tasks = {}  # {index: task}
                 next_to_send = 0
                 next_to_start = 0
                 MAX_CONCURRENT = 2
+                input_done = False
+                
+                async def send_completed_tasks():
+                    """异步发送已完成的任务，不阻塞新任务启动"""
+                    nonlocal next_to_send
+                    while next_to_send in pending_tasks:
+                        try:
+                            result = await asyncio.wait_for(
+                                pending_tasks[next_to_send],
+                                timeout=60.0
+                            )
+                            del pending_tasks[next_to_send]
+                            
+                            if result:
+                                await callback("video_chunk", result)
+                                logger.info(f"[实时] 句子 {next_to_send + 1} 已发送: {len(result['video'])} bytes")
+                            
+                            next_to_send += 1
+                        except asyncio.TimeoutError:
+                            logger.error(f"[实时] 句子 {next_to_send + 1} 生成超时")
+                            next_to_send += 1
+                        except Exception as e:
+                            logger.error(f"[实时] 发送句子 {next_to_send + 1} 失败: {e}")
+                            next_to_send += 1
                 
                 while True:
-                    # 从队列获取句子
-                    sentence = await sentence_queue.get()
+                    # 从队列获取句子（非阻塞）
+                    try:
+                        sentence = await asyncio.wait_for(sentence_queue.get(), timeout=0.1)
+                    except asyncio.TimeoutError:
+                        # 队列暂时为空，检查是否有已完成的任务可以发送
+                        if pending_tasks:
+                            await send_completed_tasks()
+                        continue
                     
                     if sentence is None:  # 结束信号
+                        input_done = True
                         break
                     
-                    # 启动生成任务
+                    # 启动生成任务（如果还有并发槽位）
                     if next_to_start - next_to_send < MAX_CONCURRENT:
                         task = asyncio.create_task(self._generate_sentence_data(sentence))
                         pending_tasks[sentence_index] = task
-                        logger.debug(f"[实时] 启动句子 {sentence_index + 1} 生成: {sentence[:30]}...")
+                        logger.info(f"[实时] 启动句子 {sentence_index + 1} 生成: {sentence[:30]}... (并发: {len(pending_tasks)})")
                         next_to_start = sentence_index + 1
+                    else:
+                        logger.warning(f"[实时] 并发已满 (MAX={MAX_CONCURRENT})，句子 {sentence_index + 1} 等待槽位")
                     
-                    # 等待并发送已完成的任务
-                    while next_to_send in pending_tasks:
-                        result = await pending_tasks[next_to_send]
-                        del pending_tasks[next_to_send]
-                        
-                        if result:
-                            await callback("video_chunk", result)
-                            logger.info(f"[实时] 句子 {next_to_send + 1} 已发送: {len(result['video'])} bytes")
-                        
-                        next_to_send += 1
+                    # 异步发送已完成的任务（不阻塞）
+                    await send_completed_tasks()
                     
                     sentence_index += 1
                 
                 # 处理剩余任务
+                logger.info(f"[实时] LLM输入完成，等待 {len(pending_tasks)} 个待处理任务...")
                 while next_to_send < sentence_index:
-                    if next_to_send in pending_tasks:
-                        result = await pending_tasks[next_to_send]
-                        del pending_tasks[next_to_send]
-                        
-                        if result:
-                            await callback("video_chunk", result)
-                            logger.info(f"[实时] 句子 {next_to_send + 1} 已发送（剩余）")
-                    
-                    next_to_send += 1
+                    await send_completed_tasks()
+                    if next_to_send < sentence_index:
+                        # 还有任务未完成，等待一下
+                        await asyncio.sleep(0.1)
             
             processing_task = asyncio.create_task(process_sentence_queue())
             
