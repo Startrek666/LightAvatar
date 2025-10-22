@@ -270,11 +270,14 @@ class Session:
                     """异步发送已完成的任务，不阻塞新任务启动"""
                     nonlocal next_to_send
                     while next_to_send in pending_tasks:
+                        task = pending_tasks[next_to_send]
+                        
+                        # 关键：只处理已完成的任务，未完成的直接跳过
+                        if not task.done():
+                            break  # 等待这个任务，不跳过后面的
+                        
                         try:
-                            result = await asyncio.wait_for(
-                                pending_tasks[next_to_send],
-                                timeout=60.0
-                            )
+                            result = await task  # 已完成，立即返回
                             del pending_tasks[next_to_send]
                             
                             if result:
@@ -282,40 +285,55 @@ class Session:
                                 logger.info(f"[实时] 句子 {next_to_send + 1} 已发送: {len(result['video'])} bytes")
                             
                             next_to_send += 1
-                        except asyncio.TimeoutError:
-                            logger.error(f"[实时] 句子 {next_to_send + 1} 生成超时")
-                            next_to_send += 1
                         except Exception as e:
                             logger.error(f"[实时] 发送句子 {next_to_send + 1} 失败: {e}")
+                            del pending_tasks[next_to_send]
                             next_to_send += 1
                 
+                pending_sentence = None  # 暂存等待处理的句子
+                
                 while True:
-                    # 从队列获取句子（非阻塞）
-                    try:
-                        sentence = await asyncio.wait_for(sentence_queue.get(), timeout=0.1)
-                    except asyncio.TimeoutError:
-                        # 队列暂时为空，检查是否有已完成的任务可以发送
-                        if pending_tasks:
-                            await send_completed_tasks()
-                        continue
-                    
-                    if sentence is None:  # 结束信号
-                        input_done = True
-                        break
+                    # 如果有等待的句子，优先处理它
+                    if pending_sentence is None:
+                        # 从队列获取句子（非阻塞）
+                        try:
+                            sentence = await asyncio.wait_for(sentence_queue.get(), timeout=0.1)
+                        except asyncio.TimeoutError:
+                            # 队列暂时为空，检查是否有已完成的任务可以发送
+                            if pending_tasks:
+                                await send_completed_tasks()
+                            continue
+                        
+                        if sentence is None:  # 结束信号
+                            input_done = True
+                            break
+                    else:
+                        sentence = pending_sentence
+                        pending_sentence = None
                     
                     # 启动生成任务（如果还有并发槽位）
-                    if next_to_start - next_to_send < MAX_CONCURRENT:
+                    slots_available = MAX_CONCURRENT - (next_to_start - next_to_send)
+                    if slots_available > 0:
                         task = asyncio.create_task(self._generate_sentence_data(sentence))
                         pending_tasks[sentence_index] = task
-                        logger.info(f"[实时] 启动句子 {sentence_index + 1} 生成: {sentence[:30]}... (并发: {len(pending_tasks)})")
+                        logger.info(
+                            f"[实时] 启动句子 {sentence_index + 1} 生成: {sentence[:30]}... "
+                            f"(活跃任务: {len(pending_tasks)}, 已发送: {next_to_send}, 已启动: {next_to_start + 1})"
+                        )
                         next_to_start = sentence_index + 1
+                        sentence_index += 1
                     else:
-                        logger.warning(f"[实时] 并发已满 (MAX={MAX_CONCURRENT})，句子 {sentence_index + 1} 等待槽位")
+                        # 并发已满，暂存这个句子，等待槽位释放
+                        logger.debug(
+                            f"[实时] 并发已满 (MAX={MAX_CONCURRENT})，句子 {sentence_index + 1} 等待槽位 "
+                            f"(活跃: {len(pending_tasks)})"
+                        )
+                        pending_sentence = sentence
+                        # 等待一小段时间，让已完成的任务有机会被发送
+                        await asyncio.sleep(0.05)
                     
                     # 异步发送已完成的任务（不阻塞）
                     await send_completed_tasks()
-                    
-                    sentence_index += 1
                 
                 # 处理剩余任务
                 logger.info(f"[实时] LLM输入完成，等待 {len(pending_tasks)} 个待处理任务...")
