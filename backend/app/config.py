@@ -143,8 +143,12 @@ def update_settings(config_dict: dict):
         elif isinstance(value, dict):
             for sub_key, sub_value in value.items():
                 combined_key = f"{key}_{sub_key}".upper()
+                # 先尝试组合键（如 SERVER_PORT）
                 if hasattr(settings, combined_key):
                     setattr(settings, combined_key, sub_value)
+                # 如果组合键不存在，尝试只用sub_key（如 PORT）
+                elif hasattr(settings, sub_key.upper()):
+                    setattr(settings, sub_key.upper(), sub_value)
 
 
 # Load configuration from file if exists
