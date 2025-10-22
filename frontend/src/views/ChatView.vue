@@ -84,7 +84,7 @@
         <a-form-item label="LLM 大模型">
           <a-select v-model:value="settings.llm.model">
             <a-select-option value="qwen">Qwen 2.5B（通用对话）</a-select-option>
-            <a-select-option value="gemma">Gemma 3B（英文优化）</a-select-option>
+            <a-select-option value="gemma">Gemma 3B（更智能）</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item label="TTS 语音">
@@ -210,6 +210,9 @@ const sendTextMessage = () => {
 
   const messageText = inputText.value.trim()
   
+  // Clear input immediately (multiple approaches for reliability)
+  inputText.value = ''
+  
   // Add user message
   messages.value.push({
     role: 'user',
@@ -225,15 +228,17 @@ const sendTextMessage = () => {
   }
   messages.value.push(assistantMessage)
 
-  // Clear input after sending
-  inputText.value = ''
-
   // Send to server with streaming enabled
   isProcessing.value = true
   send({
     type: 'text',
     text: messageText,
     streaming: true  // Enable streaming mode
+  })
+
+  // Ensure input is cleared in next tick
+  nextTick(() => {
+    inputText.value = ''
   })
 
   scrollToBottom()
