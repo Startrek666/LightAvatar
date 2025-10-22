@@ -282,18 +282,25 @@ class Session:
                         
                         # 预缓冲检查：如果是前几个视频，检查是否已经有足够的缓冲
                         if next_to_send < PREBUFFER_COUNT:
-                            # 检查后续视频的完成情况
+                            # 检查后续视频的完成情况（只计算成功的）
                             buffered_count = 0
                             for i in range(next_to_send, min(next_to_send + PREBUFFER_COUNT, sentence_index)):
                                 if i in pending_tasks and pending_tasks[i].done():
-                                    buffered_count += 1
+                                    # 检查任务是否成功（不是None）
+                                    try:
+                                        result_preview = pending_tasks[i].result()
+                                        if result_preview is not None:
+                                            buffered_count += 1
+                                    except Exception:
+                                        # 任务失败，不计入缓冲
+                                        pass
                                 elif i in pending_tasks:
-                                    # 有未完成的任务
+                                    # 有未完成的任务，继续等待
                                     break
                             
                             # 如果缓冲不足，暂不发送
                             if buffered_count < PREBUFFER_COUNT and next_to_send == 0:
-                                logger.debug(f"[实时] 预缓冲中: {buffered_count}/{PREBUFFER_COUNT} 个视频已完成")
+                                logger.debug(f"[实时] 预缓冲中: {buffered_count}/{PREBUFFER_COUNT} 个成功视频（跳过失败任务）")
                                 break
                         
                         try:

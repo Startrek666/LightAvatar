@@ -58,31 +58,39 @@ class EdgeTTSHandler(BaseHandler):
         with timer(tts_processing_time):
             return await self._synthesize(text)
     
-    async def _synthesize(self, text: str) -> bytes:
-        """Perform text-to-speech synthesis"""
-        try:
-            # Create TTS communication
-            communicate = edge_tts.Communicate(
-                text=text,
-                voice=self.voice,
-                rate=self.rate,
-                pitch=self.pitch,
-                volume=self.volume
-            )
-            
-            # Synthesize to bytes
-            audio_data = b""
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio_data += chunk["data"]
-            
-            logger.info(f"Synthesized {len(text)} characters to {len(audio_data)} bytes")
-            
-            return audio_data
-            
-        except Exception as e:
-            logger.error(f"TTS synthesis error: {e}")
-            return b""
+    async def _synthesize(self, text: str, max_retries: int = 3) -> bytes:
+        """Perform text-to-speech synthesis with retry logic"""
+        import asyncio
+        
+        for attempt in range(max_retries):
+            try:
+                # Create TTS communication
+                communicate = edge_tts.Communicate(
+                    text=text,
+                    voice=self.voice,
+                    rate=self.rate,
+                    pitch=self.pitch,
+                    volume=self.volume
+                )
+                
+                # Synthesize to bytes
+                audio_data = b""
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_data += chunk["data"]
+                
+                logger.info(f"Synthesized {len(text)} characters to {len(audio_data)} bytes")
+                
+                return audio_data
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # 2秒, 4秒, 6秒
+                    logger.warning(f"TTS synthesis failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"TTS synthesis error after {max_retries} attempts: {e}")
+                    return b""
     
     async def synthesize(self, text: str) -> bytes:
         """Public synthesize method"""
