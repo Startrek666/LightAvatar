@@ -161,19 +161,23 @@ def load_config_file(config_path: Path) -> dict:
 
 def update_settings(config_dict: dict):
     """Update settings from dictionary"""
+    # 只读属性列表（通过@property定义的）
+    readonly_attrs = {'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL_NAME'}
+    
     for key, value in config_dict.items():
         # 直接匹配顶层键
-        if hasattr(settings, key.upper()):
-            setattr(settings, key.upper(), value)
+        upper_key = key.upper()
+        if upper_key not in readonly_attrs and hasattr(settings, upper_key):
+            setattr(settings, upper_key, value)
         # 处理嵌套配置（如 avatar.fps -> AVATAR_FPS）
         elif isinstance(value, dict):
             for sub_key, sub_value in value.items():
                 combined_key = f"{key}_{sub_key}".upper()
                 # 先尝试组合键（如 SERVER_PORT）
-                if hasattr(settings, combined_key):
+                if combined_key not in readonly_attrs and hasattr(settings, combined_key):
                     setattr(settings, combined_key, sub_value)
                 # 如果组合键不存在，尝试只用sub_key（如 PORT）
-                elif hasattr(settings, sub_key.upper()):
+                elif sub_key.upper() not in readonly_attrs and hasattr(settings, sub_key.upper()):
                     setattr(settings, sub_key.upper(), sub_value)
 
 
