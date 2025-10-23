@@ -391,20 +391,28 @@ class Session:
                 
                 # Check if we have a complete sentence
                 if self._is_sentence_end(sentence_buffer):
-                    # 立即将句子加入处理队列（清理Markdown格式）
+                    # 立即将句子加入处理队列（清理Markdown格式和emoji）
                     clean_sentence = sentence_buffer.strip()
                     if clean_sentence:
-                        # 清理Markdown格式（去除**、*等符号）
+                        # 清理Markdown格式和emoji（去除**、*、😊等符号）
                         clean_sentence = clean_markdown_for_tts(clean_sentence)
-                        await sentence_queue.put(clean_sentence)
-                        logger.debug(f"[实时] 句子入队: {clean_sentence[:30]}...")
+                        # 清理后再次检查是否为空（例如纯emoji句子清理后会变成空字符串）
+                        if clean_sentence.strip():
+                            await sentence_queue.put(clean_sentence)
+                            logger.debug(f"[实时] 句子入队: {clean_sentence[:30]}...")
+                        else:
+                            logger.debug(f"[实时] 跳过空句子（清理后为空）: {sentence_buffer[:30]}...")
                     sentence_buffer = ""
             
             # Collect any remaining text
             if sentence_buffer.strip():
                 clean_sentence = clean_markdown_for_tts(sentence_buffer.strip())
-                await sentence_queue.put(clean_sentence)
-                logger.debug(f"[实时] 剩余文字入队: {clean_sentence[:30]}...")
+                # 清理后再次检查是否为空
+                if clean_sentence.strip():
+                    await sentence_queue.put(clean_sentence)
+                    logger.debug(f"[实时] 剩余文字入队: {clean_sentence[:30]}...")
+                else:
+                    logger.debug(f"[实时] 跳过空句子（清理后为空）: {sentence_buffer[:30]}...")
             
             # 发送结束信号
             await sentence_queue.put(None)
