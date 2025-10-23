@@ -5,8 +5,9 @@ import asyncio
 import json
 import uuid
 from typing import Optional
-import websocket
+
 import numpy as np
+from websocket import ABNF, create_connection
 from loguru import logger
 
 from backend.handlers.base import BaseHandler
@@ -45,7 +46,7 @@ class SkynetWhisperHandler(BaseHandler):
             loop = asyncio.get_event_loop()
             self.ws = await loop.run_in_executor(
                 None,
-                lambda: websocket.create_connection(ws_url, timeout=10)
+                lambda: create_connection(ws_url, timeout=10)
             )
             
             logger.info(f"Skynet Whisper connected: {ws_url}")
@@ -134,7 +135,7 @@ class SkynetWhisperHandler(BaseHandler):
                     # 发送音频数据（二进制）
                     await loop.run_in_executor(
                         None,
-                        lambda: self.ws.send(payload, opcode=websocket.ABNF.OPCODE_BINARY)
+                        lambda: self.ws.send(payload, opcode=ABNF.OPCODE_BINARY)
                     )
                     
                     # 接收识别结果
