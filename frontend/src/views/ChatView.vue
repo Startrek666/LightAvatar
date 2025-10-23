@@ -59,7 +59,16 @@
                 <div class="message-content">
                   <a-avatar v-if="message.role === 'user'" :icon="h(UserOutlined)" />
                   <a-avatar v-else :icon="h(RobotOutlined)" style="background-color: #1890ff" />
-                  <div class="message-text">{{ message.content }}</div>
+                  <div class="message-text">
+                    <!-- 用户消息显示纯文本 -->
+                    <template v-if="message.role === 'user'">
+                      {{ message.content }}
+                    </template>
+                    <!-- AI消息使用 Markdown 渲染 -->
+                    <template v-else>
+                      <MarkdownRenderer :content="message.content" />
+                    </template>
+                  </div>
                 </div>
                 <div class="message-time">{{ formatTime(message.timestamp) }}</div>
               </div>
@@ -153,6 +162,7 @@ import {
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
 import { useDocParser } from '@/composables/useDocParser'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 // import { useChatStore } from '@/store/chat' // 暂未使用，保留以备将来功能扩展
 
 // const chatStore = useChatStore()
