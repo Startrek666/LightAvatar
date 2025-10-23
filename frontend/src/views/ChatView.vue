@@ -3,26 +3,24 @@
     <a-layout>
       <a-layout-header class="header">
         <div class="header-content">
-          <h1>Lightweight Avatar Chat</h1>
+          <h1 class="header-title">Avatar Chat</h1>
           <div class="header-actions">
             <!-- 语音输入开关 -->
-            <a-space>
-              <span>语音输入:</span>
+            <div class="header-action-item">
               <a-switch v-model:checked="enableVoiceInput" checked-children="开" un-checked-children="关" />
-            </a-space>
+              <span class="action-label">语音</span>
+            </div>
 
             <!-- 对话记录开关 -->
-            <a-space>
-              <span>对话记录:</span>
-              <a-switch v-model:checked="showChatHistory" checked-children="显示" un-checked-children="隐藏" />
-            </a-space>
+            <div class="header-action-item">
+              <a-switch v-model:checked="showChatHistory" checked-children="显" un-checked-children="隐" />
+              <span class="action-label">记录</span>
+            </div>
 
-            <a-button @click="showSettings" :icon="h(SettingOutlined)">设置</a-button>
+            <a-button type="text" size="small" @click="showSettings" :icon="h(SettingOutlined)" />
             <a-badge :count="isConnected ? 0 : 1" :dot="true">
-              <a-button :type="isConnected ? 'primary' : 'default'"
-                :icon="h(isConnected ? WifiOutlined : DisconnectOutlined)">
-                {{ isConnected ? '已连接' : '未连接' }}
-              </a-button>
+              <a-button type="text" size="small"
+                :icon="h(isConnected ? WifiOutlined : DisconnectOutlined)" />
             </a-badge>
           </div>
         </div>
@@ -612,8 +610,21 @@ onUnmounted(() => {
 .header-actions {
   display: flex;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
+  justify-content: flex-end;
+}
+
+.header-action-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.action-label {
+  font-size: 14px;
+  color: #666;
 }
 
 .content {
@@ -789,19 +800,44 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .header {
-    padding: 0 16px;
+    padding: 0 12px;
+    height: auto;
+    min-height: 56px;
   }
 
   .header-content {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: auto;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .header-title {
+    font-size: 16px;
+    margin: 0;
+    flex-shrink: 0;
   }
 
   .header-actions {
-    width: 100%;
-    justify-content: flex-start;
-    gap: 8px;
+    width: auto;
+    justify-content: flex-end;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .header-action-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .action-label {
+    font-size: 12px;
+    color: #666;
+    display: none;
   }
 
   .video-chat-area {
@@ -819,8 +855,21 @@ onUnmounted(() => {
 }
 
 @media (max-width: 576px) {
-  .header h1 {
-    font-size: 16px;
+  .header {
+    padding: 0 8px;
+    min-height: 48px;
+  }
+
+  .header-content {
+    padding: 6px 0;
+  }
+
+  .header-title {
+    font-size: 14px;
+  }
+
+  .header-actions {
+    gap: 2px;
   }
 
   .avatar-display {
