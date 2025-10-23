@@ -41,6 +41,9 @@ export function useAudioRecorder() {
 
     const stopRecording = () => {
         if (mediaRecorder.value && isRecording.value) {
+            // 立即清除回调，防止stop()后触发的ondataavailable继续发送数据
+            mediaRecorder.value.ondataavailable = null
+            
             mediaRecorder.value.stop()
             isRecording.value = false
 
@@ -52,6 +55,8 @@ export function useAudioRecorder() {
 
             // Clear chunks
             audioChunks.value = []
+            
+            console.log('🛑 录音器已完全停止')
         }
     }
 
