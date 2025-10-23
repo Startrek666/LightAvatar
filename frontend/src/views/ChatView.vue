@@ -69,11 +69,23 @@
 
         <!-- Input Area -->
         <div class="input-area">
+          <!-- 文档信息卡片 -->
+          <div v-if="uploadedDocInfo" class="doc-info-card">
+            <div class="doc-info-content">
+              <FileTextOutlined class="doc-icon" />
+              <div class="doc-details">
+                <span class="doc-name">{{ uploadedDocInfo.filename }}</span>
+                <span class="doc-size">{{ uploadedDocInfo.textLength }} 字符</span>
+              </div>
+            </div>
+            <CloseOutlined class="doc-close" @click="clearUploadedDoc" />
+          </div>
+          
           <a-input-group compact>
             <a-input v-model:value="inputText" placeholder="输入消息或按住录音按钮说话..." @pressEnter="sendTextMessage"
               :disabled="!isConnected || isProcessing" size="large" />
             <a-button size="large" @click="triggerFileUpload"
-              :disabled="!isConnected || isProcessing || isUploadingDoc" :icon="h(PlusOutlined)"
+              :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" :icon="h(PlusOutlined)"
               title="上传文档 (PDF/DOCX/PPTX, 最大30MB)">
             </a-button>
             <a-button type="primary" size="large" @click="sendTextMessage"
@@ -134,7 +146,9 @@ import {
   RobotOutlined,
   SendOutlined,
   AudioOutlined,
-  PlusOutlined
+  PlusOutlined,
+  FileTextOutlined,
+  CloseOutlined
 } from '@ant-design/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
@@ -156,6 +170,7 @@ const inputText = ref('')
 const isProcessing = ref(false)
 const fileInput = ref<HTMLInputElement>()
 const uploadedDocText = ref('')
+const uploadedDocInfo = ref<{ filename: string; textLength: number } | null>(null)
 const isPlayingIdleVideo = ref(false)
 const settingsVisible = ref(false)
 
@@ -266,11 +281,15 @@ const handleFileUpload = async (event: Event) => {
     
     console.log('✅ 文档解析成功，文本长度:', docText.length)
     
-    // 保存文档文本
+    // 保存文档文本和信息
     uploadedDocText.value = docText
+    uploadedDocInfo.value = {
+      filename: file.name,
+      textLength: docText.length
+    }
     
     // 提示用户
-    message.success(`文档已上传（${(file.size / 1024).toFixed(0)}KB），请输入您的问题`)
+    message.success(`文档已上传，请输入您的问题`)
     
     // 在输入框显示提示
     if (!inputText.value) {
@@ -284,28 +303,37 @@ const handleFileUpload = async (event: Event) => {
   }
 }
 
+// 清除已上传的文档
+const clearUploadedDoc = () => {
+  uploadedDocText.value = ''
+  uploadedDocInfo.value = null
+  message.info('已取消文档')
+}
+
 const sendTextMessage = () => {
   if (!inputText.value.trim() || !isConnected.value || isProcessing.value) {
     return
   }
 
-  let messageText = inputText.value.trim()
+  const userInput = inputText.value.trim()
+  let messageToSend = userInput
   
-  // 如果有上传的文档，将文档内容添加到消息中
+  // 如果有上传的文档，将文档内容添加到发送的消息中
   if (uploadedDocText.value) {
-    messageText = `${messageText}\n\n[文档内容]\n${uploadedDocText.value}`
-    console.log('📄 发送消息包含文档内容，总长度:', messageText.length)
-    // 清空文档文本，避免重复发送
+    messageToSend = `${userInput}\n\n[文档内容]\n${uploadedDocText.value}`
+    console.log('📄 发送消息包含文档内容，总长度:', messageToSend.length)
+    // 清空文档文本和信息，避免重复发送
     uploadedDocText.value = ''
+    uploadedDocInfo.value = null
   }
   
   // Clear input immediately (multiple approaches for reliability)
   inputText.value = ''
   
-  // Add user message
+  // Add user message - 只显示用户输入的提示词，不显示文档内容
   messages.value.push({
     role: 'user',
-    content: messageText,
+    content: userInput,
     timestamp: new Date()
   })
 
@@ -317,11 +345,11 @@ const sendTextMessage = () => {
   }
   messages.value.push(assistantMessage)
 
-  // Send to server with streaming enabled
+  // Send to server with streaming enabled - 发送完整消息（包含文档）
   isProcessing.value = true
   send({
     type: 'text',
-    text: messageText,
+    text: messageToSend,
     streaming: true  // Enable streaming mode
   })
 
@@ -885,6 +913,75 @@ onUnmounted(() => {
   background: #fff;
   padding: 16px;
   border-top: 1px solid #f0f0f0;
+}
+
+/* 文档信息卡片样式 */
+.doc-info-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  transition: all 0.3s;
+}
+
+.doc-info-card:hover {
+  background: #d4edff;
+  border-color: #69c0ff;
+}
+
+.doc-info-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-icon {
+  font-size: 24px;
+  color: #1890ff;
+  flex-shrink: 0;
+}
+
+.doc-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.doc-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #262626;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-size {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.doc-close {
+  font-size: 16px;
+  color: #8c8c8c;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+.doc-close:hover {
+  color: #ff4d4f;
+  background: rgba(255, 77, 79, 0.1);
 }
 
 .input-area .ant-input-group.ant-input-group-compact {
