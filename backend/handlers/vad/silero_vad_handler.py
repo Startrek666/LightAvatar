@@ -77,6 +77,16 @@ class SileroVADHandler(BaseHandler):
             audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
             audio_array = audio_array / 32768.0  # Normalize to [-1, 1]
             
+            # Silero VAD要求固定大小的帧：16kHz需要512样本，8kHz需要256样本
+            frame_size = 512 if self.sampling_rate == 16000 else 256
+            
+            # 如果音频数据不足一帧，填充零
+            if len(audio_array) < frame_size:
+                audio_array = np.pad(audio_array, (0, frame_size - len(audio_array)), mode='constant')
+            # 如果超过一帧，只取第一帧（或者可以处理多帧）
+            elif len(audio_array) > frame_size:
+                audio_array = audio_array[:frame_size]
+            
             # Convert to tensor
             audio_tensor = torch.from_numpy(audio_array)
             
