@@ -261,24 +261,35 @@ const sendTextMessage = () => {
 
 const startRecording = async () => {
   if (!isConnected.value || isProcessing.value) {
+    console.log('⚠️ 无法开始录音：', { isConnected: isConnected.value, isProcessing: isProcessing.value })
     return
   }
 
+  console.log('开始录音...')
+  message.info('开始录音，请说话...', 1)
+
   try {
+    let chunkCount = 0
     await startAudioRecording((audioData: ArrayBuffer) => {
+      chunkCount++
+      console.log(`发送音频数据块 #${chunkCount}，大小: ${audioData.byteLength} 字节`)
+      
       // Send audio data through WebSocket
       send({
         type: 'audio',
         data: Array.from(new Uint8Array(audioData))
       })
     })
+    console.log('✅ 录音器启动成功')
   } catch (error) {
+    console.error('❌ 录音启动失败:', error)
     message.error('无法访问麦克风')
   }
 }
 
 const stopRecording = () => {
   if (isRecording.value) {
+    console.log('🛑 停止录音，发送结束信号')
     stopAudioRecording()
     
     // 发送录音结束信号
@@ -286,7 +297,11 @@ const stopRecording = () => {
       type: 'audio_end'
     })
     
+    message.loading('正在识别语音...', 0)
     isProcessing.value = true
+    console.log('⏳ 等待语音识别结果...')
+  } else {
+    console.log('⚠️ 尝试停止录音但当前未在录音状态')
   }
 }
 
@@ -315,17 +330,20 @@ const handleWebSocketMessage = (data: any) => {
   }
   else if (data.type === 'response') {
     // Non-streaming mode (legacy)
+    console.log('✅ 收到响应:', data.data.text)
     messages.value.push({
       role: 'assistant',
       content: data.data.text,
       timestamp: new Date()
     })
 
+    message.destroy()  // 关闭loading提示
     isProcessing.value = false
     scrollToBottom()
   }
   else if (data.type === 'text_chunk') {
     // Streaming text chunk
+    console.log('📝 收到文本块:', data.data.chunk)
     const lastMessage = messages.value[messages.value.length - 1]
     if (lastMessage && lastMessage.role === 'assistant') {
       lastMessage.content += data.data.chunk
@@ -333,7 +351,7 @@ const handleWebSocketMessage = (data: any) => {
     }
   }
   else if (data.type === 'session_timeout') {
-    console.log('Received session_timeout notification:', data)
+    console.log('⏰ 会话超时:', data)
     const timeoutSeconds = data.timeout_seconds || 300
     message.warning(`会话已超过 ${timeoutSeconds} 秒无操作，请刷新页面或重新进入继续对话`, 0)
     // Stop auto-reconnect
@@ -342,15 +360,18 @@ const handleWebSocketMessage = (data: any) => {
   }
   else if (data.type === 'video_chunk_meta') {
     // Video chunk metadata received, binary data will follow
-    console.log('Video chunk incoming:', data.data.size, 'bytes')
+    console.log('🎥 视频块元数据:', data.data.size, '字节')
   }
   else if (data.type === 'stream_complete') {
     // Streaming complete
+    console.log('✅ 流式传输完成:', data.data.full_text)
+    message.destroy()  // 关闭loading提示
     isProcessing.value = false
-    console.log('Stream complete, full text:', data.data.full_text)
   }
   else if (data.type === 'error') {
     // Error occurred
+    console.error('❌ 处理失败:', data.data.message)
+    message.destroy()  // 关闭loading提示
     message.error('处理失败: ' + data.data.message)
     isProcessing.value = false
   }

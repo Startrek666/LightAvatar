@@ -127,17 +127,24 @@ class Session:
         # 转换列表为字节对象（前端发送的是数组）
         if isinstance(audio_data, list):
             audio_data = bytes(audio_data)
+            logger.debug(f"[音频] Session {self.session_id}: 收到音频数组，已转换为字节，大小: {len(audio_data)} 字节")
         elif not isinstance(audio_data, bytes):
-            logger.warning(f"Unexpected audio data type: {type(audio_data)}")
+            logger.warning(f"[音频] Session {self.session_id}: 未知音频数据类型: {type(audio_data)}")
             return
+        else:
+            logger.debug(f"[音频] Session {self.session_id}: 收到音频字节，大小: {len(audio_data)} 字节")
         
         # Add to buffer
         self.audio_buffer.append(audio_data)
+        buffer_size = sum(len(chunk) for chunk in self.audio_buffer)
+        logger.debug(f"[音频] Session {self.session_id}: 缓冲区大小: {buffer_size} 字节 ({len(self.audio_buffer)} 块)")
         
         # Check VAD
         if self.vad_handler:
             is_speech = await self.vad_handler.detect(audio_data)
+            logger.debug(f"[VAD] Session {self.session_id}: 语音检测结果: {'检测到语音' if is_speech else '无语音'}")
             if is_speech and not self.is_processing:
+                logger.info(f"[语音识别] Session {self.session_id}: 开始处理语音...")
                 self.is_processing = True
                 asyncio.create_task(self._process_speech())
     
@@ -145,16 +152,25 @@ class Session:
         """Force process remaining audio when recording ends"""
         self.update_activity()
         
+        buffer_size = sum(len(chunk) for chunk in self.audio_buffer)
+        logger.info(f"[录音结束] Session {self.session_id}: 收到录音结束信号，缓冲区: {buffer_size} 字节")
+        
         # 如果有缓冲的音频且不在处理中，强制处理
         if self.audio_buffer and not self.is_processing:
+            logger.info(f"[语音识别] Session {self.session_id}: 强制处理缓冲的音频...")
             self.is_processing = True
             await self._process_speech()
+        elif self.is_processing:
+            logger.info(f"[语音识别] Session {self.session_id}: 已在处理中，跳过")
+        else:
+            logger.warning(f"[录音结束] Session {self.session_id}: 缓冲区为空，无音频可处理")
         
         # 重置VAD状态
         if self.vad_handler:
             self.vad_handler.reset()
+            logger.debug(f"[VAD] Session {self.session_id}: VAD状态已重置")
         
-        logger.info(f"Audio recording finished for session {self.session_id}")
+        logger.info(f"[录音结束] Session {self.session_id}: 录音处理完成")
     
     async def _process_speech(self):
         """Process accumulated speech"""
@@ -162,11 +178,16 @@ class Session:
             # Combine audio buffer
             audio = b''.join(self.audio_buffer)
             self.audio_buffer.clear()
+            logger.info(f"[ASR] Session {self.session_id}: 开始语音识别，音频大小: {len(audio)} 字节")
             
             # ASR
             text = await self.asr_handler.transcribe(audio)
             if not text:
+                logger.warning(f"[ASR] Session {self.session_id}: 识别结果为空")
+                self.is_processing = False
                 return
+            
+            logger.info(f"[ASR] Session {self.session_id}: 识别成功，文本: {text}")
             
             # Add to conversation history
             self.conversation_history.append({
@@ -176,10 +197,12 @@ class Session:
             })
             
             # LLM
+            logger.info(f"[LLM] Session {self.session_id}: 开始生成回复...")
             response = await self.llm_handler.generate_response(
                 text, 
                 self.conversation_history
             )
+            logger.info(f"[LLM] Session {self.session_id}: 回复生成完成，长度: {len(response)} 字符")
             
             # Add response to history
             self.conversation_history.append({

@@ -168,13 +168,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
             
             # Process based on message type
             message_type = data.get("type")
+            logger.debug(f"[WebSocket] Session {session_id}: 收到消息类型: {message_type}")
             
             if message_type == "audio":
                 # Handle audio stream
-                await session.process_audio(data.get("data"))
+                audio_data = data.get("data")
+                logger.debug(f"[WebSocket] Session {session_id}: 收到音频数据，长度: {len(audio_data) if audio_data else 0}")
+                await session.process_audio(audio_data)
             
             elif message_type == "audio_end":
                 # Handle recording end signal
+                logger.info(f"[WebSocket] Session {session_id}: 收到录音结束信号")
                 await session.finish_audio_recording()
                 
             elif message_type == "text":
