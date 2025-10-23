@@ -382,7 +382,9 @@ class Session:
             processing_task = asyncio.create_task(process_sentence_queue())
             
             # 流式接收LLM输出
+            chunk_received = 0
             async for chunk in self.llm_handler.stream_response(text, self.conversation_history):
+                chunk_received += 1
                 full_response += chunk
                 sentence_buffer += chunk
                 
@@ -399,20 +401,24 @@ class Session:
                         # 清理后再次检查是否为空（例如纯emoji句子清理后会变成空字符串）
                         if clean_sentence.strip():
                             await sentence_queue.put(clean_sentence)
-                            logger.debug(f"[实时] 句子入队: {clean_sentence[:30]}...")
+                            logger.info(f"[实时] 句子入队: {clean_sentence[:30]}...")
                         else:
-                            logger.debug(f"[实时] 跳过空句子（清理后为空）: {sentence_buffer[:30]}...")
+                            logger.info(f"[实时] 跳过空句子（清理后为空）: 原文='{sentence_buffer[:30]}...'")
                     sentence_buffer = ""
             
             # Collect any remaining text
+            logger.info(f"[实时] Stream结束，收到 {chunk_received} 个chunks，完整响应长度: {len(full_response)}")
+            logger.info(f"[实时] 剩余buffer内容: '{sentence_buffer[:100]}...'")
+            
             if sentence_buffer.strip():
                 clean_sentence = clean_markdown_for_tts(sentence_buffer.strip())
+                logger.info(f"[实时] 清理后的剩余文字: '{clean_sentence[:100]}...'")
                 # 清理后再次检查是否为空
                 if clean_sentence.strip():
                     await sentence_queue.put(clean_sentence)
-                    logger.debug(f"[实时] 剩余文字入队: {clean_sentence[:30]}...")
+                    logger.info(f"[实时] 剩余文字入队: {clean_sentence[:30]}...")
                 else:
-                    logger.debug(f"[实时] 跳过空句子（清理后为空）: {sentence_buffer[:30]}...")
+                    logger.info(f"[实时] 跳过空句子（清理后为空）: 原文='{sentence_buffer[:50]}...'")
             
             # 发送结束信号
             await sentence_queue.put(None)
