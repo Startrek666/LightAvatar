@@ -212,7 +212,7 @@ onMounted(async () => {
 
   userInfo.value = JSON.parse(userInfoStr)
   
-  if (userInfo.value.role !== 'admin') {
+  if (!userInfo.value || userInfo.value.role !== 'admin') {
     message.error('需要管理员权限')
     router.push('/chat')
     return
