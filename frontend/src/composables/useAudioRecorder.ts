@@ -5,6 +5,7 @@ export function useAudioRecorder() {
     const mediaRecorder = ref<MediaRecorder | null>(null)
     const audioChunks = ref<Blob[]>([])
     const stream = ref<MediaStream | null>(null)
+    const shouldSendData = ref(true)  // 控制是否发送数据
 
     const startRecording = async (onDataAvailable?: (data: ArrayBuffer) => void) => {
         try {
@@ -16,12 +17,16 @@ export function useAudioRecorder() {
                 mimeType: 'audio/webm'
             })
 
+            // 重置发送标志
+            shouldSendData.value = true
+
             // Handle data available
             mediaRecorder.value.ondataavailable = async (event) => {
                 if (event.data.size > 0) {
                     audioChunks.value.push(event.data)
 
-                    if (onDataAvailable) {
+                    // 只有当shouldSendData为true时才发送数据
+                    if (shouldSendData.value && onDataAvailable) {
                         // Convert to ArrayBuffer for sending
                         const arrayBuffer = await event.data.arrayBuffer()
                         onDataAvailable(arrayBuffer)
@@ -41,8 +46,9 @@ export function useAudioRecorder() {
 
     const stopRecording = () => {
         if (mediaRecorder.value && isRecording.value) {
-            // 立即清除回调，防止stop()后触发的ondataavailable继续发送数据
-            mediaRecorder.value.ondataavailable = null
+            // 立即禁用数据发送，防止stop()后触发的ondataavailable继续发送数据
+            shouldSendData.value = false
+            console.log('🛑 禁用数据发送')
             
             mediaRecorder.value.stop()
             isRecording.value = false
