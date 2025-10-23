@@ -124,6 +124,13 @@ class Session:
         """Process incoming audio data"""
         self.update_activity()
         
+        # 转换列表为字节对象（前端发送的是数组）
+        if isinstance(audio_data, list):
+            audio_data = bytes(audio_data)
+        elif not isinstance(audio_data, bytes):
+            logger.warning(f"Unexpected audio data type: {type(audio_data)}")
+            return
+        
         # Add to buffer
         self.audio_buffer.append(audio_data)
         
