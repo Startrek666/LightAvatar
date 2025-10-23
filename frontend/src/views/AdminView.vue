@@ -225,12 +225,13 @@ onMounted(async () => {
 <style scoped>
 .admin-container {
   min-height: 100vh;
-  background: #f0f2f5;
+  background: #F8F6F2;
 }
 
 .admin-header {
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  background: #FFFFFF;
+  border-bottom: 2px solid #C9A961;
+  box-shadow: 0 4px 12px rgba(201, 169, 97, 0.08);
   padding: 0 24px;
 }
 
@@ -244,12 +245,65 @@ onMounted(async () => {
 .header-content h1 {
   margin: 0;
   font-size: 20px;
-  color: #333;
+  font-weight: 600;
+  color: #2C2C2C;
+  letter-spacing: 0.3px;
 }
 
 .admin-content {
   padding: 24px;
   min-height: calc(100vh - 64px);
+}
+
+.admin-content :deep(.ant-card) {
+  border-radius: 12px;
+  border: 1px solid #E8D5B5;
+  box-shadow: 0 4px 16px rgba(201, 169, 97, 0.08);
+}
+
+.admin-content :deep(.ant-statistic-title) {
+  color: #666;
+  font-weight: 500;
+}
+
+.admin-content :deep(.ant-statistic-content) {
+  color: #C9A961;
+  font-weight: 600;
+}
+
+.admin-content :deep(.ant-table-thead > tr > th) {
+  background: #F5EBD4;
+  color: #2C2C2C;
+  font-weight: 600;
+  border-bottom: 2px solid #C9A961;
+}
+
+.admin-content :deep(.ant-table-tbody > tr:hover > td) {
+  background: #FDFBF7;
+}
+
+.admin-content :deep(.ant-tag) {
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.admin-content :deep(.ant-btn-primary) {
+  background: linear-gradient(135deg, #C9A961 0%, #A67C00 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(201, 169, 97, 0.3);
+}
+
+.admin-content :deep(.ant-btn-primary:hover) {
+  background: linear-gradient(135deg, #D4B76E 0%, #B88A00 100%);
+  box-shadow: 0 4px 12px rgba(201, 169, 97, 0.4);
+}
+
+.admin-content :deep(.ant-btn-danger) {
+  border-radius: 6px;
+}
+
+.admin-content :deep(.ant-switch-checked) {
+  background: #C9A961;
 }
 
 @media (max-width: 768px) {

@@ -218,33 +218,108 @@ const handleRegister = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #F8F6F2;
   padding: 20px;
 }
 
 .login-card {
   width: 100%;
   max-width: 450px;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  background: #FFFFFF;
+  border: 2px solid #C9A961;
+  box-shadow: 0 8px 32px rgba(201, 169, 97, 0.15);
+}
+
+.login-card :deep(.ant-card-body) {
+  padding: 48px 40px;
 }
 
 .logo-section {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 40px;
 }
 
 .logo-section h1 {
   font-size: 32px;
-  font-weight: 700;
-  color: #667eea;
+  font-weight: 600;
+  color: #2C2C2C;
   margin: 0 0 8px 0;
+  letter-spacing: 0.5px;
 }
 
 .logo-section p {
-  font-size: 14px;
-  color: #999;
+  font-size: 15px;
+  color: #666;
   margin: 0;
+  font-weight: 400;
+}
+
+.login-card :deep(.ant-tabs-nav) {
+  margin-bottom: 32px;
+}
+
+.login-card :deep(.ant-tabs-tab) {
+  font-size: 16px;
+  font-weight: 500;
+  color: #666;
+}
+
+.login-card :deep(.ant-tabs-tab-active) {
+  color: #C9A961;
+}
+
+.login-card :deep(.ant-tabs-ink-bar) {
+  background: #C9A961;
+  height: 3px;
+}
+
+.login-card :deep(.ant-input),
+.login-card :deep(.ant-input-password) {
+  border-radius: 8px;
+  border-color: #E0E0E0;
+  font-size: 15px;
+}
+
+.login-card :deep(.ant-input:hover),
+.login-card :deep(.ant-input-password:hover) {
+  border-color: #C9A961;
+}
+
+.login-card :deep(.ant-input:focus),
+.login-card :deep(.ant-input-password:focus),
+.login-card :deep(.ant-input-affix-wrapper-focused) {
+  border-color: #C9A961;
+  box-shadow: 0 0 0 2px rgba(201, 169, 97, 0.1);
+}
+
+.login-card :deep(.ant-form-item-label > label) {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2C2C2C;
+}
+
+.login-card :deep(.ant-btn-primary) {
+  height: 44px;
+  font-size: 16px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #C9A961 0%, #A67C00 100%);
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(201, 169, 97, 0.3);
+}
+
+.login-card :deep(.ant-btn-primary:hover) {
+  background: linear-gradient(135deg, #D4B76E 0%, #B88A00 100%);
+  box-shadow: 0 6px 16px rgba(201, 169, 97, 0.4);
+}
+
+.login-card :deep(.ant-btn-primary:active) {
+  background: linear-gradient(135deg, #B8985A 0%, #956F00 100%);
+}
+
+.login-card :deep(.anticon) {
+  color: #C9A961;
 }
 
 @media (max-width: 576px) {
@@ -254,10 +329,23 @@ const handleRegister = async () => {
 
   .login-card {
     max-width: 100%;
+    border: 1px solid #C9A961;
+  }
+
+  .login-card :deep(.ant-card-body) {
+    padding: 32px 24px;
+  }
+
+  .logo-section {
+    margin-bottom: 32px;
   }
 
   .logo-section h1 {
-    font-size: 24px;
+    font-size: 26px;
+  }
+
+  .logo-section p {
+    font-size: 14px;
   }
 }
 </style>

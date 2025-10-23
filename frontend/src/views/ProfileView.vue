@@ -184,12 +184,13 @@ onMounted(() => {
 <style scoped>
 .profile-container {
   min-height: 100vh;
-  background: #f0f2f5;
+  background: #F8F6F2;
 }
 
 .profile-header {
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  background: #FFFFFF;
+  border-bottom: 2px solid #C9A961;
+  box-shadow: 0 4px 12px rgba(201, 169, 97, 0.08);
   padding: 0 24px;
 }
 
@@ -203,13 +204,89 @@ onMounted(() => {
 .header-content h1 {
   margin: 0;
   font-size: 20px;
-  color: #333;
+  font-weight: 600;
+  color: #2C2C2C;
+  letter-spacing: 0.3px;
 }
 
 .profile-content {
   padding: 24px;
   max-width: 800px;
   margin: 0 auto;
+}
+
+.profile-content :deep(.ant-card) {
+  border-radius: 12px;
+  border: 1px solid #E8D5B5;
+  box-shadow: 0 4px 16px rgba(201, 169, 97, 0.08);
+}
+
+.profile-content :deep(.ant-card-head) {
+  border-bottom: 2px solid #F5EBD4;
+  background: #FDFBF7;
+}
+
+.profile-content :deep(.ant-card-head-title) {
+  font-weight: 600;
+  color: #2C2C2C;
+}
+
+.profile-content :deep(.ant-descriptions-item-label) {
+  font-weight: 500;
+  color: #2C2C2C;
+  background: #FDFBF7;
+}
+
+.profile-content :deep(.ant-descriptions-item-content) {
+  background: #FFFFFF;
+}
+
+.profile-content :deep(.ant-tag) {
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.profile-content :deep(.ant-input),
+.profile-content :deep(.ant-input-password) {
+  border-radius: 8px;
+  border-color: #E0E0E0;
+}
+
+.profile-content :deep(.ant-input:hover),
+.profile-content :deep(.ant-input-password:hover) {
+  border-color: #C9A961;
+}
+
+.profile-content :deep(.ant-input:focus),
+.profile-content :deep(.ant-input-password:focus),
+.profile-content :deep(.ant-input-affix-wrapper-focused) {
+  border-color: #C9A961;
+  box-shadow: 0 0 0 2px rgba(201, 169, 97, 0.1);
+}
+
+.profile-content :deep(.ant-form-item-label > label) {
+  font-weight: 500;
+  color: #2C2C2C;
+}
+
+.profile-content :deep(.ant-btn-primary) {
+  height: 40px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #C9A961 0%, #A67C00 100%);
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(201, 169, 97, 0.3);
+}
+
+.profile-content :deep(.ant-btn-primary:hover) {
+  background: linear-gradient(135deg, #D4B76E 0%, #B88A00 100%);
+  box-shadow: 0 4px 12px rgba(201, 169, 97, 0.4);
+}
+
+.profile-content :deep(.ant-alert-warning) {
+  background: #FFF9ED;
+  border: 1px solid #F5D8A1;
+  border-radius: 8px;
 }
 
 @media (max-width: 768px) {
