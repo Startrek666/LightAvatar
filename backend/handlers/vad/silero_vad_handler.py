@@ -73,6 +73,16 @@ class SileroVADHandler(BaseHandler):
                 logger.error(f"Unsupported audio data type: {type(audio_data)}")
                 return False, None
             
+            # 检查字节对齐：int16需要2字节对齐
+            if len(audio_data) % 2 != 0:
+                # 如果是奇数字节，去掉最后一个字节
+                audio_data = audio_data[:-1]
+                logger.debug(f"Audio data not aligned, truncated to {len(audio_data)} bytes")
+            
+            # 如果数据为空，直接返回
+            if len(audio_data) == 0:
+                return False, None
+            
             # Convert bytes to numpy array
             audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
             audio_array = audio_array / 32768.0  # Normalize to [-1, 1]

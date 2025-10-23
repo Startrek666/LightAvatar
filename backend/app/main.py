@@ -172,6 +172,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
             if message_type == "audio":
                 # Handle audio stream
                 await session.process_audio(data.get("data"))
+            
+            elif message_type == "audio_end":
+                # Handle recording end signal
+                await session.finish_audio_recording()
                 
             elif message_type == "text":
                 # Check if streaming is enabled

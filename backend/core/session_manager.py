@@ -134,6 +134,21 @@ class Session:
                 self.is_processing = True
                 asyncio.create_task(self._process_speech())
     
+    async def finish_audio_recording(self):
+        """Force process remaining audio when recording ends"""
+        self.update_activity()
+        
+        # 如果有缓冲的音频且不在处理中，强制处理
+        if self.audio_buffer and not self.is_processing:
+            self.is_processing = True
+            await self._process_speech()
+        
+        # 重置VAD状态
+        if self.vad_handler:
+            self.vad_handler.reset()
+        
+        logger.info(f"Audio recording finished for session {self.session_id}")
+    
     async def _process_speech(self):
         """Process accumulated speech"""
         try:

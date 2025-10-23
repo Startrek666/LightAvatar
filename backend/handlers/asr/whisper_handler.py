@@ -74,6 +74,13 @@ class WhisperHandler(BaseHandler):
                 logger.error(f"Unsupported audio data type: {type(audio_data)}")
                 return ""
             
+            # 检查字节对齐：int16需要2字节对齐
+            if len(audio_data) % 2 != 0:
+                audio_data = audio_data[:-1]
+            
+            if len(audio_data) == 0:
+                return ""
+            
             # Convert bytes to numpy array
             audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
             audio_array = audio_array / 32768.0  # Normalize to [-1, 1]

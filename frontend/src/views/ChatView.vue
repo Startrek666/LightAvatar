@@ -280,6 +280,12 @@ const startRecording = async () => {
 const stopRecording = () => {
   if (isRecording.value) {
     stopAudioRecording()
+    
+    // 发送录音结束信号
+    send({
+      type: 'audio_end'
+    })
+    
     isProcessing.value = true
   }
 }

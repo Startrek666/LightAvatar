@@ -106,6 +106,13 @@ class SkynetWhisperHandler(BaseHandler):
             if isinstance(audio_data, list):
                 audio_data = bytes(audio_data)
             
+            # 检查字节对齐：int16需要2字节对齐
+            if len(audio_data) % 2 != 0:
+                audio_data = audio_data[:-1]
+            
+            if len(audio_data) == 0:
+                return b''
+            
             # 将字节数据转换为 numpy 数组
             audio_array = np.frombuffer(audio_data, dtype=np.int16)
             
