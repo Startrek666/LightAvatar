@@ -149,7 +149,10 @@ class OpenAIHandler(BaseHandler):
             messages.append({"role": "user", "content": text})
             
             # Stream response
-            logger.info(f"Starting stream request to model: {self.model}")
+            logger.info(f"Starting stream request to model: {self.model}, base_url: {self.api_url}")
+            logger.info(f"Request messages: {messages}")
+            logger.info(f"Stream parameters: temperature={self.temperature}, max_tokens={self.max_tokens}")
+            
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -157,20 +160,30 @@ class OpenAIHandler(BaseHandler):
                 max_tokens=self.max_tokens,
                 stream=True
             )
+            logger.info(f"Stream object created: {type(stream)}")
             
             chunk_count = 0
+            content_chunks = 0
+            logger.info("Starting to iterate over stream chunks...")
             async for chunk in stream:
                 chunk_count += 1
+                if chunk_count <= 3 or chunk_count % 10 == 0:
+                    logger.info(f"Received chunk {chunk_count}")
+                
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if delta and delta.content:
+                        content_chunks += 1
+                        if content_chunks == 1:
+                            logger.info(f"First content received: {delta.content[:50]}...")
                         yield delta.content
-                    elif chunk_count == 1:
-                        logger.warning(f"First chunk has no content: {chunk}")
+                    else:
+                        if chunk_count <= 5:
+                            logger.info(f"Chunk {chunk_count} has no content - delta: {delta}")
                 else:
                     logger.warning(f"Chunk {chunk_count} has no choices: {chunk}")
             
-            logger.info(f"Stream completed, total chunks: {chunk_count}")
+            logger.info(f"Stream completed, total chunks: {chunk_count}, content chunks: {content_chunks}")
                     
         except Exception as e:
             logger.error(f"Failed to stream response: {e}")
