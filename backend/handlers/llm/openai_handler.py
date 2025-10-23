@@ -100,7 +100,13 @@ class OpenAIHandler(BaseHandler):
                     })
             
             # Add current message
-            messages.append({"role": "user", "content": text})
+            # 如果历史中已包含当前用户消息，则不重复添加
+            if not conversation_history:
+                messages.append({"role": "user", "content": text})
+            else:
+                last_msg = conversation_history[-1]
+                if last_msg.get("role") != "user" or last_msg.get("content") != text:
+                    messages.append({"role": "user", "content": text})
             
             # Generate response
             response = await self.client.chat.completions.create(
@@ -219,6 +225,10 @@ class OpenAIHandler(BaseHandler):
                     if content:
                         logger.info("Fallback response received content")
                         yield content
+                    else:
+                        logger.warning("Fallback response returned empty content")
+                else:
+                    logger.error("Fallback response returned no choices")
                     
         except Exception as e:
             logger.error(f"Failed to stream response: {e}")
