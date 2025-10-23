@@ -165,7 +165,7 @@ const registerForm = ref({
 const handleLogin = async () => {
   loading.value = true
   try {
-    const response = await axios.post('/api/auth/login', loginForm.value)
+    const response = await axios.post('/auth/login', loginForm.value)
     const { token, user } = response.data
     
     // 保存token和用户信息
@@ -195,7 +195,7 @@ const handleLogin = async () => {
 const handleRegister = async () => {
   loading.value = true
   try {
-    const response = await axios.post('/api/auth/register', registerForm.value)
+    const response = await axios.post('/auth/register', registerForm.value)
     const { token, user } = response.data
     
     // 保存token和用户信息

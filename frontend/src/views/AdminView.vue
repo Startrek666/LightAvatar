@@ -151,7 +151,7 @@ const stats = computed(() => {
 const loadUsers = async () => {
   loading.value = true
   try {
-    const response = await axios.get('/api/auth/users')
+    const response = await axios.get('/auth/users')
     users.value = response.data
   } catch (error: any) {
     message.error('加载用户列表失败')
@@ -162,7 +162,7 @@ const loadUsers = async () => {
 
 const toggleAvatarPermission = async (user: any) => {
   try {
-    await axios.put(`/api/auth/users/${user.id}/permission`, {
+    await axios.put(`/auth/users/${user.id}/permission`, {
       can_use_avatar: !user.can_use_avatar
     })
     message.success('权限更新成功')
@@ -174,7 +174,7 @@ const toggleAvatarPermission = async (user: any) => {
 
 const toggleUserStatus = async (user: any) => {
   try {
-    await axios.put(`/api/auth/users/${user.id}/toggle-status`)
+    await axios.put(`/auth/users/${user.id}/toggle-status`)
     message.success('状态更新成功')
     await loadUsers()
   } catch (error: any) {
@@ -184,7 +184,7 @@ const toggleUserStatus = async (user: any) => {
 
 const deleteUser = async (user: any) => {
   try {
-    await axios.delete(`/api/auth/users/${user.id}`)
+    await axios.delete(`/auth/users/${user.id}`)
     message.success('用户删除成功')
     await loadUsers()
   } catch (error: any) {
