@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { marked } from 'marked'
+import { marked, Renderer } from 'marked'
 import hljs from 'highlight.js'
 
 const props = defineProps<{
@@ -13,23 +13,28 @@ const props = defineProps<{
 
 // 配置 marked
 marked.setOptions({
-  highlight: function(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(code, { language: lang }).value
-      } catch (err) {
-        console.error('Highlight error:', err)
-      }
-    }
-    return hljs.highlightAuto(code).value
-  },
   breaks: true,
   gfm: true
 })
 
+// 自定义渲染器添加代码高亮
+const renderer = new Renderer()
+renderer.code = function(code: string, language: string | undefined) {
+  if (language && hljs.getLanguage(language)) {
+    try {
+      const highlighted = hljs.highlight(code, { language }).value
+      return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
+    } catch (err) {
+      console.error('Highlight error:', err)
+    }
+  }
+  const highlighted = hljs.highlightAuto(code).value
+  return `<pre><code class="hljs">${highlighted}</code></pre>`
+}
+
 const renderedHtml = computed(() => {
   try {
-    return marked.parse(props.content)
+    return marked.parse(props.content, { renderer })
   } catch (error) {
     console.error('Markdown parse error:', error)
     return props.content
