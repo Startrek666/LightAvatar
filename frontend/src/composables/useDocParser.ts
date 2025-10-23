@@ -2,7 +2,10 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 
 // 调用自己的后端 API，不直接调用外部 API，保护 API Key
-const BACKEND_API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// 使用当前域名，自动适配开发和生产环境
+const BACKEND_API = window.location.origin.includes('localhost') 
+  ? 'http://localhost:8060' 
+  : window.location.origin
 
 interface ParseResponse {
   success: boolean
