@@ -153,11 +153,28 @@ class OpenAIHandler(BaseHandler):
             logger.info(f"Request messages: {messages}")
             logger.info(f"Stream parameters: temperature={self.temperature}, max_tokens={self.max_tokens}")
             
+            # 先尝试非流式调用，测试API是否正常
+            try:
+                logger.info("Testing non-streaming call first...")
+                test_response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=50,
+                    stream=False
+                )
+                logger.info(f"Non-streaming test successful: {test_response.choices[0].message.content[:100] if test_response.choices else 'No choices'}")
+            except Exception as test_e:
+                logger.error(f"Non-streaming test failed: {test_e}")
+            
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
+                top_p=self.top_p,
+                presence_penalty=self.presence_penalty,
+                frequency_penalty=self.frequency_penalty,
                 stream=True
             )
             logger.info(f"Stream object created: {type(stream)}")
@@ -184,6 +201,24 @@ class OpenAIHandler(BaseHandler):
                     logger.warning(f"Chunk {chunk_count} has no choices: {chunk}")
             
             logger.info(f"Stream completed, total chunks: {chunk_count}, content chunks: {content_chunks}")
+
+            if content_chunks == 0:
+                logger.warning("Stream returned no content, falling back to non-streaming request")
+                fallback_response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    top_p=self.top_p,
+                    presence_penalty=self.presence_penalty,
+                    frequency_penalty=self.frequency_penalty,
+                    stream=False
+                )
+                if fallback_response.choices and len(fallback_response.choices) > 0:
+                    content = fallback_response.choices[0].message.content or ""
+                    if content:
+                        logger.info("Fallback response received content")
+                        yield content
                     
         except Exception as e:
             logger.error(f"Failed to stream response: {e}")
