@@ -28,19 +28,18 @@ def clean_markdown_for_tts(text: str) -> str:
         return text
     
     # 0. 去除emoji表情符号（在其他处理之前）
-    # 匹配常见的emoji Unicode范围
+    # 使用更精确的emoji Unicode范围（避免误删中文字符）
     emoji_pattern = re.compile(
         "["
         "\U0001F600-\U0001F64F"  # 表情符号
         "\U0001F300-\U0001F5FF"  # 符号和象形文字
         "\U0001F680-\U0001F6FF"  # 交通和地图符号
         "\U0001F1E0-\U0001F1FF"  # 旗帜
-        "\U00002600-\U000027BF"  # 杂项符号
         "\U0001F900-\U0001F9FF"  # 补充符号和象形文字
         "\U0001FA00-\U0001FA6F"  # 扩展A
         "\U0001FA70-\U0001FAFF"  # 扩展B
-        "\U00002702-\U000027B0"  # 装饰符号
-        "\U000024C2-\U0001F251"  # 封闭字符
+        "\u2600-\u27BF"          # 杂项符号（修正范围）
+        "\u2702-\u27B0"          # 装饰符号（修正范围）
         "]+",
         flags=re.UNICODE
     )
