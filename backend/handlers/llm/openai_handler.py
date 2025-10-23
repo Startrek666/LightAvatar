@@ -149,6 +149,7 @@ class OpenAIHandler(BaseHandler):
             messages.append({"role": "user", "content": text})
             
             # Stream response
+            logger.info(f"Starting stream request to model: {self.model}")
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -156,39 +157,25 @@ class OpenAIHandler(BaseHandler):
                 max_tokens=self.max_tokens,
                 stream=True
             )
-
-            received_content = False
+            
+            chunk_count = 0
             async for chunk in stream:
-                choice = chunk.choices[0]
-                content = None
-
-                # Primary: streaming delta content
-                if getattr(choice, "delta", None):
-                    content = getattr(choice.delta, "content", None)
-
-                # Fallback: some providers return full message in streaming mode
-                if not content and getattr(choice, "message", None):
-                    content = getattr(choice.message, "content", None)
-
-                if content:
-                    received_content = True
-                    yield content
-
-            # Fallback: if streaming yielded nothing, make a standard request
-            if not received_content:
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    stream=False
-                )
-                fallback_content = response.choices[0].message.content
-                if fallback_content:
-                    yield fallback_content
-
+                chunk_count += 1
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        yield delta.content
+                    elif chunk_count == 1:
+                        logger.warning(f"First chunk has no content: {chunk}")
+                else:
+                    logger.warning(f"Chunk {chunk_count} has no choices: {chunk}")
+            
+            logger.info(f"Stream completed, total chunks: {chunk_count}")
+                    
         except Exception as e:
             logger.error(f"Failed to stream response: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             yield "抱歉，我遇到了一些技术问题，请稍后再试。"
     
     def update_config(self, config: Dict):
