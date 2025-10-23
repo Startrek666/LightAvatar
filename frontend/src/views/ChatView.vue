@@ -585,7 +585,7 @@ onUnmounted(() => {
 <style scoped>
 .chat-container {
   width: 100%;
-  height: 100vh;
+  min-height: 100vh;
   background: #f0f2f5;
 }
 
@@ -600,6 +600,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   height: 100%;
+  gap: 16px;
 }
 
 .header h1 {
@@ -611,6 +612,8 @@ onUnmounted(() => {
 .header-actions {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .content {
@@ -626,6 +629,7 @@ onUnmounted(() => {
   gap: 16px;
   padding: 16px;
   overflow: hidden;
+  align-items: stretch;
 }
 
 .avatar-display {
@@ -745,13 +749,108 @@ onUnmounted(() => {
   border-top: 1px solid #f0f0f0;
 }
 
-@media (max-width: 768px) {
+.input-area .ant-input-group.ant-input-group-compact {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.input-area .ant-input-group.ant-input-group-compact > .ant-input {
+  flex: 1 1 auto;
+}
+
+.input-area .ant-input-group.ant-input-group-compact > .ant-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.input-area .ant-input-group.ant-input-group-compact > .ant-btn + .ant-btn {
+  margin-left: 8px;
+}
+
+@media (max-width: 1024px) {
   .video-chat-area {
     flex-direction: column;
   }
 
   .avatar-display {
-    flex: 0 0 300px;
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 3 / 4;
+  }
+
+  .chat-messages {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    padding: 0 16px;
+  }
+
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .video-chat-area {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .chat-messages {
+    padding: 12px;
+  }
+
+  .message-text {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 576px) {
+  .header h1 {
+    font-size: 16px;
+  }
+
+  .avatar-display {
+    aspect-ratio: 9 / 16;
+  }
+
+  .chat-messages {
+    border-radius: 6px;
+  }
+
+  .input-area {
+    padding: 12px;
+  }
+
+  .input-area .ant-input-group.ant-input-group-compact {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .input-area .ant-input-group.ant-input-group-compact > .ant-btn + .ant-btn {
+    margin-left: 0;
+  }
+
+  .input-area .ant-input-group.ant-input-group-compact > .ant-btn,
+  .input-area .ant-input-group.ant-input-group-compact > .ant-input {
+    width: 100%;
+  }
+
+  .messages-container {
+    max-height: 40vh;
   }
 }
 </style>
