@@ -7,20 +7,28 @@
           <div class="header-actions">
             <!-- 语音输入开关 -->
             <div class="header-action-item">
-              <a-switch v-model:checked="enableVoiceInput" checked-children="开" un-checked-children="关" />
-              <span class="action-label">语音</span>
+              <div class="switch-wrapper">
+                <a-switch v-model:checked="enableVoiceInput" checked-children="开" un-checked-children="关" />
+                <span class="action-label">语音输入</span>
+              </div>
             </div>
 
             <!-- 对话记录开关 -->
             <div class="header-action-item">
-              <a-switch v-model:checked="showChatHistory" checked-children="显" un-checked-children="隐" />
-              <span class="action-label">记录</span>
+              <div class="switch-wrapper">
+                <a-switch v-model:checked="showChatHistory" checked-children="显" un-checked-children="隐" />
+                <span class="action-label">对话记录</span>
+              </div>
             </div>
 
-            <a-button type="text" size="small" @click="showSettings" :icon="h(SettingOutlined)" />
+            <a-tooltip title="设置">
+              <a-button type="text" size="small" @click="showSettings" :icon="h(SettingOutlined)" />
+            </a-tooltip>
             <a-badge :count="isConnected ? 0 : 1" :dot="true">
-              <a-button type="text" size="small"
-                :icon="h(isConnected ? WifiOutlined : DisconnectOutlined)" />
+              <a-tooltip :title="isConnected ? '已连接' : '未连接'">
+                <a-button type="text" size="small"
+                  :icon="h(isConnected ? WifiOutlined : DisconnectOutlined)" />
+              </a-tooltip>
             </a-badge>
           </div>
         </div>
@@ -622,9 +630,18 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.switch-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
 .action-label {
-  font-size: 14px;
-  color: #666;
+  font-size: 12px;
+  color: #999;
+  line-height: 1;
+  text-align: center;
 }
 
 .content {
@@ -802,7 +819,7 @@ onUnmounted(() => {
   .header {
     padding: 0 12px;
     height: auto;
-    min-height: 56px;
+    min-height: 64px;
   }
 
   .header-content {
@@ -823,8 +840,10 @@ onUnmounted(() => {
   .header-actions {
     width: auto;
     justify-content: flex-end;
-    gap: 4px;
+    gap: 8px;
     flex-shrink: 0;
+    display: flex;
+    align-items: flex-start;
   }
 
   .header-action-item {
@@ -834,10 +853,17 @@ onUnmounted(() => {
     white-space: nowrap;
   }
 
+  .switch-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
   .action-label {
-    font-size: 12px;
-    color: #666;
-    display: none;
+    font-size: 11px;
+    color: #999;
+    display: block;
   }
 
   .video-chat-area {
@@ -857,7 +883,7 @@ onUnmounted(() => {
 @media (max-width: 576px) {
   .header {
     padding: 0 8px;
-    min-height: 48px;
+    min-height: 56px;
   }
 
   .header-content {
@@ -869,7 +895,20 @@ onUnmounted(() => {
   }
 
   .header-actions {
+    gap: 6px;
+  }
+
+  .switch-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     gap: 2px;
+  }
+
+  .action-label {
+    font-size: 10px;
+    color: #999;
+    display: block;
   }
 
   .avatar-display {
