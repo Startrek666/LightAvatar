@@ -99,14 +99,9 @@ class OpenAIHandler(BaseHandler):
                         "content": msg["content"]
                     })
             
-            # Add current message
-            # 如果历史中已包含当前用户消息，则不重复添加
-            if not conversation_history:
+            # Add current message (避免重复添加)
+            if not conversation_history or conversation_history[-1].get("content") != text:
                 messages.append({"role": "user", "content": text})
-            else:
-                last_msg = conversation_history[-1]
-                if last_msg.get("role") != "user" or last_msg.get("content") != text:
-                    messages.append({"role": "user", "content": text})
             
             # Generate response
             response = await self.client.chat.completions.create(
@@ -152,83 +147,49 @@ class OpenAIHandler(BaseHandler):
                         "content": msg["content"]
                     })
             
-            messages.append({"role": "user", "content": text})
+            # 避免重复添加最后一条用户消息
+            if not conversation_history or conversation_history[-1].get("content") != text:
+                messages.append({"role": "user", "content": text})
             
             # Stream response
             logger.info(f"Starting stream request to model: {self.model}, base_url: {self.api_url}")
-            logger.info(f"Request messages: {messages}")
+            logger.info(f"Request messages count: {len(messages)}, last message: {messages[-1]['content'][:50] if messages else 'None'}")
             logger.info(f"Stream parameters: temperature={self.temperature}, max_tokens={self.max_tokens}")
             
-            # 先尝试非流式调用，测试API是否正常
-            try:
-                logger.info("Testing non-streaming call first...")
-                test_response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=50,
-                    stream=False
-                )
-                logger.info(f"Non-streaming test successful: {test_response.choices[0].message.content[:100] if test_response.choices else 'No choices'}")
-            except Exception as test_e:
-                logger.error(f"Non-streaming test failed: {test_e}")
+            logger.info(f"About to create stream with client: {self.client}")
+            logger.info(f"Client base_url: {self.client.base_url}")
             
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
-                top_p=self.top_p,
-                presence_penalty=self.presence_penalty,
-                frequency_penalty=self.frequency_penalty,
                 stream=True
             )
             logger.info(f"Stream object created: {type(stream)}")
+            logger.info(f"Stream object: {stream}")
             
             chunk_count = 0
             content_chunks = 0
-            logger.info("Starting to iterate over stream chunks...")
+            logger.info("Entering async for loop...")
             async for chunk in stream:
                 chunk_count += 1
-                if chunk_count <= 3 or chunk_count % 10 == 0:
-                    logger.info(f"Received chunk {chunk_count}")
                 
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if delta and delta.content:
                         content_chunks += 1
                         if content_chunks == 1:
-                            logger.info(f"First content received: {delta.content[:50]}...")
+                            logger.info(f"First content chunk received (chunk #{chunk_count})")
                         yield delta.content
-                    else:
-                        if chunk_count <= 5:
-                            logger.info(f"Chunk {chunk_count} has no content - delta: {delta}")
-                else:
-                    logger.warning(f"Chunk {chunk_count} has no choices: {chunk}")
             
-            logger.info(f"Stream completed, total chunks: {chunk_count}, content chunks: {content_chunks}")
-
+            logger.info(f"Exited async for loop normally")
+            
             if content_chunks == 0:
-                logger.warning("Stream returned no content, falling back to non-streaming request")
-                fallback_response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    top_p=self.top_p,
-                    presence_penalty=self.presence_penalty,
-                    frequency_penalty=self.frequency_penalty,
-                    stream=False
-                )
-                if fallback_response.choices and len(fallback_response.choices) > 0:
-                    content = fallback_response.choices[0].message.content or ""
-                    if content:
-                        logger.info("Fallback response received content")
-                        yield content
-                    else:
-                        logger.warning("Fallback response returned empty content")
-                else:
-                    logger.error("Fallback response returned no choices")
+                logger.warning(f"Stream completed with 0 content chunks (total chunks: {chunk_count})")
+                logger.warning(f"This suggests the stream iterator ended immediately without yielding chunks")
+            else:
+                logger.info(f"Stream completed: {content_chunks} content chunks from {chunk_count} total chunks")
                     
         except Exception as e:
             logger.error(f"Failed to stream response: {e}")
