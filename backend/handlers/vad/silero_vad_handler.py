@@ -62,9 +62,17 @@ class SileroVADHandler(BaseHandler):
         with timer(vad_processing_time):
             return await self._detect_speech(audio_data)
     
-    async def _detect_speech(self, audio_data: bytes) -> Tuple[bool, Optional[bytes]]:
+    async def _detect_speech(self, audio_data) -> Tuple[bool, Optional[bytes]]:
         """Detect speech in audio data"""
         try:
+            # 兼容列表和字节对象两种格式
+            if isinstance(audio_data, list):
+                # 前端发送的是数组，转换为字节对象
+                audio_data = bytes(audio_data)
+            elif not isinstance(audio_data, bytes):
+                logger.error(f"Unsupported audio data type: {type(audio_data)}")
+                return False, None
+            
             # Convert bytes to numpy array
             audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
             audio_array = audio_array / 32768.0  # Normalize to [-1, 1]

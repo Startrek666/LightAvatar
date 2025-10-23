@@ -72,9 +72,17 @@ class SkynetWhisperHandler(BaseHandler):
         with timer(asr_processing_time):
             return await self._transcribe(audio_data)
     
-    async def _transcribe(self, audio_data: bytes) -> str:
+    async def _transcribe(self, audio_data) -> str:
         """Perform speech recognition"""
         try:
+            # 兼容列表和字节对象两种格式
+            if isinstance(audio_data, list):
+                # 前端发送的是数组，转换为字节对象
+                audio_data = bytes(audio_data)
+            elif not isinstance(audio_data, bytes):
+                logger.error(f"Unsupported audio data type: {type(audio_data)}")
+                return ""
+            
             # 转换音频为 PCM Int16
             pcm_data = await self._convert_to_pcm(audio_data)
             
@@ -90,9 +98,13 @@ class SkynetWhisperHandler(BaseHandler):
             logger.error(f"Transcription error: {e}")
             return ""
     
-    async def _convert_to_pcm(self, audio_data: bytes) -> bytes:
+    async def _convert_to_pcm(self, audio_data) -> bytes:
         """转换音频为 PCM 格式"""
         try:
+            # 确保是字节对象
+            if isinstance(audio_data, list):
+                audio_data = bytes(audio_data)
+            
             # 将字节数据转换为 numpy 数组
             audio_array = np.frombuffer(audio_data, dtype=np.int16)
             

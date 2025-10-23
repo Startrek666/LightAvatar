@@ -63,9 +63,17 @@ class WhisperHandler(BaseHandler):
         with timer(asr_processing_time):
             return await self._transcribe(audio_data)
     
-    async def _transcribe(self, audio_data: bytes) -> str:
+    async def _transcribe(self, audio_data) -> str:
         """Perform speech recognition"""
         try:
+            # 兼容列表和字节对象两种格式
+            if isinstance(audio_data, list):
+                # 前端发送的是数组，转换为字节对象
+                audio_data = bytes(audio_data)
+            elif not isinstance(audio_data, bytes):
+                logger.error(f"Unsupported audio data type: {type(audio_data)}")
+                return ""
+            
             # Convert bytes to numpy array
             audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
             audio_array = audio_array / 32768.0  # Normalize to [-1, 1]
