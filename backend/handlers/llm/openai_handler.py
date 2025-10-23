@@ -156,11 +156,37 @@ class OpenAIHandler(BaseHandler):
                 max_tokens=self.max_tokens,
                 stream=True
             )
-            
+
+            received_content = False
             async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-                    
+                choice = chunk.choices[0]
+                content = None
+
+                # Primary: streaming delta content
+                if getattr(choice, "delta", None):
+                    content = getattr(choice.delta, "content", None)
+
+                # Fallback: some providers return full message in streaming mode
+                if not content and getattr(choice, "message", None):
+                    content = getattr(choice.message, "content", None)
+
+                if content:
+                    received_content = True
+                    yield content
+
+            # Fallback: if streaming yielded nothing, make a standard request
+            if not received_content:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    stream=False
+                )
+                fallback_content = response.choices[0].message.content
+                if fallback_content:
+                    yield fallback_content
+
         except Exception as e:
             logger.error(f"Failed to stream response: {e}")
             yield "抱歉，我遇到了一些技术问题，请稍后再试。"
