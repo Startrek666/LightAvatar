@@ -72,6 +72,10 @@
           <a-input-group compact>
             <a-input v-model:value="inputText" placeholder="输入消息或按住录音按钮说话..." @pressEnter="sendTextMessage"
               :disabled="!isConnected || isProcessing" size="large" />
+            <a-button size="large" @click="triggerFileUpload"
+              :disabled="!isConnected || isProcessing || isUploadingDoc" :icon="h(PlusOutlined)"
+              title="上传文档 (PDF/DOCX/PPTX, 最大30MB)">
+            </a-button>
             <a-button type="primary" size="large" @click="sendTextMessage"
               :disabled="!inputText || !isConnected || isProcessing" :icon="h(SendOutlined)">
               发送
@@ -83,6 +87,8 @@
               {{ isRecording ? '录音中' : '按住说话' }}
             </a-button>
           </a-input-group>
+          <!-- 隐藏的文件上传输入框 -->
+          <input ref="fileInput" type="file" accept=".pdf,.docx,.pptx" style="display: none" @change="handleFileUpload" />
         </div>
       </a-layout-content>
     </a-layout>
@@ -127,16 +133,19 @@ import {
   UserOutlined,
   RobotOutlined,
   SendOutlined,
-  AudioOutlined
+  AudioOutlined,
+  PlusOutlined
 } from '@ant-design/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
+import { useDocParser } from '@/composables/useDocParser'
 // import { useChatStore } from '@/store/chat' // 暂未使用，保留以备将来功能扩展
 
 // const chatStore = useChatStore()
 const router = useRouter()
 const { connect, disconnect, send, isConnected, shouldReconnect } = useWebSocket()
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
+const { parseDocument, isUploading: isUploadingDoc } = useDocParser()
 
 // Refs
 const avatarVideo1 = ref<HTMLVideoElement>()
@@ -145,6 +154,8 @@ const currentVideoIndex = ref(0)  // 0: video1, 1: video2
 const messagesContainer = ref<HTMLElement>()
 const inputText = ref('')
 const isProcessing = ref(false)
+const fileInput = ref<HTMLInputElement>()
+const uploadedDocText = ref('')
 const isPlayingIdleVideo = ref(false)
 const settingsVisible = ref(false)
 
@@ -218,12 +229,75 @@ const saveSettings = async () => {
   }
 }
 
+// 文件上传相关函数
+const triggerFileUpload = () => {
+  if (fileInput.value) {
+    fileInput.value.click()
+  }
+}
+
+const handleFileUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  
+  if (!file) return
+
+  console.log('📎 选择文件:', file.name, '类型:', file.type, '大小:', (file.size / 1024 / 1024).toFixed(2), 'MB')
+
+  // 验证文件类型
+  const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']
+  if (!validTypes.includes(file.type)) {
+    message.error('仅支持 PDF、DOCX、PPTX 格式的文件')
+    target.value = ''
+    return
+  }
+
+  // 验证文件大小（30MB）
+  const maxSize = 30 * 1024 * 1024
+  if (file.size > maxSize) {
+    message.error('文件大小不能超过 30MB')
+    target.value = ''
+    return
+  }
+
+  try {
+    // 调用 docparser API 解析文档
+    const docText = await parseDocument(file)
+    
+    console.log('✅ 文档解析成功，文本长度:', docText.length)
+    
+    // 保存文档文本
+    uploadedDocText.value = docText
+    
+    // 提示用户
+    message.success(`文档已上传（${(file.size / 1024).toFixed(0)}KB），请输入您的问题`)
+    
+    // 在输入框显示提示
+    if (!inputText.value) {
+      inputText.value = '请根据上传的文档回答问题：'
+    }
+  } catch (error: any) {
+    message.error(error.message || '文档解析失败，请重试')
+  } finally {
+    // 清空文件输入，允许重复上传同一文件
+    target.value = ''
+  }
+}
+
 const sendTextMessage = () => {
   if (!inputText.value.trim() || !isConnected.value || isProcessing.value) {
     return
   }
 
-  const messageText = inputText.value.trim()
+  let messageText = inputText.value.trim()
+  
+  // 如果有上传的文档，将文档内容添加到消息中
+  if (uploadedDocText.value) {
+    messageText = `${messageText}\n\n[文档内容]\n${uploadedDocText.value}`
+    console.log('📄 发送消息包含文档内容，总长度:', messageText.length)
+    // 清空文档文本，避免重复发送
+    uploadedDocText.value = ''
+  }
   
   // Clear input immediately (multiple approaches for reliability)
   inputText.value = ''

@@ -95,6 +95,10 @@ app.include_router(integration_router)
 from backend.app.auth_api import router as auth_router
 app.include_router(auth_router)
 
+# Import and register docparser router
+from backend.app.docparser_api import router as docparser_router
+app.include_router(docparser_router)
+
 
 @app.get("/")
 async def root():
