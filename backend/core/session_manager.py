@@ -18,7 +18,7 @@ from backend.handlers.tts.edge_tts_handler import EdgeTTSHandler
 from backend.handlers.avatar.wav2lip_handler import Wav2LipHandler
 from backend.handlers.avatar.lite_avatar_handler import LiteAvatarHandler
 from backend.app.config import settings
-from backend.app.websocket import WebSocketManager
+from backend.app.ws_manager import WebSocketManager
 from backend.utils.text_utils import clean_markdown_for_tts
 
 

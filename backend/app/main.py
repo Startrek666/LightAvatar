@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 import uvicorn
 
-from backend.app.websocket import WebSocketManager
+from backend.app.ws_manager import WebSocketManager
 from backend.app.config import settings
 from backend.app.integration_api import router as integration_router
 from backend.core.session_manager import SessionManager
