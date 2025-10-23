@@ -52,6 +52,7 @@ class Session:
         """Initialize all handlers"""
         try:
             self.vad_handler = SileroVADHandler()
+            await self.vad_handler.initialize()
             
             # 根据配置选择 ASR Handler
             asr_backend = settings.ASR_BACKEND.lower()
@@ -69,6 +70,7 @@ class Session:
                     device=settings.WHISPER_DEVICE,
                     compute_type=settings.WHISPER_COMPUTE_TYPE
                 )
+            await self.asr_handler.initialize()
             
             self.llm_handler = OpenAIHandler(
                 api_url=settings.LLM_API_URL,
