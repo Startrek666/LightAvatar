@@ -15,10 +15,13 @@ export function useWebSocket() {
         // Reset reconnect flag when manually connecting
         shouldReconnect.value = true
 
-        // Build WebSocket URL
+        // Build WebSocket URL with token
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.host
-        const wsUrl = `${protocol}//${host}${url}`
+        const token = localStorage.getItem('auth_token')
+        const wsUrl = token 
+            ? `${protocol}//${host}${url}?token=${encodeURIComponent(token)}`
+            : `${protocol}//${host}${url}`
 
         ws.value = new WebSocket(wsUrl)
         ws.value.binaryType = 'blob'  // Set binary type to blob for video

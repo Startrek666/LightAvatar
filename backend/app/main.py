@@ -44,6 +44,16 @@ async def lifespan(app: FastAPI):
     """Application lifespan management"""
     logger.info("Starting Lightweight Avatar Chat...")
     
+    # Initialize database
+    try:
+        from backend.database.models import db_manager
+        db_manager.create_tables()
+        # Create default admin user
+        admin = db_manager.init_admin_user()
+        logger.info(f"Database initialized. Default admin: {admin.username}")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+    
     # Start health monitor
     health_monitor_task = asyncio.create_task(health_monitor.start())
     
@@ -81,6 +91,10 @@ app.add_middleware(
 # Register routers
 app.include_router(integration_router)
 
+# Import and register auth router
+from backend.app.auth_api import router as auth_router
+app.include_router(auth_router)
+
 
 @app.get("/")
 async def root():
@@ -106,8 +120,37 @@ async def metrics():
 
 
 @app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
+async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str = None):
     """WebSocket endpoint for real-time communication"""
+    # 验证token和权限
+    if token:
+        try:
+            from backend.database.auth import AuthService
+            from backend.database.models import db_manager
+            
+            auth_service = AuthService()
+            db_session = db_manager.get_session()
+            
+            try:
+                user = auth_service.get_current_user(db_session, token)
+                if not user:
+                    await websocket.close(code=1008, reason="未授权: token无效")
+                    return
+                
+                if not user.can_use_avatar:
+                    await websocket.close(code=1008, reason="无数字人使用权限")
+                    return
+                
+                logger.info(f"用户 {user.username} 已连接 WebSocket")
+            finally:
+                db_session.close()
+        except Exception as e:
+            logger.error(f"WebSocket认证失败: {e}")
+            await websocket.close(code=1008, reason="认证失败")
+            return
+    else:
+        logger.warning(f"WebSocket连接未提供token: {session_id}")
+    
     await websocket_manager.connect(websocket, session_id)
     
     # Start heartbeat task to detect disconnections
