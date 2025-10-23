@@ -112,10 +112,21 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import axios from '@/utils/axios'
 
+interface UserInfo {
+  id: number
+  username: string
+  email: string
+  role: string
+  can_use_avatar: boolean
+  created_at: string
+  last_login?: string
+  is_active: boolean
+}
+
 const router = useRouter()
 const loading = ref(false)
 const users = ref([])
-const userInfo = ref(null)
+const userInfo = ref<UserInfo | null>(null)
 
 const columns = [
   { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
