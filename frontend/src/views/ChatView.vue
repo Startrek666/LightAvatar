@@ -21,6 +21,9 @@
               </div>
             </div>
 
+            <a-tooltip title="个人中心">
+              <a-button type="text" size="small" @click="goToProfile" :icon="h(UserOutlined)" />
+            </a-tooltip>
             <a-tooltip title="设置">
               <a-button type="text" size="small" @click="showSettings" :icon="h(SettingOutlined)" />
             </a-tooltip>
@@ -115,6 +118,7 @@
 
 <script setup lang="ts">
 import { ref, h, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   SettingOutlined,
@@ -130,6 +134,7 @@ import { useAudioRecorder } from '@/composables/useAudioRecorder'
 // import { useChatStore } from '@/store/chat' // 暂未使用，保留以备将来功能扩展
 
 // const chatStore = useChatStore()
+const router = useRouter()
 const { connect, disconnect, send, isConnected, shouldReconnect } = useWebSocket()
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
 
@@ -178,6 +183,10 @@ const settings = ref({
 })
 
 // Methods
+const goToProfile = () => {
+  router.push('/profile')
+}
+
 const showSettings = () => {
   settingsVisible.value = true
 }

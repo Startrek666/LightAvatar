@@ -32,12 +32,6 @@ const routes: RouteRecordRaw[] = [
         name: 'Profile',
         component: ProfileView,
         meta: { requiresAuth: true }
-    },
-    {
-        path: '/settings',
-        name: 'Settings',
-        component: () => import('@/views/SettingsView.vue'),
-        meta: { requiresAuth: true }
     }
 ]
 
@@ -59,7 +53,7 @@ router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, 
         } else if (userInfo?.can_use_avatar) {
             next('/chat')
         } else {
-            next('/settings')
+            next('/profile')
         }
         return
     }
@@ -81,7 +75,7 @@ router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, 
     // 需要数字人使用权限
     if (to.meta.requiresAvatar && !userInfo?.can_use_avatar) {
         console.log('您暂无数字人使用权限')
-        next('/settings')
+        next('/profile')
         return
     }
 
