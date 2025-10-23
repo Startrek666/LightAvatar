@@ -5,7 +5,7 @@ import asyncio
 import json
 import uuid
 from typing import Optional
-import websocket
+from websocket import create_connection
 import numpy as np
 from loguru import logger
 
@@ -45,7 +45,7 @@ class SkynetWhisperHandler(BaseHandler):
             loop = asyncio.get_event_loop()
             self.ws = await loop.run_in_executor(
                 None,
-                lambda: websocket.create_connection(ws_url, timeout=10)
+                lambda: create_connection(ws_url, timeout=10)
             )
             
             logger.info(f"Skynet Whisper connected: {ws_url}")
