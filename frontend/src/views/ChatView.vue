@@ -598,6 +598,13 @@ const playNextVideo = async () => {
     nextVideo.loop = false
     nextVideo.muted = false
     
+    // 在播放前再次确保音视频权限已解锁（特别是第一个视频块）
+    if (!videoPlaybackUnlocked.value) {
+      console.log('🔓 在播放视频前再次确保权限...')
+      await ensureMediaUnlocked()
+      videoPlaybackUnlocked.value = true
+    }
+    
     // 等待加载并播放
     try {
       await new Promise((resolve, reject) => {
@@ -795,28 +802,6 @@ const startDialog = async () => {
     // 3. 下载待机视频
     console.log('🎬 下载待机视频...')
     await downloadIdleVideo()
-    
-    // 3.5. 解锁 video 元素的有声播放权限
-    console.log('🔊 解锁 video 元素播放权限...')
-    try {
-      const currentVideo = avatarVideo1.value
-      if (currentVideo) {
-        // 尝试播放当前视频（非静音）
-        currentVideo.muted = false
-        currentVideo.volume = 1
-        try {
-          await currentVideo.play()
-          // 播放成功，立即暂停
-          currentVideo.pause()
-          currentVideo.currentTime = 0
-          console.log('✅ Video 元素播放权限已解锁')
-        } catch (playErr) {
-          console.warn('⚠️ Video 元素解锁失败，第一句可能需要静音播放:', playErr)
-        }
-      }
-    } catch (err) {
-      console.warn('⚠️ Video 元素解锁异常:', err)
-    }
     
     // 4. 加载配置
     console.log('⚙️ 加载配置...')
