@@ -84,11 +84,11 @@ class SkynetWhisperHandler(BaseHandler):
                 logger.error(f"Unsupported audio data type: {type(audio_data)}")
                 return ""
             
-            # 转换音频为 PCM Int16
-            pcm_data = await self._convert_to_pcm(audio_data)
+            # 前端已经发送 PCM Int16 格式，直接使用
+            logger.debug(f"[ASR] 收到音频数据: {len(audio_data)} 字节")
             
             # 发送音频并接收结果
-            text = await self._send_and_receive(pcm_data)
+            text = await self._send_and_receive(audio_data)
             
             if text:
                 logger.info(f"Transcribed: {text}")
