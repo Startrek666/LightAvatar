@@ -134,6 +134,7 @@ class SkynetWhisperHandler(BaseHandler):
             
             # 分块发送音频
             results = []
+            last_final_text = ""  # 记录最后一个 final 结果
             chunk_count = (len(pcm_data) + self.chunk_size - 1) // self.chunk_size
             logger.info(f"[ASR] 将分 {chunk_count} 个块发送")
             
@@ -168,16 +169,23 @@ class SkynetWhisperHandler(BaseHandler):
                         result_type = result.get('type', 'unknown')
                         logger.debug(f"[ASR] 响应类型: {result_type}")
                         
-                        # 只收集 final 结果
+                        # 收集 final 结果，同时记录最新的 interim 结果作为备选
                         if result_type == 'final':
                             text = result.get('text', '').strip()
                             if text:
+                                # 去除空格，使文本更紧凑
+                                text = text.replace(' ', '')
                                 results.append(text)
+                                last_final_text = text
                                 logger.info(f"[ASR] 获得最终结果: {text}")
                             else:
                                 logger.warning(f"[ASR] 收到 final 类型但文本为空")
-                        elif result_type == 'partial':
-                            logger.debug(f"[ASR] 部分结果: {result.get('text', '')}")
+                        elif result_type == 'interim':
+                            # 记录 interim 结果（可能是最新的识别内容）
+                            interim_text = result.get('text', '').strip()
+                            if interim_text:
+                                last_final_text = interim_text.replace(' ', '')
+                                logger.debug(f"[ASR] 中间结果: {last_final_text}")
                         
                     except asyncio.TimeoutError:
                         logger.warning(f"[ASR] 第 {chunk_index}/{chunk_count} 块接收超时")
@@ -187,9 +195,17 @@ class SkynetWhisperHandler(BaseHandler):
                         logger.warning(f"[ASR] 接收错误: {e}")
             
             # 合并所有结果
-            final_text = ' '.join(results)
-            logger.info(f"[ASR] 识别完成，共 {len(results)} 个结果，总文本: '{final_text}'")
-            return final_text
+            if results:
+                final_text = ''.join(results)  # 已经去除空格，直接拼接
+                logger.info(f"[ASR] 识别完成，共 {len(results)} 个 final 结果，总文本: '{final_text}'")
+                return final_text
+            elif last_final_text:
+                # 如果没有 final 结果，但有 interim 结果，使用最后一个 interim
+                logger.warning(f"[ASR] 没有收到 final 结果，使用最后一个 interim 结果: '{last_final_text}'")
+                return last_final_text
+            else:
+                logger.warning(f"[ASR] 识别完成，但没有任何结果")
+                return ""
             
         except Exception as e:
             logger.error(f"[ASR] Send/receive error: {e}", exc_info=True)
