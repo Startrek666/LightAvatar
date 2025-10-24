@@ -476,6 +476,7 @@ const ensureMediaUnlocked = async (): Promise<boolean> => {
   }
 
   try {
+    // 1. 解锁 AudioContext
     const audioContext = new AudioContextClass()
     if (audioContext.state === 'suspended') {
       await audioContext.resume()
@@ -499,10 +500,40 @@ const ensureMediaUnlocked = async (): Promise<boolean> => {
 
     source.disconnect()
     await audioContext.close()
+    
+    // 2. 解锁 video 元素播放权限（关键！）
+    // 在用户点击时尝试播放并立即暂停，以获取浏览器的媒体播放许可
+    await nextTick()
+    const videos = [avatarVideo1.value, avatarVideo2.value].filter(v => v)
+    
+    for (const video of videos) {
+      if (video) {
+        try {
+          // 设置为非静音模式
+          video.muted = false
+          video.volume = 1.0
+          
+          // 尝试播放（即使没有 src 也能触发权限解锁）
+          await video.play()
+          
+          // 立即暂停并重置
+          video.pause()
+          video.currentTime = 0
+          
+          console.log('✅ Video 元素播放权限已解锁')
+        } catch (err) {
+          // 如果失败，设回静音模式作为后备
+          console.warn('⚠️ Video 元素解锁失败，将使用静音模式:', err)
+          video.muted = true
+        }
+      }
+    }
+    
+    videoPlaybackUnlocked.value = true
     return true
   } catch (error) {
-    console.warn('解锁音频播放失败:', error)
-    message.warning('浏览器阻止了媒体播放，请再次点击“开始对话”按钮')
+    console.warn('解锁媒体播放失败:', error)
+    message.warning('浏览器阻止了媒体播放，请再次点击"开始对话"按钮')
     return false
   }
 }
@@ -597,13 +628,6 @@ const playNextVideo = async () => {
     nextVideo.src = url
     nextVideo.loop = false
     nextVideo.muted = false
-    
-    // 在播放前再次确保音视频权限已解锁（特别是第一个视频块）
-    if (!videoPlaybackUnlocked.value) {
-      console.log('🔓 在播放视频前再次确保权限...')
-      await ensureMediaUnlocked()
-      videoPlaybackUnlocked.value = true
-    }
     
     // 等待加载并播放
     try {
