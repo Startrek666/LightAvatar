@@ -46,9 +46,9 @@ async def test_asr(audio_file_path: str):
     
     # 初始化ASR Handler
     print(f"\n🔧 初始化 Skynet Whisper Handler...")
-    print(f"  - WebSocket URL: {settings.SKYNET_WHISPER_WS_URL}")
+    print(f"  - WebSocket URL: {settings.SKYNET_WHISPER_URL}")
     
-    asr_handler = SkynetWhisperHandler()
+    asr_handler = SkynetWhisperHandler(server_url=settings.SKYNET_WHISPER_URL)
     
     try:
         # 初始化
