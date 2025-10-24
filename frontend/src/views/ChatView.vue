@@ -501,45 +501,9 @@ const ensureMediaUnlocked = async (): Promise<boolean> => {
     source.disconnect()
     await audioContext.close()
     
-    // 2. 解锁 video 元素播放权限（关键！）
-    // 创建临时video元素并播放静音视频来解锁权限
-    await nextTick()
-    
-    try {
-      // 使用临时video元素和内嵌的静音视频来解锁播放权限
-      // 这是一个最小的1秒静音MP4视频(base64编码)
-      const silentVideoDataUrl = 'data:video/mp4;base64,' + 
-        'AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAohtZGF0AAACrwYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1NSByMjkwMSA3ZDBlOTU5' +
-        'IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxOCAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9j' +
-        'az0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBj' +
-        'cW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRl' +
-        'cmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRw' +
-        'PTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEwIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02' +
-        'OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAA2mWIhAAT//72rvzLK0cLlS4dWXuzUfLoSXL9iDB9aAAAAwAAAwAAJuKiZ0WFMeJsgAAALmAIWElDyDzETFWKgTm5AfwAAAMAAAMAAAMAVxSBLphA' +
-        '7ARHAAAGaUGaJGxDP/6eEAAABmQR4w+EDgAADHBAC7AIQSAAAw5bQZBAbAAACagQ3AA2s1EcDAAAD/BQUhPSAAAD/AAAGGgZwQVgAAAF/gAAHZAAAB/wAw=='
-      
-      const tempVideo = document.createElement('video')
-      tempVideo.muted = false
-      tempVideo.volume = 1.0
-      tempVideo.src = silentVideoDataUrl
-      tempVideo.playsInline = true
-      
-      // 添加超时保护，避免卡住
-      const playPromise = Promise.race([
-        tempVideo.play(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
-      ])
-      
-      await playPromise
-      tempVideo.pause()
-      tempVideo.src = ''
-      
-      console.log('✅ Video 播放权限已解锁')
-    } catch (err) {
-      console.warn('⚠️ Video 解锁失败，后续将尝试静音播放:', err)
-    }
-    
+    // 标记为已解锁，后续会在待机视频播放时进一步解锁
     videoPlaybackUnlocked.value = true
+    console.log('✅ 音频权限已解锁')
     return true
   } catch (error) {
     console.warn('解锁媒体播放失败:', error)
@@ -802,7 +766,33 @@ const downloadIdleVideo = async () => {
     // 等待下一帧确保video元素已挂载
     await nextTick()
     
-    // 播放待机视频
+    // 在用户点击后立即解锁video播放权限（关键！）
+    // 先尝试以非静音模式播放待机视频一小段时间
+    const videoToUnlock = avatarVideo1.value
+    if (videoToUnlock && videoPlaybackUnlocked.value) {
+      try {
+        console.log('🔓 尝试解锁video播放权限...')
+        videoToUnlock.src = idleVideoUrl.value
+        videoToUnlock.muted = false  // 非静音
+        videoToUnlock.volume = 1.0
+        videoToUnlock.loop = true
+        
+        await videoToUnlock.play()
+        
+        // 播放500ms后再暂停，确保浏览器记录了用户手势
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        videoToUnlock.pause()
+        videoToUnlock.currentTime = 0
+        videoToUnlock.muted = true
+        
+        console.log('✅ Video播放权限已解锁')
+      } catch (err) {
+        console.warn('⚠️ Video解锁失败:', err)
+      }
+    }
+    
+    // 播放待机视频（静音模式）
     await playIdleVideo()
   } catch (error) {
     console.error('Failed to download idle video:', error)
