@@ -129,20 +129,29 @@ class SkynetWhisperHandler(BaseHandler):
         try:
             loop = asyncio.get_event_loop()
             
+            logger.info(f"[ASR] 开始发送音频数据，总大小: {len(pcm_data)} 字节")
+            logger.info(f"[ASR] 分块大小: {self.chunk_size} 字节")
+            
             # 分块发送音频
             results = []
+            chunk_count = (len(pcm_data) + self.chunk_size - 1) // self.chunk_size
+            logger.info(f"[ASR] 将分 {chunk_count} 个块发送")
+            
             for i in range(0, len(pcm_data), self.chunk_size):
                 chunk = pcm_data[i:i + self.chunk_size]
+                chunk_index = i // self.chunk_size + 1
                 
                 if len(chunk) > 0:
                     # 创建头部
                     header = self._create_header()
                     payload = header + chunk
                     
+                    logger.debug(f"[ASR] 发送第 {chunk_index}/{chunk_count} 块: {len(chunk)} 字节 (含头部: {len(payload)} 字节)")
+                    
                     # 发送音频数据（二进制）
                     await loop.run_in_executor(
                         None,
-                        lambda: self.ws.send(payload, opcode=ABNF.OPCODE_BINARY)
+                        lambda p=payload: self.ws.send(p, opcode=ABNF.OPCODE_BINARY)
                     )
                     
                     # 接收识别结果
@@ -152,25 +161,38 @@ class SkynetWhisperHandler(BaseHandler):
                             timeout=5.0
                         )
                         
+                        logger.debug(f"[ASR] 收到响应: {result_str[:200]}")
                         result = json.loads(result_str)
                         
+                        # 记录所有类型的响应
+                        result_type = result.get('type', 'unknown')
+                        logger.debug(f"[ASR] 响应类型: {result_type}")
+                        
                         # 只收集 final 结果
-                        if result.get('type') == 'final':
+                        if result_type == 'final':
                             text = result.get('text', '').strip()
                             if text:
                                 results.append(text)
-                                logger.debug(f"Got final result: {text}")
+                                logger.info(f"[ASR] 获得最终结果: {text}")
+                            else:
+                                logger.warning(f"[ASR] 收到 final 类型但文本为空")
+                        elif result_type == 'partial':
+                            logger.debug(f"[ASR] 部分结果: {result.get('text', '')}")
                         
                     except asyncio.TimeoutError:
-                        logger.warning("Receive timeout, continuing...")
+                        logger.warning(f"[ASR] 第 {chunk_index}/{chunk_count} 块接收超时")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"[ASR] JSON 解析失败: {e}, 原始数据: {result_str[:200]}")
                     except Exception as e:
-                        logger.warning(f"Receive error: {e}")
+                        logger.warning(f"[ASR] 接收错误: {e}")
             
             # 合并所有结果
-            return ' '.join(results)
+            final_text = ' '.join(results)
+            logger.info(f"[ASR] 识别完成，共 {len(results)} 个结果，总文本: '{final_text}'")
+            return final_text
             
         except Exception as e:
-            logger.error(f"Send/receive error: {e}")
+            logger.error(f"[ASR] Send/receive error: {e}", exc_info=True)
             return ""
     
     async def transcribe(self, audio_data: bytes) -> str:
