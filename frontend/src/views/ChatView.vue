@@ -872,7 +872,8 @@ onUnmounted(() => {
   align-items: stretch;
 }
 
-.avatar-display {
+/* Avatar video container */
+.avatar-container {
   flex: 0 0 40%;
   background: #fff;
   border-radius: 8px;
@@ -881,16 +882,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 0;
   transition: flex 0.3s ease;
 }
 
-/* When chat history is hidden, expand avatar display */
-.video-chat-area:has(.chat-messages:not([style*="display: none"])) .avatar-display {
+/* When chat history is hidden, expand avatar container */
+.video-chat-area:has(.chat-messages) .avatar-container {
   flex: 0 0 40%;
 }
 
-.video-chat-area:not(:has(.chat-messages)) .avatar-display,
-.video-chat-area .avatar-display:only-child {
+.video-chat-area:not(:has(.chat-messages)) .avatar-container {
   flex: 1;
 }
 
@@ -1085,7 +1086,7 @@ onUnmounted(() => {
     flex-direction: column;
   }
 
-  .avatar-display {
+  .avatar-container {
     flex: 0 0 auto;
     width: 100%;
     aspect-ratio: 3 / 4;
