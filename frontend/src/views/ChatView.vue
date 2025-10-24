@@ -796,6 +796,24 @@ const startDialog = async () => {
     console.log('🎬 下载待机视频...')
     await downloadIdleVideo()
     
+    // 3.5. 解锁 video 元素的有声播放权限
+    console.log('🔊 解锁 video 元素播放权限...')
+    try {
+      const currentVideo = avatarVideo1.value
+      if (currentVideo) {
+        // 尝试播放当前视频（非静音）
+        currentVideo.muted = false
+        currentVideo.volume = 1
+        await currentVideo.play()
+        // 立即暂停，只是为了触发浏览器解锁
+        currentVideo.pause()
+        currentVideo.currentTime = 0
+        console.log('✅ Video 元素播放权限已解锁')
+      }
+    } catch (err) {
+      console.warn('⚠️ Video 元素解锁失败，第一句可能需要静音播放:', err)
+    }
+    
     // 4. 加载配置
     console.log('⚙️ 加载配置...')
     try {
