@@ -507,6 +507,42 @@ const ensureMediaUnlocked = async (): Promise<boolean> => {
   }
 }
 
+// 尝试在用户手势中播放一次视频，确保浏览器允许后续带声播放
+const unlockPrimaryVideoElement = async (): Promise<boolean> => {
+  const video = avatarVideo1.value || avatarVideo2.value
+  if (!video) {
+    console.warn('没有可用的 video 元素来解锁播放权限')
+    return false
+  }
+
+  const prevMuted = video.muted
+  const prevVolume = video.volume
+
+  try {
+    video.muted = false
+    video.volume = 0.05
+
+    await video.play()
+    await new Promise(resolve => setTimeout(resolve, 200))
+
+    video.pause()
+    video.currentTime = 0
+    console.log('✅ Video 元素播放权限已解锁')
+    return true
+  } catch (error) {
+    console.warn('⚠️ Video 元素解锁失败，第一句可能需要静音播放:', error)
+    try {
+      video.pause()
+    } catch (pauseError) {
+      console.warn('尝试暂停解锁视频时出错:', pauseError)
+    }
+    return false
+  } finally {
+    video.muted = prevMuted
+    video.volume = prevVolume
+  }
+}
+
 // WebSocket message handler
 const handleWebSocketMessage = (data: any) => {
   if (data.type === 'heartbeat') {
@@ -798,22 +834,8 @@ const startDialog = async () => {
     
     // 3.5. 解锁 video 元素的有声播放权限
     console.log('🔊 解锁 video 元素播放权限...')
-    try {
-      const currentVideo = avatarVideo1.value
-      if (currentVideo) {
-        // 尝试播放当前视频（非静音）
-        currentVideo.muted = false
-        currentVideo.volume = 1
-        await currentVideo.play()
-        // 立即暂停，只是为了触发浏览器解锁
-        currentVideo.pause()
-        currentVideo.currentTime = 0
-        console.log('✅ Video 元素播放权限已解锁')
-      }
-    } catch (err) {
-      console.warn('⚠️ Video 元素解锁失败，第一句可能需要静音播放:', err)
-    }
-    
+    await unlockPrimaryVideoElement()
+
     // 4. 加载配置
     console.log('⚙️ 加载配置...')
     try {
