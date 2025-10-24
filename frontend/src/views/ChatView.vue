@@ -72,8 +72,8 @@
             <div class="messages-container" ref="messagesContainer">
               <div v-for="(message, index) in messages" :key="index" :class="['message', message.role]">
                 <div class="message-content">
-                  <a-avatar v-if="message.role === 'user'" :icon="h(UserOutlined)" />
-                  <a-avatar v-else :icon="h(RobotOutlined)" style="background-color: #1890ff" />
+                  <a-avatar v-if="message.role === 'user'" :icon="h(UserOutlined)" class="message-avatar" />
+                  <a-avatar v-else :icon="h(RobotOutlined)" style="background-color: #1890ff" class="message-avatar" />
                   <div class="message-text">
                     <!-- 用户消息显示纯文本 -->
                     <template v-if="message.role === 'user'">
@@ -963,7 +963,7 @@ onUnmounted(() => {
 .start-dialog-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -972,11 +972,10 @@ onUnmounted(() => {
 
 .start-dialog-content {
   text-align: center;
-  color: white;
+  color: #333;
   padding: 48px;
-  background: rgba(255, 255, 255, 0.1);
+  background: #f0f2f5;
   border-radius: 16px;
-  backdrop-filter: blur(10px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
@@ -1077,6 +1076,7 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   padding-right: 8px;
+  padding-bottom: 16px;
 }
 
 .message {
@@ -1087,6 +1087,12 @@ onUnmounted(() => {
   display: flex;
   gap: 12px;
   align-items: flex-start;
+}
+
+.message-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
 }
 
 .message.user .message-content {
@@ -1361,6 +1367,18 @@ onUnmounted(() => {
 
   .messages-container {
     max-height: 40vh;
+    padding-bottom: 24px;
+  }
+
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* 修复个人界面滑动问题 */
+  .chat-messages {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 </style>
