@@ -38,7 +38,22 @@
       </a-layout-header>
 
       <a-layout-content class="content">
-        <div class="video-chat-area">
+        <!-- 开始对话按钮 -->
+        <div v-if="!isReady" class="start-dialog-overlay">
+          <div class="start-dialog-content">
+            <h2>Lemomate数字人助手</h2>
+            <p>点击下方按钮开始对话</p>
+            <a-button 
+              type="primary" 
+              size="large" 
+              :loading="isInitializing"
+              @click="startDialog">
+              {{ isInitializing ? '准备中...' : '开始对话' }}
+            </a-button>
+          </div>
+        </div>
+
+        <div class="video-chat-area" v-show="isReady">
           <!-- Avatar Video Display -->
           <div class="avatar-container">
             <!-- 双 video 元素用于无缝切换 -->
@@ -77,7 +92,7 @@
         </div>
 
         <!-- Input Area -->
-        <div class="input-area">
+        <div class="input-area" v-show="isReady">
           <!-- 文档信息卡片 -->
           <div v-if="uploadedDocInfo" class="doc-info-card">
             <div class="doc-info-content">
@@ -184,6 +199,8 @@ const uploadedDocInfo = ref<{ filename: string; textLength: number } | null>(nul
 const isPlayingIdleVideo = ref(false)
 const settingsVisible = ref(false)
 const videoPlaybackUnlocked = ref(false) // 视频播放权限是否已解锁
+const isReady = ref(false) // 是否已准备就绪
+const isInitializing = ref(false) // 是否正在初始化
 
 // Feature toggles
 const enableVoiceInput = ref(true)  // 语音输入开关
@@ -446,12 +463,48 @@ const scrollToBottom = () => {
 // 解锁视频播放权限（移动端必需）
 const unlockVideoPlayback = () => {
   if (videoPlaybackUnlocked.value) return
-  
-  console.log('🔓 解锁视频播放权限...')
-  
-  // 标记为已解锁，后续播放失败时会自动降级为静音
   videoPlaybackUnlocked.value = true
-  console.log('✅ 视频播放权限已解锁')
+}
+
+// 使用 Web Audio API 播放短暂的静音片段，以解锁浏览器的音频/视频播放权限
+const ensureMediaUnlocked = async (): Promise<boolean> => {
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+  if (!AudioContextClass) {
+    console.warn('当前浏览器不支持 AudioContext，跳过解锁逻辑')
+    videoPlaybackUnlocked.value = true
+    return true
+  }
+
+  try {
+    const audioContext = new AudioContextClass()
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume()
+    }
+
+    const durationSeconds = 0.2
+    const sampleRate = audioContext.sampleRate
+    const frameCount = Math.max(1, Math.floor(sampleRate * durationSeconds))
+
+    const buffer = audioContext.createBuffer(1, frameCount, sampleRate)
+    const source = audioContext.createBufferSource()
+    source.buffer = buffer
+    source.connect(audioContext.destination)
+
+    const playbackPromise = new Promise<void>((resolve) => {
+      source.onended = () => resolve()
+    })
+
+    source.start()
+    await playbackPromise
+
+    source.disconnect()
+    await audioContext.close()
+    return true
+  } catch (error) {
+    console.warn('解锁音频播放失败:', error)
+    message.warning('浏览器阻止了媒体播放，请再次点击“开始对话”按钮')
+    return false
+  }
 }
 
 // WebSocket message handler
@@ -715,53 +768,82 @@ const downloadIdleVideo = async () => {
   }
 }
 
+// 开始对话 - 初始化所有资源
+const startDialog = async () => {
+  if (isInitializing.value || isReady.value) return
+  
+  isInitializing.value = true
+  
+  try {
+    console.log('🚀 开始初始化...')
+    
+    // 1. 解锁音视频播放权限（移动端关键）
+    console.log('🔓 解锁音视频播放权限...')
+    const unlocked = await ensureMediaUnlocked()
+    if (!unlocked) {
+      return
+    }
+    videoPlaybackUnlocked.value = true
+    
+    // 2. 等待video元素挂载完成
+    await nextTick()
+    console.log('Video elements ready:', {
+      video1: !!avatarVideo1.value,
+      video2: !!avatarVideo2.value
+    })
+    
+    // 3. 下载待机视频
+    console.log('🎬 下载待机视频...')
+    await downloadIdleVideo()
+    
+    // 4. 加载配置
+    console.log('⚙️ 加载配置...')
+    try {
+      const response = await fetch('/api/config')
+      if (response.ok) {
+        const config = await response.json()
+        settings.value = config
+        localStorage.setItem('avatar-chat-settings', JSON.stringify(config))
+        configLoaded.value = true
+      } else {
+        const savedSettings = localStorage.getItem('avatar-chat-settings')
+        if (savedSettings) {
+          settings.value = JSON.parse(savedSettings)
+          configLoaded.value = true
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error)
+      const savedSettings = localStorage.getItem('avatar-chat-settings')
+      if (savedSettings) {
+        settings.value = JSON.parse(savedSettings)
+        configLoaded.value = true
+      }
+    }
+    
+    // 5. 连接 WebSocket
+    console.log('🔌 连接 WebSocket...')
+    const sessionId = Date.now().toString()
+    connect(`/ws/${sessionId}`, handleWebSocketMessage, handleWebSocketBinary)
+    
+    // 6. 等待一下让连接建立
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    console.log('✅ 初始化完成')
+    isReady.value = true
+    
+  } catch (error) {
+    console.error('❌ 初始化失败:', error)
+    message.error('初始化失败，请刷新页面重试')
+  } finally {
+    isInitializing.value = false
+  }
+}
+
 // Lifecycle
 onMounted(async () => {
-  // 等待video元素挂载完成
-  await nextTick()
-  
-  console.log('Video elements ready:', {
-    video1: !!avatarVideo1.value,
-    video2: !!avatarVideo2.value
-  })
-  
-  // 下载待机视频
-  await downloadIdleVideo()
-  
-  // Connect WebSocket with binary handler
-  const sessionId = Date.now().toString()
-  connect(`/ws/${sessionId}`, handleWebSocketMessage, handleWebSocketBinary)
-
-  // Load settings from server
-  try {
-    const response = await fetch('/api/config')
-    if (response.ok) {
-      const config = await response.json()
-      settings.value = config
-      // Save to localStorage as backup
-      localStorage.setItem('avatar-chat-settings', JSON.stringify(config))
-      configLoaded.value = true
-    } else {
-      // Fallback to localStorage
-      const savedSettings = localStorage.getItem('avatar-chat-settings')
-      if (savedSettings) {
-        settings.value = JSON.parse(savedSettings)
-        configLoaded.value = true
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load settings from server:', error)
-    // Fallback to localStorage
-    try {
-      const savedSettings = localStorage.getItem('avatar-chat-settings')
-      if (savedSettings) {
-        settings.value = JSON.parse(savedSettings)
-        configLoaded.value = true
-      }
-    } catch (e) {
-      console.error('Failed to load settings from localStorage:', error)
-    }
-  }
+  // 只做基本准备，其他初始化由 startDialog 处理
+  console.log('📦 组件已挂载，等待用户点击开始对话')
 })
 
 // Watch for WebSocket connection and send config when ready
@@ -843,6 +925,49 @@ onUnmounted(() => {
   height: calc(100vh - 64px);
   padding: 0;
   overflow: hidden;
+  position: relative;
+}
+
+/* 开始对话覆盖层 */
+.start-dialog-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.start-dialog-content {
+  text-align: center;
+  color: white;
+  padding: 48px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.start-dialog-content h2 {
+  font-size: 32px;
+  margin: 0 0 16px 0;
+  font-weight: 600;
+}
+
+.start-dialog-content p {
+  font-size: 16px;
+  margin: 0 0 32px 0;
+  opacity: 0.9;
+}
+
+.start-dialog-content .ant-btn {
+  height: 48px;
+  padding: 0 48px;
+  font-size: 16px;
+  border-radius: 24px;
+  border: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .video-chat-area {
