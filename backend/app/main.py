@@ -188,6 +188,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
             elif message_type == "text":
                 # Check if streaming is enabled
                 use_streaming = data.get("streaming", True)
+                text_content = data.get("text", "")
+                logger.info(f"[WebSocket] Session {session_id}: 收到文本消息")
+                logger.info(f"  - streaming: {use_streaming}")
+                logger.info(f"  - text length: {len(text_content)}")
+                logger.info(f"  - text preview: {text_content[:100]}")
                 
                 if use_streaming:
                     # Handle text input with streaming
@@ -237,7 +242,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                             })
                     
                     # Process with streaming
-                    await session.process_text_stream(data.get("text"), stream_callback)
+                    logger.info(f"[WebSocket] Session {session_id}: 开始流式处理文本")
+                    try:
+                        await session.process_text_stream(data.get("text"), stream_callback)
+                        logger.info(f"[WebSocket] Session {session_id}: 流式处理完成")
+                    except Exception as e:
+                        logger.error(f"[WebSocket] Session {session_id}: 流式处理失败: {e}", exc_info=True)
+                        await websocket_manager.send_json(session_id, {
+                            "type": "error",
+                            "data": {"message": str(e)}
+                        })
                 
                 else:
                     # Non-streaming mode (legacy support)

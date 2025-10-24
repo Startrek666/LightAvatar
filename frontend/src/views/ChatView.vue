@@ -339,7 +339,17 @@ const clearUploadedDoc = () => {
 }
 
 const sendTextMessage = () => {
+  console.log('📤 [sendTextMessage] 开始发送消息')
+  console.log('  - inputText:', inputText.value)
+  console.log('  - isConnected:', isConnected.value)
+  console.log('  - isProcessing:', isProcessing.value)
+  
   if (!inputText.value.trim() || !isConnected.value || isProcessing.value) {
+    console.warn('⚠️ [sendTextMessage] 发送被阻止:', {
+      isEmpty: !inputText.value.trim(),
+      notConnected: !isConnected.value,
+      isProcessing: isProcessing.value
+    })
     return
   }
 
@@ -380,11 +390,14 @@ const sendTextMessage = () => {
 
   // Send to server with streaming enabled - 发送完整消息（包含文档）
   isProcessing.value = true
-  send({
+  const payload = {
     type: 'text',
     text: messageToSend,
     streaming: true  // Enable streaming mode
-  })
+  }
+  console.log('🚀 [sendTextMessage] 发送数据到服务器:', payload)
+  send(payload)
+  console.log('✅ [sendTextMessage] 消息已发送')
 
   // Ensure input is cleared in next tick
   nextTick(() => {
@@ -514,8 +527,11 @@ const ensureMediaUnlocked = async (): Promise<boolean> => {
 
 // WebSocket message handler
 const handleWebSocketMessage = (data: any) => {
+  console.log('📨 [handleWebSocketMessage] 收到消息:', data)
+  
   if (data.type === 'heartbeat') {
     // Respond to heartbeat to keep connection alive
+    console.log('💓 [handleWebSocketMessage] 心跳消息')
     send({ type: 'pong' })
     return
   }
@@ -534,11 +550,16 @@ const handleWebSocketMessage = (data: any) => {
   }
   else if (data.type === 'text_chunk') {
     // Streaming text chunk
-    console.log('📝 收到文本块:', data.data.chunk)
+    console.log('📝 [handleWebSocketMessage] 收到文本块:', data.data.chunk)
     const lastMessage = messages.value[messages.value.length - 1]
+    console.log('  - messages.length:', messages.value.length)
+    console.log('  - lastMessage:', lastMessage)
     if (lastMessage && lastMessage.role === 'assistant') {
       lastMessage.content += data.data.chunk
+      console.log('  - 已追加到assistant消息, 当前长度:', lastMessage.content.length)
       scrollToBottom()
+    } else {
+      console.warn('⚠️ [handleWebSocketMessage] 没有找到assistant消息或最后一条不是assistant')
     }
   }
   else if (data.type === 'session_timeout') {
@@ -555,16 +576,21 @@ const handleWebSocketMessage = (data: any) => {
   }
   else if (data.type === 'stream_complete') {
     // Streaming complete
-    console.log('✅ 流式传输完成:', data.data.full_text)
+    console.log('✅ [handleWebSocketMessage] 流式传输完成:', data.data.full_text)
+    console.log('  - 最终文本长度:', data.data.full_text?.length || 0)
     message.destroy()  // 关闭loading提示
     isProcessing.value = false
+    console.log('  - isProcessing 设置为 false')
   }
   else if (data.type === 'error') {
     // Error occurred
-    console.error('❌ 处理失败:', data.data.message)
+    console.error('❌ [handleWebSocketMessage] 处理失败:', data.data.message)
     message.destroy()  // 关闭loading提示
     message.error('处理失败: ' + data.data.message)
     isProcessing.value = false
+  }
+  else {
+    console.warn('⚠️ [handleWebSocketMessage] 未知消息类型:', data.type, data)
   }
 }
 

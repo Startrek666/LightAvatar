@@ -282,6 +282,9 @@ class Session:
                      Signature: async def callback(chunk_type, data)
         """
         self.update_activity()
+        logger.info(f"[Session {self.session_id}] process_text_stream 开始处理")
+        logger.info(f"  - 输入文本长度: {len(text)}")
+        logger.info(f"  - 输入文本预览: {text[:100]}")
         
         try:
             # Add user message to history
@@ -430,6 +433,7 @@ class Session:
             
             # 流式接收LLM输出
             chunk_received = 0
+            logger.info(f"[Session {self.session_id}] 开始调用 LLM stream_response")
             async for chunk in self.llm_handler.stream_response(text, self.conversation_history):
                 chunk_received += 1
                 full_response += chunk
@@ -437,6 +441,9 @@ class Session:
                 
                 # Send text chunk to client for real-time display
                 await callback("text_chunk", {"chunk": chunk})
+                
+                if chunk_received == 1:
+                    logger.info(f"[Session {self.session_id}] 收到第一个LLM chunk: '{chunk}'")
                 
                 # Check if we have a complete sentence
                 if self._is_sentence_end(sentence_buffer):
