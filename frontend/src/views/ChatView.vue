@@ -321,14 +321,14 @@ const clearUploadedDoc = () => {
   message.info('已取消文档')
 }
 
-const sendTextMessage = async () => {
+const sendTextMessage = () => {
   if (!inputText.value.trim() || !isConnected.value || isProcessing.value) {
     return
   }
 
   // 移动端：在用户点击发送时解锁视频播放权限
   if (!videoPlaybackUnlocked.value) {
-    await unlockVideoPlayback()
+    unlockVideoPlayback()
   }
 
   const userInput = inputText.value.trim()
@@ -384,7 +384,7 @@ const startRecording = async () => {
 
   // 移动端：在用户点击录音时解锁视频播放权限
   if (!videoPlaybackUnlocked.value) {
-    await unlockVideoPlayback()
+    unlockVideoPlayback()
   }
 
   console.log('开始录音...')
@@ -444,33 +444,14 @@ const scrollToBottom = () => {
 }
 
 // 解锁视频播放权限（移动端必需）
-const unlockVideoPlayback = async () => {
+const unlockVideoPlayback = () => {
   if (videoPlaybackUnlocked.value) return
   
-  console.log('🔓 尝试解锁视频播放权限...')
+  console.log('🔓 解锁视频播放权限...')
   
-  try {
-    // 尝试播放两个 video 元素（静音）
-    const videos = [avatarVideo1.value, avatarVideo2.value].filter(v => v)
-    
-    for (const video of videos) {
-      if (video) {
-        video.muted = true
-        try {
-          await video.play()
-          video.pause()
-          video.currentTime = 0
-        } catch (err) {
-          // 忽略静音播放失败
-        }
-      }
-    }
-    
-    videoPlaybackUnlocked.value = true
-    console.log('✅ 视频播放权限已解锁')
-  } catch (error) {
-    console.warn('⚠️ 视频播放权限解锁失败，将使用静音播放:', error)
-  }
+  // 标记为已解锁，后续播放失败时会自动降级为静音
+  videoPlaybackUnlocked.value = true
+  console.log('✅ 视频播放权限已解锁')
 }
 
 // WebSocket message handler
@@ -861,6 +842,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: calc(100vh - 64px);
   padding: 0;
+  overflow: hidden;
 }
 
 .video-chat-area {
@@ -870,6 +852,7 @@ onUnmounted(() => {
   padding: 16px;
   overflow: hidden;
   align-items: stretch;
+  min-height: 0;
 }
 
 /* Avatar video container */
@@ -985,6 +968,7 @@ onUnmounted(() => {
 }
 
 .input-area {
+  flex: 0 0 auto;
   background: #fff;
   padding: 16px;
   border-top: 1px solid #f0f0f0;
