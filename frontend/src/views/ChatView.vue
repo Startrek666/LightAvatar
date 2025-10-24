@@ -40,12 +40,12 @@
       <a-layout-content class="content">
         <div class="video-chat-area">
           <!-- Avatar Video Display -->
-          <div class="avatar-display">
-            <!-- 双video元素交替显示，避免切换黑屏 -->
-            <video ref="avatarVideo1" class="avatar-video" :class="{active: currentVideoIndex === 0}" 
-                   autoplay playsinline loop muted />
-            <video ref="avatarVideo2" class="avatar-video" :class="{active: currentVideoIndex === 1}" 
-                   autoplay playsinline loop muted />
+          <div class="avatar-container">
+            <!-- 双 video 元素用于无缝切换 -->
+            <video ref="avatarVideo1" :class="['avatar-video', { active: currentVideoIndex === 0 }]" autoplay muted
+              loop playsinline />
+            <video ref="avatarVideo2" :class="['avatar-video', { active: currentVideoIndex === 1 }]" autoplay muted
+              loop playsinline />
             <!-- 只在无视频播放且正在处理时显示蒙层 -->
             <div v-if="showProcessingIndicator" class="processing-indicator">
               <a-spin size="large" tip="处理中..." />
@@ -183,6 +183,7 @@ const uploadedDocText = ref('')
 const uploadedDocInfo = ref<{ filename: string; textLength: number } | null>(null)
 const isPlayingIdleVideo = ref(false)
 const settingsVisible = ref(false)
+const videoPlaybackUnlocked = ref(false) // 视频播放权限是否已解锁
 
 // Feature toggles
 const enableVoiceInput = ref(true)  // 语音输入开关
@@ -320,9 +321,14 @@ const clearUploadedDoc = () => {
   message.info('已取消文档')
 }
 
-const sendTextMessage = () => {
+const sendTextMessage = async () => {
   if (!inputText.value.trim() || !isConnected.value || isProcessing.value) {
     return
+  }
+
+  // 移动端：在用户点击发送时解锁视频播放权限
+  if (!videoPlaybackUnlocked.value) {
+    await unlockVideoPlayback()
   }
 
   const userInput = inputText.value.trim()
@@ -372,9 +378,13 @@ const sendTextMessage = () => {
 }
 
 const startRecording = async () => {
-  if (!isConnected.value || isProcessing.value) {
-    console.log('⚠️ 无法开始录音：', { isConnected: isConnected.value, isProcessing: isProcessing.value })
+  if (isRecording.value || !isConnected.value || isProcessing.value) {
     return
+  }
+
+  // 移动端：在用户点击录音时解锁视频播放权限
+  if (!videoPlaybackUnlocked.value) {
+    await unlockVideoPlayback()
   }
 
   console.log('开始录音...')
@@ -431,6 +441,36 @@ const scrollToBottom = () => {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
     }
   })
+}
+
+// 解锁视频播放权限（移动端必需）
+const unlockVideoPlayback = async () => {
+  if (videoPlaybackUnlocked.value) return
+  
+  console.log('🔓 尝试解锁视频播放权限...')
+  
+  try {
+    // 尝试播放两个 video 元素（静音）
+    const videos = [avatarVideo1.value, avatarVideo2.value].filter(v => v)
+    
+    for (const video of videos) {
+      if (video) {
+        video.muted = true
+        try {
+          await video.play()
+          video.pause()
+          video.currentTime = 0
+        } catch (err) {
+          // 忽略静音播放失败
+        }
+      }
+    }
+    
+    videoPlaybackUnlocked.value = true
+    console.log('✅ 视频播放权限已解锁')
+  } catch (error) {
+    console.warn('⚠️ 视频播放权限解锁失败，将使用静音播放:', error)
+  }
 }
 
 // WebSocket message handler
@@ -527,8 +567,25 @@ const playNextVideo = async () => {
     // 等待加载并播放
     try {
       await new Promise((resolve, reject) => {
-        nextVideo.onloadeddata = () => {
-          nextVideo.play().then(resolve).catch(reject)
+        nextVideo.onloadeddata = async () => {
+          try {
+            await nextVideo.play()
+            resolve(null)
+          } catch (playError: any) {
+            // 移动端自动播放被阻止，尝试静音播放
+            if (playError.name === 'NotAllowedError') {
+              console.warn('⚠️ 自动播放被阻止，尝试静音播放')
+              nextVideo.muted = true
+              try {
+                await nextVideo.play()
+                resolve(null)
+              } catch (mutedError) {
+                reject(mutedError)
+              }
+            } else {
+              reject(playError)
+            }
+          }
         }
         nextVideo.onerror = reject
         nextVideo.load()
@@ -600,8 +657,15 @@ const playIdleVideo = async () => {
     
     // 等待视频加载并开始播放
     await new Promise((resolve, reject) => {
-      nextVideo.onloadeddata = () => {
-        nextVideo.play().then(resolve).catch(reject)
+      nextVideo.onloadeddata = async () => {
+        try {
+          await nextVideo.play()
+          resolve(null)
+        } catch (playError) {
+          // 待机视频是静音的，如果还是失败就记录错误
+          console.error('待机视频播放失败:', playError)
+          reject(playError)
+        }
       }
       nextVideo.onerror = reject
       nextVideo.load()
