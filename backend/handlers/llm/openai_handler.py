@@ -26,7 +26,7 @@ class OpenAIHandler(BaseHandler):
         
         # Generation parameters
         self.temperature = self.config.get("temperature", 0.7)
-        self.max_tokens = self.config.get("max_tokens", 500)
+        self.max_tokens = self.config.get("max_tokens", 20000)  # 提高默认值以支持长回复
         self.top_p = self.config.get("top_p", 0.9)
         self.presence_penalty = self.config.get("presence_penalty", 0)
         self.frequency_penalty = self.config.get("frequency_penalty", 0)

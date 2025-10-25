@@ -128,7 +128,11 @@ class SkynetWhisperHandler(BaseHandler):
         """发送音频并接收识别结果"""
         try:
             loop = asyncio.get_event_loop()
-            
+
+            receive_timeout = float(self.config.get("receive_timeout", 8.0))
+            tail_timeout = float(self.config.get("tail_timeout", 6.0))
+            tail_poll_interval = float(self.config.get("tail_poll_interval", 1.0))
+
             logger.info(f"[ASR] 开始发送音频数据，总大小: {len(pcm_data)} 字节")
             logger.info(f"[ASR] 分块大小: {self.chunk_size} 字节")
             
@@ -159,7 +163,7 @@ class SkynetWhisperHandler(BaseHandler):
                     try:
                         result_str = await asyncio.wait_for(
                             loop.run_in_executor(None, self.ws.recv),
-                            timeout=5.0
+                            timeout=receive_timeout
                         )
                         
                         logger.debug(f"[ASR] 收到响应: {result_str[:200]}")
@@ -188,12 +192,55 @@ class SkynetWhisperHandler(BaseHandler):
                                 logger.debug(f"[ASR] 中间结果: {last_final_text}")
                         
                     except asyncio.TimeoutError:
-                        logger.warning(f"[ASR] 第 {chunk_index}/{chunk_count} 块接收超时")
+                        logger.warning(f"[ASR] 第 {chunk_index}/{chunk_count} 块接收超时 (timeout={receive_timeout}s)")
                     except json.JSONDecodeError as e:
                         logger.error(f"[ASR] JSON 解析失败: {e}, 原始数据: {result_str[:200]}")
                     except Exception as e:
                         logger.warning(f"[ASR] 接收错误: {e}")
             
+            if not results and tail_timeout > 0:
+                logger.info(f"[ASR] 主动进入尾部等待，最长 {tail_timeout}s 以获取最终结果")
+                tail_deadline = loop.time() + tail_timeout
+                received_any = False
+                while loop.time() < tail_deadline:
+                    try:
+                        result_str = await asyncio.wait_for(
+                            loop.run_in_executor(None, self.ws.recv),
+                            timeout=min(tail_poll_interval, max(tail_deadline - loop.time(), 0.01))
+                        )
+                        logger.debug(f"[ASR] 尾部等待收到响应: {result_str[:200]}")
+                        result = json.loads(result_str)
+
+                        result_type = result.get('type', 'unknown')
+                        logger.debug(f"[ASR] 尾部响应类型: {result_type}")
+
+                        if result_type == 'final':
+                            text = result.get('text', '').strip()
+                            if text:
+                                text = text.replace(' ', '')
+                                results.append(text)
+                                last_final_text = text
+                                received_any = True
+                                logger.info(f"[ASR] 尾部获得最终结果: {text}")
+                                break
+                            else:
+                                logger.warning("[ASR] 尾部收到 final 类型但文本为空")
+                        elif result_type == 'interim':
+                            interim_text = result.get('text', '').strip()
+                            if interim_text:
+                                last_final_text = interim_text.replace(' ', '')
+                                received_any = True
+                                logger.debug(f"[ASR] 尾部中间结果: {last_final_text}")
+                    except asyncio.TimeoutError:
+                        if received_any:
+                            logger.info("[ASR] 尾部等待已收到数据，超时后结束等待")
+                            break
+                        continue
+                    except json.JSONDecodeError as e:
+                        logger.error(f"[ASR] 尾部JSON解析失败: {e}, 原始数据: {result_str[:200]}")
+                    except Exception as e:
+                        logger.warning(f"[ASR] 尾部等待接收错误: {e}")
+
             # 合并所有结果
             if results:
                 final_text = ''.join(results)  # 已经去除空格，直接拼接
