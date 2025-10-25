@@ -690,7 +690,7 @@ class LiteAvatarHandler(BaseHandler):
         return new_param_res
     
     async def _params_to_frames(self, param_res: List[Dict[str, float]]) -> List[np.ndarray]:
-        """⚡ 优化：批量推理加速"""
+        """⚡ 优化：真正的批量并发推理"""
         logger.debug(f"开始渲染 {len(param_res)} 个参数帧")
         
         # 准备背景帧ID
@@ -702,26 +702,36 @@ class LiteAvatarHandler(BaseHandler):
                 bg_frame_id = self.bg_video_frame_count - 1 - ii % self.bg_video_frame_count
             bg_frame_ids.append(bg_frame_id)
         
-        # ⚡ 批量推理：每次处理batch_size帧
-        batch_size = 8  # 批量大小，平衡速度与内存
-        frames = []
+        # ⚡ 关键优化1：增大batch_size，减少batch数量
+        # CPU推理：batch越大越快（利用向量化），直到内存瓶颈
+        batch_size = min(32, len(param_res))  # 最大32帧/batch
         
+        # ⚡ 关键优化2：并发提交所有batch（如果有多个）
         loop = asyncio.get_event_loop()
+        tasks = []
         
         for start_idx in range(0, len(param_res), batch_size):
             end_idx = min(start_idx + batch_size, len(param_res))
             batch_params = param_res[start_idx:end_idx]
             batch_bg_ids = bg_frame_ids[start_idx:end_idx]
             
-            # 在线程池中批量处理
-            batch_frames = await loop.run_in_executor(
+            # 并发提交（不await，先收集所有任务）
+            task = loop.run_in_executor(
                 self.render_executor,
                 self._render_batch_frames,
                 batch_params, batch_bg_ids, start_idx
             )
+            tasks.append(task)
+        
+        # 等待所有batch并发完成
+        all_batch_results = await asyncio.gather(*tasks)
+        
+        # 合并结果（保持顺序）
+        frames = []
+        for batch_frames in all_batch_results:
             frames.extend(batch_frames)
         
-        logger.debug(f"所有 {len(frames)} 帧渲染完成")
+        logger.debug(f"所有 {len(frames)} 帧渲染完成（{len(tasks)}个batch并发）")
         
         # 清理缓存
         if torch.cuda.is_available():
