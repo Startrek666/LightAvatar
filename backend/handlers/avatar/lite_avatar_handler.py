@@ -672,41 +672,40 @@ class LiteAvatarHandler(BaseHandler):
         return new_param_res
     
     async def _params_to_frames(self, param_res: List[Dict[str, float]]) -> List[np.ndarray]:
-        """⚡ 优化：使用线程池并发渲染帧"""
+        """⚡ 优化：批量推理加速"""
         logger.debug(f"开始渲染 {len(param_res)} 个参数帧")
         
-        # 准备渲染任务
-        tasks = []
-        for ii, params in enumerate(param_res):
-            # 计算背景帧ID（循环播放）
+        # 准备背景帧ID
+        bg_frame_ids = []
+        for ii in range(len(param_res)):
             if int(ii / self.bg_video_frame_count) % 2 == 0:
                 bg_frame_id = ii % self.bg_video_frame_count
             else:
                 bg_frame_id = self.bg_video_frame_count - 1 - ii % self.bg_video_frame_count
-            
-            tasks.append((params, bg_frame_id, ii))
+            bg_frame_ids.append(bg_frame_id)
         
-        # ⚡ 并发提交到线程池
+        # ⚡ 批量推理：每次处理batch_size帧
+        batch_size = 8  # 批量大小，平衡速度与内存
+        frames = []
+        
         loop = asyncio.get_event_loop()
-        futures = [
-            loop.run_in_executor(
+        
+        for start_idx in range(0, len(param_res), batch_size):
+            end_idx = min(start_idx + batch_size, len(param_res))
+            batch_params = param_res[start_idx:end_idx]
+            batch_bg_ids = bg_frame_ids[start_idx:end_idx]
+            
+            # 在线程池中批量处理
+            batch_frames = await loop.run_in_executor(
                 self.render_executor,
-                self._render_single_frame,
-                params, bg_frame_id, frame_id
+                self._render_batch_frames,
+                batch_params, batch_bg_ids, start_idx
             )
-            for params, bg_frame_id, frame_id in tasks
-        ]
-        
-        # 等待所有帧完成
-        results = await asyncio.gather(*futures)
-        
-        # 按帧ID排序
-        results.sort(key=lambda x: x[0])
-        frames = [r[1] for r in results]
+            frames.extend(batch_frames)
         
         logger.debug(f"所有 {len(frames)} 帧渲染完成")
         
-        # 清理PyTorch缓存
+        # 清理缓存
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
@@ -715,23 +714,63 @@ class LiteAvatarHandler(BaseHandler):
         
         return frames
     
-    def _render_single_frame(self, params: Dict[str, float], bg_frame_id: int, frame_id: int) -> Tuple[int, np.ndarray]:
-        """⚡ 优化：渲染单帧（线程池调用）"""
+    def _render_batch_frames(self, batch_params: List[Dict[str, float]], 
+                            batch_bg_ids: List[int], start_idx: int) -> List[np.ndarray]:
+        """⚡ 批量渲染帧（加速关键）"""
         try:
-            # 参数转图像
-            mouth_img = self._param_to_image(params, bg_frame_id)
+            batch_size = len(batch_params)
             
-            # 融合到背景
-            full_img, _ = self._merge_mouth_to_bg(mouth_img, bg_frame_id)
+            # 1. 批量准备参数
+            param_arrays = np.array([[p[key] for key in self.p_list] for p in batch_params])
+            param_arrays = np.nan_to_num(param_arrays, nan=0.0)
             
-            return (frame_id, full_img)
+            # 2. 批量推理（关键优化：一次推理多帧）
+            with torch.no_grad():
+                param_tensor = torch.from_numpy(param_arrays).float().to(self.device)  # (batch, 32)
+                
+                # 准备批量ref_imgs
+                ref_imgs_batch = torch.stack([self.ref_img_list[bg_id] for bg_id in batch_bg_ids])
+                
+                # 批量生成
+                mouth_imgs = self.generator(ref_imgs_batch, param_tensor)  # (batch, 3, H, W)
+                
+                # 检测NaN
+                if torch.isnan(mouth_imgs).any():
+                    logger.warning(f"批量推理输出包含NaN，使用零张量替代")
+                    mouth_imgs = torch.nan_to_num(mouth_imgs, nan=0.0)
+            
+            # 3. 批量后处理
+            mouth_imgs = mouth_imgs.detach().cpu()
+            mouth_imgs = (mouth_imgs / 2 + 0.5).clamp(0, 1)  # 反归一化
+            
+            frames = []
+            for i, bg_id in enumerate(batch_bg_ids):
+                # 提取单帧
+                mouth_img = mouth_imgs[i].permute(1, 2, 0) * 255
+                mouth_img = mouth_img.numpy().astype(np.uint8)
+                
+                # 调整大小
+                mouth_img = cv2.resize(mouth_img, (self.x2 - self.x1, self.y2 - self.y1))
+                mouth_img = mouth_img[:, :, ::-1]  # RGB to BGR
+                
+                # 融合到背景
+                full_img = self.bg_data_list[bg_id].copy()
+                full_img[self.y1:self.y2, self.x1:self.x2, :] = (
+                    mouth_img * (1 - self.merge_mask) +
+                    full_img[self.y1:self.y2, self.x1:self.x2, :] * self.merge_mask
+                )
+                
+                frames.append(full_img.astype(np.uint8))
+            
+            return frames
             
         except Exception as e:
-            logger.error(f"渲染帧 {frame_id} 失败: {e}")
+            logger.error(f"批量渲染失败 (起始帧{start_idx}): {e}")
             import traceback
             logger.error(traceback.format_exc())
-            # 返回空帧避免崩溃
-            return (frame_id, np.zeros((self.resolution[1], self.resolution[0], 3), dtype=np.uint8))
+            # 返回空帧
+            return [np.zeros((self.resolution[1], self.resolution[0], 3), dtype=np.uint8) 
+                   for _ in range(len(batch_params))]
     
     def _param_to_image(self, params: Dict[str, float], bg_frame_id: int) -> torch.Tensor:
         """参数转嘴部图像"""
@@ -801,7 +840,7 @@ class LiteAvatarHandler(BaseHandler):
             video_path = tmp_video.name
         
         try:
-            # 方法1：FFmpeg管道编码（最快）
+            # 方法1：FFmpeg管道编码（极速优化）
             logger.debug("尝试FFmpeg管道编码...")
             cmd = [
                 'ffmpeg', '-y',
@@ -812,19 +851,25 @@ class LiteAvatarHandler(BaseHandler):
                 '-r', str(self.fps),
                 '-i', '-',
                 '-i', audio_path,
+                # ⚡ 极速编码优化
                 '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-crf', '28',
+                '-preset', 'ultrafast',  # 最快预设
+                '-tune', 'zerolatency',  # 零延迟调优
+                '-crf', '30',  # 提高到30，降低质量换速度
+                '-g', '999',  # 关键帧间隔，减少编码复杂度
+                '-threads', '2',  # 限制编码线程，避免抢占渲染线程
                 '-c:a', 'aac',
-                '-b:a', '128k',
-                '-movflags', 'frag_keyframe+empty_moov',
+                '-b:a', '64k',  # 降低音频比特率
+                '-movflags', '+faststart+frag_keyframe',
                 '-loglevel', 'error',
                 video_path
             ]
             
-            # 将帧数据转为字节流
+            # ⚡ 优化：预先连接帧数据
             try:
-                frame_bytes = b''.join([frame.tobytes() for frame in frames])
+                # 使用numpy连续数组加速
+                frames_array = np.ascontiguousarray(np.array(frames, dtype=np.uint8))
+                frame_bytes = frames_array.tobytes()
             except Exception as e:
                 logger.error(f"帧数据准备失败: {e}，使用fallback方法")
                 raise
