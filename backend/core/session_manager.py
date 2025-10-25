@@ -363,6 +363,7 @@ class Session:
                             
                             if result:
                                 await callback("video_chunk", result)
+                                self.update_activity()
                                 if next_to_send == 0:
                                     # 计算实际预缓冲的视频数量
                                     actual_buffered = sum(1 for i in range(sentence_index) if i in pending_tasks and pending_tasks[i].done())
@@ -441,6 +442,7 @@ class Session:
                 
                 # Send text chunk to client for real-time display
                 await callback("text_chunk", {"chunk": chunk})
+                self.update_activity()
                 
                 if chunk_received == 1:
                     logger.info(f"[Session {self.session_id}] 收到第一个LLM chunk: '{chunk}'")
