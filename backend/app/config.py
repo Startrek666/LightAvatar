@@ -116,15 +116,15 @@ class Settings(BaseSettings):
     # LiteAvatar settings
     AVATAR_NAME: str = Field(default="default", description="LiteAvatar data name")
     AVATAR_USE_GPU: bool = Field(default=False, description="Use GPU for LiteAvatar")
-    AVATAR_RENDER_THREADS: int = Field(default=1, description="Number of render threads for LiteAvatar")
-    AVATAR_BG_FRAME_COUNT: int = Field(default=150, description="Background frame count to use")
+    AVATAR_RENDER_THREADS: int = Field(default=4, description="Number of render threads for LiteAvatar")
+    AVATAR_BG_FRAME_COUNT: int = Field(default=100, description="Background frame count to use")
     
     # Concurrent video generation settings
     MAX_CONCURRENT_VIDEOS: int = Field(default=2, description="Maximum concurrent video generation tasks")
-    PREBUFFER_COUNT: int = Field(default=2, description="Number of videos to prebuffer before starting playback")
+    PREBUFFER_COUNT: int = Field(default=1, description="Number of videos to prebuffer before starting playback")
     
     # PyTorch performance settings
-    PYTORCH_INTRA_THREADS: int = Field(default=6, description="PyTorch intra-op parallelism threads")
+    PYTORCH_INTRA_THREADS: int = Field(default=4, description="PyTorch intra-op parallelism threads")
     PYTORCH_INTER_THREADS: int = Field(default=2, description="PyTorch inter-op parallelism threads")
     
     # Buffer settings

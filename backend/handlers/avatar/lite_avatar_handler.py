@@ -83,9 +83,6 @@ class LiteAvatarHandler(BaseHandler):
         self.audio2mouth = None
         self.encoder = None
         self.generator = None
-
-        # 渲染锁：避免并行任务竞争共享队列导致死锁
-        self.render_lock = asyncio.Lock()
         
         # Avatar数据
         self.data_dir = None
@@ -98,9 +95,7 @@ class LiteAvatarHandler(BaseHandler):
         self.y1 = self.y2 = self.x1 = self.x2 = 0
         self.bg_video_frame_count = 0
         
-        # 处理队列
-        self.input_queue = queue.Queue()
-        self.output_queue = queue.Queue()
+        # ⚡ 优化：移除全局队列，改为动态创建独立队列（避免任务间竞争）
         self.threads = []
         
         # 设备
@@ -147,20 +142,13 @@ class LiteAvatarHandler(BaseHandler):
             logger.info("加载Avatar动态模型...")
             await self._load_avatar_model()
             
-            # 4. 启动渲染线程
-            num_threads = self.config.get("render_threads", 1)
-            logger.info(f"启动{num_threads}个渲染线程...")
-            barrier = threading.Barrier(num_threads)
-            for i in range(num_threads):
-                t = threading.Thread(
-                    target=self._render_loop,
-                    args=(i, barrier, self.input_queue, self.output_queue)
-                )
-                t.daemon = True
-                t.start()
-                self.threads.append(t)
-            
-            logger.info(f"LiteAvatar初始化完成 - Avatar: {avatar_name}, FPS: {self.fps}")
+            # 4. 创建渲染线程池（⚡ 优化：每个任务动态分配线程）
+            num_threads = self.config.get("render_threads", 4)
+            self.render_executor = ThreadPoolExecutor(
+                max_workers=num_threads,
+                thread_name_prefix="LiteAvatar-Render"
+            )
+            logger.info(f"LiteAvatar初始化完成 - Avatar: {avatar_name}, FPS: {self.fps}, 渲染线程池: {num_threads}")
             
         except Exception as e:
             logger.error(f"LiteAvatar初始化失败: {e}")
@@ -332,35 +320,34 @@ class LiteAvatarHandler(BaseHandler):
         
         with timer(avatar_processing_time):
             try:
-                # 串行化渲染流程，避免共享队列被并发访问
-                async with self.render_lock:
-                    audio_data = data.get("audio_data")
-                    if not audio_data:
-                        raise ValueError("缺少audio_data参数")
-                    
-                    # 1. 音频转参数
-                    logger.info("提取口型参数...")
-                    start = time.time()
-                    param_res = await self._audio_to_params(audio_data)
-                    logger.debug(f"口型参数提取耗时: {time.time() - start:.2f}秒")
-                    
-                    # 2. 参数转视频帧
-                    logger.info(f"渲染{len(param_res)}帧...")
-                    start = time.time()
-                    frames = await self._params_to_frames(param_res)
-                    video_duration = len(frames) / self.fps if self.fps else 0
-                    logger.info(f"视频帧数: {len(frames)}, 预期时长: {video_duration:.2f}秒")
-                    logger.debug(f"帧渲染耗时: {time.time() - start:.2f}秒")
-                    
-                    # 3. 合成视频
-                    logger.info("合成视频...")
-                    start = time.time()
-                    video_data = await self._frames_to_video(frames, audio_data)
-                    logger.debug(f"视频合成耗时: {time.time() - start:.2f}秒")
-                    
-                    logger.info(f"总耗时: {time.time() - start_total:.2f}秒")
-                    
-                    return video_data
+                # ⚡ 优化：移除全局锁，允许并发渲染多个视频
+                audio_data = data.get("audio_data")
+                if not audio_data:
+                    raise ValueError("缺少audio_data参数")
+                
+                # 1. 音频转参数
+                logger.info("提取口型参数...")
+                start = time.time()
+                param_res = await self._audio_to_params(audio_data)
+                logger.debug(f"口型参数提取耗时: {time.time() - start:.2f}秒")
+                
+                # 2. 参数转视频帧
+                logger.info(f"渲染{len(param_res)}帧...")
+                start = time.time()
+                frames = await self._params_to_frames(param_res)
+                video_duration = len(frames) / self.fps if self.fps else 0
+                logger.info(f"视频帧数: {len(frames)}, 预期时长: {video_duration:.2f}秒")
+                logger.debug(f"帧渲染耗时: {time.time() - start:.2f}秒")
+                
+                # 3. 合成视频
+                logger.info("合成视频...")
+                start = time.time()
+                video_data = await self._frames_to_video(frames, audio_data)
+                logger.debug(f"视频合成耗时: {time.time() - start:.2f}秒")
+                
+                logger.info(f"总耗时: {time.time() - start_total:.2f}秒")
+                
+                return video_data
                 
             except Exception as e:
                 logger.error(f"LiteAvatar处理失败: {e}")
@@ -685,23 +672,11 @@ class LiteAvatarHandler(BaseHandler):
         return new_param_res
     
     async def _params_to_frames(self, param_res: List[Dict[str, float]]) -> List[np.ndarray]:
-        """参数转视频帧"""
+        """⚡ 优化：使用线程池并发渲染帧"""
         logger.debug(f"开始渲染 {len(param_res)} 个参数帧")
         
-        # 清空队列
-        while not self.input_queue.empty():
-            try:
-                self.input_queue.get_nowait()
-            except queue.Empty:
-                break
-        
-        while not self.output_queue.empty():
-            try:
-                self.output_queue.get_nowait()
-            except queue.Empty:
-                break
-        
-        # 提交渲染任务
+        # 准备渲染任务
+        tasks = []
         for ii, params in enumerate(param_res):
             # 计算背景帧ID（循环播放）
             if int(ii / self.bg_video_frame_count) % 2 == 0:
@@ -709,73 +684,54 @@ class LiteAvatarHandler(BaseHandler):
             else:
                 bg_frame_id = self.bg_video_frame_count - 1 - ii % self.bg_video_frame_count
             
-            self.input_queue.put((params, bg_frame_id, ii))
+            tasks.append((params, bg_frame_id, ii))
         
-        logger.debug(f"已提交 {len(param_res)} 个渲染任务到队列")
+        # ⚡ 并发提交到线程池
+        loop = asyncio.get_event_loop()
+        futures = [
+            loop.run_in_executor(
+                self.render_executor,
+                self._render_single_frame,
+                params, bg_frame_id, frame_id
+            )
+            for params, bg_frame_id, frame_id in tasks
+        ]
         
-        # 等待渲染完成
-        frames = []
-        for i in range(len(param_res)):
-            try:
-                frame_data = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    self.output_queue.get
-                )
-                frames.append(frame_data)
-                if (i + 1) % 10 == 0:
-                    logger.debug(f"已接收 {i + 1}/{len(param_res)} 帧")
-            except Exception as e:
-                logger.error(f"等待渲染帧 {i} 失败: {e}")
-                raise
-        
-        logger.debug(f"所有 {len(frames)} 帧渲染完成，开始排序")
+        # 等待所有帧完成
+        results = await asyncio.gather(*futures)
         
         # 按帧ID排序
-        frames.sort(key=lambda x: x[0])
-        result = [f[1] for f in frames]
+        results.sort(key=lambda x: x[0])
+        frames = [r[1] for r in results]
         
-        # 清理PyTorch缓存释放内存
+        logger.debug(f"所有 {len(frames)} 帧渲染完成")
+        
+        # 清理PyTorch缓存
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        # CPU模式下强制垃圾回收
         import gc
         gc.collect()
         
-        return result
+        return frames
     
-    def _render_loop(self, thread_id: int, barrier: threading.Barrier,
-                    in_queue: queue.Queue, out_queue: queue.Queue):
-        """渲染循环（在独立线程中运行）"""
-        logger.debug(f"渲染线程 {thread_id} 已启动")
-        
-        while True:
-            try:
-                data = in_queue.get(timeout=1)
-            except queue.Empty:
-                continue
+    def _render_single_frame(self, params: Dict[str, float], bg_frame_id: int, frame_id: int) -> Tuple[int, np.ndarray]:
+        """⚡ 优化：渲染单帧（线程池调用）"""
+        try:
+            # 参数转图像
+            mouth_img = self._param_to_image(params, bg_frame_id)
             
-            if data is None:
-                logger.debug(f"渲染线程 {thread_id} 收到终止信号")
-                break
+            # 融合到背景
+            full_img, _ = self._merge_mouth_to_bg(mouth_img, bg_frame_id)
             
-            try:
-                params, bg_frame_id, global_frame_id = data
-                
-                # 参数转图像
-                mouth_img = self._param_to_image(params, bg_frame_id)
-                
-                # 融合到背景
-                full_img, _ = self._merge_mouth_to_bg(mouth_img, bg_frame_id)
-                
-                out_queue.put((global_frame_id, full_img))
-                
-            except Exception as e:
-                logger.error(f"渲染线程 {thread_id} 渲染帧 {global_frame_id} 失败: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                # 放入一个空帧，避免卡住
-                out_queue.put((global_frame_id, np.zeros((512, 512, 3), dtype=np.uint8)))
+            return (frame_id, full_img)
+            
+        except Exception as e:
+            logger.error(f"渲染帧 {frame_id} 失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # 返回空帧避免崩溃
+            return (frame_id, np.zeros((self.resolution[1], self.resolution[0], 3), dtype=np.uint8))
     
     def _param_to_image(self, params: Dict[str, float], bg_frame_id: int) -> torch.Tensor:
         """参数转嘴部图像"""
