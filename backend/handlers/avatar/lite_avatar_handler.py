@@ -282,11 +282,12 @@ class LiteAvatarHandler(BaseHandler):
             encoder_input = ref_img.unsqueeze(0).float().to(self.device)
             with torch.no_grad():
                 x = self.encoder(encoder_input)
-            # ⚡ 处理encoder输出（可能是tuple/list）
-            if isinstance(x, (list, tuple)):
-                x = x[0]  # 取第一个元素
-            # 去掉batch维度，方便批量处理
-            self.ref_img_list.append(x.squeeze(0))
+            # ⚡ 保持encoder输出为list格式（generator期望List[Tensor]）
+            if not isinstance(x, (list, tuple)):
+                x = [x]  # 转换为list
+            # 去掉每个tensor的batch维度
+            x = [t.squeeze(0) for t in x]
+            self.ref_img_list.append(x)
     
     async def _warmup_model(self):
         """执行warm-up推理避免NaN"""
@@ -297,8 +298,8 @@ class LiteAvatarHandler(BaseHandler):
             # 使用第一个参考帧
             if self.ref_img_list:
                 with torch.no_grad():
-                    # ref_img_list已去掉batch维度，需要重新加上
-                    ref_img = self.ref_img_list[0].unsqueeze(0).to(self.device)
+                    # ref_img_list[i]是List[Tensor]，需要添加batch维度
+                    ref_img = [t.unsqueeze(0).to(self.device) for t in self.ref_img_list[0]]
                     test_output = self.generator(
                         ref_img,
                         torch.zeros(1, 32).float().to(self.device)
@@ -734,8 +735,16 @@ class LiteAvatarHandler(BaseHandler):
             with torch.no_grad():
                 param_tensor = torch.from_numpy(param_arrays).float().to(self.device)  # (batch, 32)
                 
-                # 准备批量ref_imgs（ref_img_list已去掉batch维度，需要重新stack）
-                ref_imgs_batch = torch.stack([self.ref_img_list[bg_id] for bg_id in batch_bg_ids]).to(self.device)
+                # 准备批量ref_imgs（List[Tensor]格式）
+                # ref_img_list[i]是List[Tensor]，需要将batch中的多个List合并
+                # 例如：ref_img_list[0]=[t0,t1], ref_img_list[1]=[t0',t1']
+                # 合并成：[stack([t0,t0']), stack([t1,t1'])]
+                ref_imgs_list = [self.ref_img_list[bg_id] for bg_id in batch_bg_ids]
+                num_tensors = len(ref_imgs_list[0])  # List中Tensor的数量
+                ref_imgs_batch = [
+                    torch.stack([ref_imgs_list[j][i] for j in range(len(ref_imgs_list))]).to(self.device)
+                    for i in range(num_tensors)
+                ]
                 
                 # 批量生成
                 mouth_imgs = self.generator(ref_imgs_batch, param_tensor)  # (batch, 3, H, W)
@@ -797,8 +806,8 @@ class LiteAvatarHandler(BaseHandler):
             param_val = np.nan_to_num(param_val, nan=0.0)
         
         with torch.no_grad():
-            # ref_img_list已去掉batch维度，需要重新加上
-            ref_img = self.ref_img_list[bg_frame_id].unsqueeze(0).to(self.device)
+            # ref_img_list[i]是List[Tensor]，需要添加batch维度
+            ref_img = [t.unsqueeze(0).to(self.device) for t in self.ref_img_list[bg_frame_id]]
             output = self.generator(
                 ref_img,
                 torch.from_numpy(param_val).unsqueeze(0).float().to(self.device)
