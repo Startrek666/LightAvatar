@@ -159,10 +159,19 @@ class LiteAvatarHandler(BaseHandler):
         try:
             import onnxruntime
             
-            model_path = Path("models") / "lite_avatar" / "model_1.onnx"
-            if not model_path.exists():
+            # 优先使用 INT8 量化模型（加速 2~3 倍）
+            int8_path = Path("models") / "lite_avatar" / "model_int8.onnx"
+            fp32_path = Path("models") / "lite_avatar" / "model_1.onnx"
+
+            if int8_path.exists():
+                model_path = int8_path
+                logger.info(f"检测到 INT8 量化模型: {int8_path}")
+            elif fp32_path.exists():
+                model_path = fp32_path
+                logger.warning("未找到 INT8 模型，退回 FP32：加载速度会慢 2~3 倍")
+            else:
                 raise FileNotFoundError(
-                    f"Audio2Mouth模型不存在: {model_path}\n"
+                    f"Audio2Mouth 模型不存在: {fp32_path} 或 {int8_path}\n"
                     f"请运行: bash scripts/download_lite_avatar_models.sh"
                 )
             
@@ -181,7 +190,9 @@ class LiteAvatarHandler(BaseHandler):
                 providers=[provider]
             )
             
-            logger.info(f"Audio2Mouth模型已加载: {provider} (CPU线程: {sess_options.intra_op_num_threads})")
+            logger.info(
+                f"Audio2Mouth模型已加载: {model_path.name} | provider={provider} | "
+                f"threads={sess_options.intra_op_num_threads}")
             
         except ImportError:
             logger.error("缺少依赖: onnxruntime，请运行: pip install onnxruntime")
