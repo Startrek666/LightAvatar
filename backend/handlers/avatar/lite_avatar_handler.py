@@ -282,7 +282,8 @@ class LiteAvatarHandler(BaseHandler):
             encoder_input = ref_img.unsqueeze(0).float().to(self.device)
             with torch.no_grad():
                 x = self.encoder(encoder_input)
-            self.ref_img_list.append(x)
+            # ⚡ 去掉batch维度，方便批量处理
+            self.ref_img_list.append(x.squeeze(0))
     
     async def _warmup_model(self):
         """执行warm-up推理避免NaN"""
@@ -293,8 +294,10 @@ class LiteAvatarHandler(BaseHandler):
             # 使用第一个参考帧
             if self.ref_img_list:
                 with torch.no_grad():
+                    # ref_img_list已去掉batch维度，需要重新加上
+                    ref_img = self.ref_img_list[0].unsqueeze(0).to(self.device)
                     test_output = self.generator(
-                        self.ref_img_list[0],
+                        ref_img,
                         torch.zeros(1, 32).float().to(self.device)
                     )
                     # 检查输出
@@ -728,8 +731,8 @@ class LiteAvatarHandler(BaseHandler):
             with torch.no_grad():
                 param_tensor = torch.from_numpy(param_arrays).float().to(self.device)  # (batch, 32)
                 
-                # 准备批量ref_imgs
-                ref_imgs_batch = torch.stack([self.ref_img_list[bg_id] for bg_id in batch_bg_ids])
+                # 准备批量ref_imgs（ref_img_list已去掉batch维度，需要重新stack）
+                ref_imgs_batch = torch.stack([self.ref_img_list[bg_id] for bg_id in batch_bg_ids]).to(self.device)
                 
                 # 批量生成
                 mouth_imgs = self.generator(ref_imgs_batch, param_tensor)  # (batch, 3, H, W)
@@ -791,8 +794,10 @@ class LiteAvatarHandler(BaseHandler):
             param_val = np.nan_to_num(param_val, nan=0.0)
         
         with torch.no_grad():
+            # ref_img_list已去掉batch维度，需要重新加上
+            ref_img = self.ref_img_list[bg_frame_id].unsqueeze(0).to(self.device)
             output = self.generator(
-                self.ref_img_list[bg_frame_id],
+                ref_img,
                 torch.from_numpy(param_val).unsqueeze(0).float().to(self.device)
             )
             
