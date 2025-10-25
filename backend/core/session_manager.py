@@ -40,6 +40,8 @@ class Session:
     conversation_history: List[dict] = field(default_factory=list)
     config: dict = field(default_factory=dict)
     is_processing: bool = False
+    is_connected: bool = True  # WebSocket连接状态
+    disconnected_at: Optional[datetime] = None  # 断开时间
     
     # Buffers
     audio_buffer: List[bytes] = field(default_factory=list)
@@ -362,6 +364,25 @@ class Session:
                             del pending_tasks[next_to_send]
                             
                             if result:
+                                # ⚡ 关键修复：检查连接状态，断开时等待重连
+                                if not self.is_connected:
+                                    logger.warning(f"⏸️ 连接断开，暂停发送句子 {next_to_send + 1}，等待重连...")
+                                    wait_count = 0
+                                    MAX_WAIT = 30  # 最多等待30秒（6次 × 10秒）
+                                    
+                                    while not self.is_connected and wait_count < MAX_WAIT:
+                                        await asyncio.sleep(10)
+                                        wait_count += 10
+                                        if self.is_connected:
+                                            logger.info(f"✅ 重连成功，继续发送句子 {next_to_send + 1}")
+                                            break
+                                    
+                                    if not self.is_connected:
+                                        logger.error(f"❌ 等待 {MAX_WAIT}秒 后仍未重连，丢弃句子 {next_to_send + 1}")
+                                        next_to_send += 1
+                                        continue
+                                
+                                # 发送视频
                                 await callback("video_chunk", result)
                                 self.update_activity()
                                 if next_to_send == 0:
@@ -750,8 +771,23 @@ class SessionManager:
         self.websocket_manager = websocket_manager
     
     async def create_session(self, session_id: str) -> Session:
-        """Create a new session"""
+        """Create or reconnect to a session"""
         async with self._lock:
+            # 检查是否有已存在的Session（支持重连）
+            if session_id in self.sessions:
+                existing_session = self.sessions[session_id]
+                
+                # 如果是断开状态，恢复连接
+                if not existing_session.is_connected:
+                    existing_session.is_connected = True
+                    existing_session.disconnected_at = None
+                    existing_session.update_activity()
+                    logger.info(f"⚡ Session {session_id} 重连成功，继续使用原Session")
+                else:
+                    logger.info(f"Session {session_id} 已存在且在线")
+                
+                return existing_session
+            
             # Check memory before creating new session
             await self.check_memory()
             
@@ -773,14 +809,23 @@ class SessionManager:
         """Get an existing session"""
         return self.sessions.get(session_id)
     
+    async def disconnect_session(self, session_id: str):
+        """标记Session为断开状态（不删除，支持重连）"""
+        async with self._lock:
+            if session_id in self.sessions:
+                session = self.sessions[session_id]
+                session.is_connected = False
+                session.disconnected_at = datetime.now()
+                logger.info(f"🔌 Session {session_id} 断开连接，保留Session数据等待重连")
+    
     async def remove_session(self, session_id: str):
-        """Remove a session"""
+        """彻底删除Session（用于清理长时间未重连的Session）"""
         async with self._lock:
             if session_id in self.sessions:
                 session = self.sessions[session_id]
                 session.release()
                 del self.sessions[session_id]
-                logger.info(f"Removed session {session_id}")
+                logger.info(f"🗑️ 已删除 Session {session_id}")
     
     async def check_memory(self):
         """Check memory usage and cleanup if needed"""
@@ -793,16 +838,35 @@ class SessionManager:
             gc.collect()
     
     async def cleanup_old_sessions(self):
-        """Clean up sessions that have been inactive"""
-        current_time = time.time()
+        """Clean up sessions that have been inactive or disconnected for too long"""
+        current_time = datetime.now()
         to_remove = []
         
+        # 断开超时时间：5分钟（允许短时间重连）
+        DISCONNECT_TIMEOUT = 300  # 秒
+        
         for session_id, session in self.sessions.items():
-            inactive_time = current_time - session.last_active.timestamp()
-            if inactive_time > settings.SESSION_TIMEOUT:
+            should_remove = False
+            
+            # 情况1：在线但长时间不活跃（超过配置的session_timeout）
+            if session.is_connected:
+                inactive_time = (current_time - session.last_active).total_seconds()
+                if inactive_time > settings.SESSION_TIMEOUT:
+                    logger.info(f"Session {session_id} 在线但不活跃 {inactive_time:.0f}秒，标记删除")
+                    should_remove = True
+            
+            # 情况2：断开连接且超过重连等待时间
+            elif session.disconnected_at:
+                disconnect_time = (current_time - session.disconnected_at).total_seconds()
+                if disconnect_time > DISCONNECT_TIMEOUT:
+                    logger.info(f"Session {session_id} 断开 {disconnect_time:.0f}秒未重连，标记删除")
+                    should_remove = True
+            
+            if should_remove:
                 to_remove.append(session_id)
         
         for session_id in to_remove:
+            # 如果WebSocket还连着，通知前端
             if self.websocket_manager and self.websocket_manager.is_connected(session_id):
                 try:
                     await self.websocket_manager.send_json(session_id, {
@@ -810,17 +874,16 @@ class SessionManager:
                         "reason": "inactive",
                         "timeout_seconds": settings.SESSION_TIMEOUT
                     })
-                    logger.info(f"Sent session timeout notification to {session_id}")
-                    # Wait for message to be sent before disconnecting
                     await asyncio.sleep(0.2)
                 except Exception as e:
                     logger.warning(f"Failed to notify session timeout for {session_id}: {e}")
                 finally:
                     self.websocket_manager.disconnect(session_id)
+            
             await self.remove_session(session_id)
         
         if to_remove:
-            logger.info(f"Cleaned up {len(to_remove)} inactive sessions")
+            logger.info(f"🧹 清理了 {len(to_remove)} 个过期Session")
     
     async def _remove_oldest_inactive(self):
         """Remove the oldest inactive session"""

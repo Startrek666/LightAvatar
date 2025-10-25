@@ -87,7 +87,7 @@ class WebSocketManager:
         """Check if a session is connected"""
         return session_id in self.active_connections
     
-    async def heartbeat(self, session_id: str, interval: int = 30):
+    async def heartbeat(self, session_id: str, interval: int = 60):
         """
         Send periodic heartbeat to detect disconnections
         
@@ -96,7 +96,7 @@ class WebSocketManager:
             interval: Heartbeat interval in seconds
         """
         consecutive_failures = 0
-        max_failures = 3  # Disconnect after 3 failed heartbeats
+        max_failures = 5  # Disconnect after 5 failed heartbeats（增加容忍度）
         
         while self.is_connected(session_id):
             try:

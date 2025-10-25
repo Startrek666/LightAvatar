@@ -158,8 +158,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
     await websocket_manager.connect(websocket, session_id)
     
     # Start heartbeat task to detect disconnections
+    # 增加心跳间隔避免视频渲染时拥塞
     heartbeat_task = asyncio.create_task(
-        websocket_manager.heartbeat(session_id, interval=30)
+        websocket_manager.heartbeat(session_id, interval=60)
     )
     
     try:
@@ -293,9 +294,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
         except asyncio.CancelledError:
             pass
         
-        # Clean up connection and session
+        # Clean up WebSocket connection
         websocket_manager.disconnect(session_id)
-        await session_manager.remove_session(session_id)
+        
+        # 标记Session为断开状态（不删除，支持重连和继续发送未完成的视频）
+        await session_manager.disconnect_session(session_id)
+        logger.info(f"⏸️ Session {session_id} 保留，等待重连（5分钟内重连可继续）")
 
 
 @app.get("/api/config")
