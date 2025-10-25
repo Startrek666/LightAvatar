@@ -282,7 +282,10 @@ class LiteAvatarHandler(BaseHandler):
             encoder_input = ref_img.unsqueeze(0).float().to(self.device)
             with torch.no_grad():
                 x = self.encoder(encoder_input)
-            # ⚡ 去掉batch维度，方便批量处理
+            # ⚡ 处理encoder输出（可能是tuple/list）
+            if isinstance(x, (list, tuple)):
+                x = x[0]  # 取第一个元素
+            # 去掉batch维度，方便批量处理
             self.ref_img_list.append(x.squeeze(0))
     
     async def _warmup_model(self):
