@@ -126,7 +126,11 @@ async def metrics():
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str = None):
     """WebSocket endpoint for real-time communication"""
-    # 验证token和权限
+    
+    # 先接受 WebSocket 连接
+    await websocket_manager.connect(websocket, session_id)
+    
+    # 然后验证token和权限
     if token:
         try:
             from backend.database.auth import AuthService
@@ -138,10 +142,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
             try:
                 user = auth_service.get_current_user(db_session, token)
                 if not user:
+                    logger.warning(f"WebSocket token无效: {session_id}")
                     await websocket.close(code=1008, reason="未授权: token无效")
                     return
                 
                 if not user.can_use_avatar:
+                    logger.warning(f"用户无数字人权限: {user.username}")
                     await websocket.close(code=1008, reason="无数字人使用权限")
                     return
                 
@@ -149,13 +155,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
             finally:
                 db_session.close()
         except Exception as e:
-            logger.error(f"WebSocket认证失败: {e}")
+            logger.error(f"WebSocket认证失败: {e}", exc_info=True)
             await websocket.close(code=1008, reason="认证失败")
             return
     else:
         logger.warning(f"WebSocket连接未提供token: {session_id}")
-    
-    await websocket_manager.connect(websocket, session_id)
     
     # Start heartbeat task to detect disconnections
     # 增加心跳间隔避免视频渲染时拥塞
@@ -189,9 +193,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
             elif message_type == "text":
                 # Check if streaming is enabled
                 use_streaming = data.get("streaming", True)
+                use_search = data.get("use_search", False)  # 是否启用联网搜索
                 text_content = data.get("text", "")
                 logger.info(f"[WebSocket] Session {session_id}: 收到文本消息")
                 logger.info(f"  - streaming: {use_streaming}")
+                logger.info(f"  - use_search: {use_search}")
                 logger.info(f"  - text length: {len(text_content)}")
                 logger.info(f"  - text preview: {text_content[:100]}")
                 
@@ -203,6 +209,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                             # Send text chunk for real-time display
                             await websocket_manager.send_json(session_id, {
                                 "type": "text_chunk",
+                                "data": chunk_data
+                            })
+                        
+                        elif chunk_type == "search_progress":
+                            # Send search progress update
+                            await websocket_manager.send_json(session_id, {
+                                "type": "search_progress",
                                 "data": chunk_data
                             })
                         
@@ -245,7 +258,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                     # Process with streaming
                     logger.info(f"[WebSocket] Session {session_id}: 开始流式处理文本")
                     try:
-                        await session.process_text_stream(data.get("text"), stream_callback)
+                        await session.process_text_stream(
+                            data.get("text"), 
+                            stream_callback,
+                            use_search=use_search
+                        )
                         logger.info(f"[WebSocket] Session {session_id}: 流式处理完成")
                     except Exception as e:
                         logger.error(f"[WebSocket] Session {session_id}: 流式处理失败: {e}", exc_info=True)

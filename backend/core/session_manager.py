@@ -17,6 +17,7 @@ from backend.handlers.llm.openai_handler import OpenAIHandler
 from backend.handlers.tts.edge_tts_handler import EdgeTTSHandler
 from backend.handlers.avatar.wav2lip_handler import Wav2LipHandler
 from backend.handlers.avatar.lite_avatar_handler import LiteAvatarHandler
+from backend.handlers.search.web_search_handler import WebSearchHandler
 from backend.app.config import settings
 from backend.app.ws_manager import WebSocketManager
 from backend.utils.text_utils import clean_markdown_for_tts
@@ -35,6 +36,7 @@ class Session:
     llm_handler: Optional[OpenAIHandler] = None
     tts_handler: Optional[EdgeTTSHandler] = None
     avatar_handler: Optional[Wav2LipHandler] = None
+    search_handler: Optional[WebSearchHandler] = None
     
     # Session state
     conversation_history: List[dict] = field(default_factory=list)
@@ -116,6 +118,18 @@ class Session:
                     }
                 )
             await self.avatar_handler.initialize()
+            
+            # 初始化搜索处理器（如果启用）
+            if settings.SEARCH_ENABLED:
+                logger.info(f"Initializing search handler for session {self.session_id}")
+                self.search_handler = WebSearchHandler(
+                    config={
+                        "max_results": settings.SEARCH_MAX_RESULTS,
+                        "fetch_content": settings.SEARCH_FETCH_CONTENT,
+                        "content_max_length": settings.SEARCH_CONTENT_MAX_LENGTH
+                    }
+                )
+                await self.search_handler.initialize()
             
             logger.info(f"Session {self.session_id} handlers initialized (ASR: {asr_backend}, Avatar: {avatar_engine})")
         except Exception as e:
@@ -274,7 +288,7 @@ class Session:
             logger.error(f"Error processing text in session {self.session_id}: {e}")
             raise
     
-    async def process_text_stream(self, text: str, callback):
+    async def process_text_stream(self, text: str, callback, use_search: bool = False):
         """
         Process text input with streaming response
         
@@ -282,11 +296,13 @@ class Session:
             text: User input text
             callback: Async callback function to send chunks to client
                      Signature: async def callback(chunk_type, data)
+            use_search: Whether to perform web search before generating response
         """
         self.update_activity()
         logger.info(f"[Session {self.session_id}] process_text_stream 开始处理")
         logger.info(f"  - 输入文本长度: {len(text)}")
         logger.info(f"  - 输入文本预览: {text[:100]}")
+        logger.info(f"  - 联网搜索: {use_search}")
         
         try:
             # Add user message to history
@@ -455,8 +471,29 @@ class Session:
             
             # 流式接收LLM输出
             chunk_received = 0
-            logger.info(f"[Session {self.session_id}] 开始调用 LLM stream_response")
-            async for chunk in self.llm_handler.stream_response(text, self.conversation_history):
+            logger.info(f"[Session {self.session_id}] 开始调用 LLM stream_response (use_search={use_search})")
+            
+            # 搜索进度回调
+            async def search_progress_callback(step: int, total: int, message: str):
+                await callback("search_progress", {
+                    "step": step,
+                    "total": total,
+                    "message": message
+                })
+            
+            # 根据是否启用搜索选择调用方式
+            if use_search and self.search_handler:
+                stream = self.llm_handler.stream_response_with_search(
+                    text, 
+                    self.conversation_history,
+                    search_handler=self.search_handler,
+                    use_search=True,
+                    progress_callback=search_progress_callback
+                )
+            else:
+                stream = self.llm_handler.stream_response(text, self.conversation_history)
+            
+            async for chunk in stream:
                 chunk_received += 1
                 full_response += chunk
                 sentence_buffer += chunk

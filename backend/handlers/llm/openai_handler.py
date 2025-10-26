@@ -132,8 +132,130 @@ class OpenAIHandler(BaseHandler):
         
         return await self.process(text, conversation_history)
     
+    async def stream_response_with_search(
+        self, 
+        text: str, 
+        conversation_history: List[Dict] = None,
+        search_handler = None,
+        use_search: bool = False,
+        progress_callback = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Generate streaming response with optional web search
+        
+        Args:
+            text: User input text
+            conversation_history: Previous conversation
+            search_handler: WebSearchHandler instance
+            use_search: Whether to perform web search
+            progress_callback: Callback for search progress (step, total, message)
+        """
+        try:
+            # Prepare messages
+            messages = [{"role": "system", "content": self.system_prompt}]
+            
+            if conversation_history:
+                max_history = self.config.get("max_history", 10)
+                recent_history = conversation_history[-max_history:]
+                for msg in recent_history:
+                    messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+            
+            # 避免重复添加最后一条用户消息
+            if not conversation_history or conversation_history[-1].get("content") != text:
+                messages.append({"role": "user", "content": text})
+            
+            # 如果启用搜索且有搜索处理器
+            if use_search and search_handler:
+                logger.info(f"Performing web search for: {text}")
+                
+                # 执行搜索
+                search_results = await search_handler.search_with_progress(
+                    query=text,
+                    max_results=3,
+                    progress_callback=progress_callback
+                )
+                
+                if search_results:
+                    # 构建搜索上下文
+                    context = "我为你搜索到了以下相关信息：\n\n"
+                    for i, result in enumerate(search_results, 1):
+                        context += f"{i}. **{result['title']}**\n"
+                        context += f"   来源: {result['url']}\n"
+                        if result.get('content'):
+                            # 截取部分内容
+                            content_preview = result['content'][:300]
+                            context += f"   内容: {content_preview}...\n"
+                        else:
+                            context += f"   摘要: {result['snippet']}\n"
+                        context += "\n"
+                    
+                    context += "请基于以上搜索结果回答用户的问题。"
+                    
+                    # 将搜索结果插入到用户消息之前
+                    messages.insert(-1, {
+                        'role': 'system',
+                        'content': context
+                    })
+                    
+                    logger.info(f"Added search context with {len(search_results)} results")
+            
+            # 继续正常的流式响应
+            async for chunk in self._stream_response_internal(messages):
+                yield chunk
+                
+        except Exception as e:
+            logger.error(f"Failed to stream response with search: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            yield "抱歉，我遇到了一些技术问题，请稍后再试。"
+    
+    async def _stream_response_internal(self, messages: List[Dict]) -> AsyncGenerator[str, None]:
+        """Internal method for streaming response"""
+            
+        logger.info(f"Starting stream request to model: {self.model}, base_url: {self.api_url}")
+        logger.info(f"Request messages count: {len(messages)}, last message: {messages[-1]['content'][:50] if messages else 'None'}")
+        logger.info(f"Stream parameters: temperature={self.temperature}, max_tokens={self.max_tokens}")
+        
+        logger.info(f"About to create stream with client: {self.client}")
+        logger.info(f"Client base_url: {self.client.base_url}")
+        
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            stream=True
+        )
+        logger.info(f"Stream object created: {type(stream)}")
+        logger.info(f"Stream object: {stream}")
+        
+        chunk_count = 0
+        content_chunks = 0
+        logger.info("Entering async for loop...")
+        async for chunk in stream:
+            chunk_count += 1
+            
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    content_chunks += 1
+                    if content_chunks == 1:
+                        logger.info(f"First content chunk received (chunk #{chunk_count})")
+                    yield delta.content
+        
+        logger.info(f"Exited async for loop normally")
+        
+        if content_chunks == 0:
+            logger.warning(f"Stream completed with 0 content chunks (total chunks: {chunk_count})")
+            logger.warning(f"This suggests the stream iterator ended immediately without yielding chunks")
+        else:
+            logger.info(f"Stream completed: {content_chunks} content chunks from {chunk_count} total chunks")
+    
     async def stream_response(self, text: str, conversation_history: List[Dict] = None) -> AsyncGenerator[str, None]:
-        """Generate streaming response"""
+        """Generate streaming response (without search)"""
         try:
             # Prepare messages
             messages = [{"role": "system", "content": self.system_prompt}]
@@ -152,44 +274,8 @@ class OpenAIHandler(BaseHandler):
                 messages.append({"role": "user", "content": text})
             
             # Stream response
-            logger.info(f"Starting stream request to model: {self.model}, base_url: {self.api_url}")
-            logger.info(f"Request messages count: {len(messages)}, last message: {messages[-1]['content'][:50] if messages else 'None'}")
-            logger.info(f"Stream parameters: temperature={self.temperature}, max_tokens={self.max_tokens}")
-            
-            logger.info(f"About to create stream with client: {self.client}")
-            logger.info(f"Client base_url: {self.client.base_url}")
-            
-            stream = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                stream=True
-            )
-            logger.info(f"Stream object created: {type(stream)}")
-            logger.info(f"Stream object: {stream}")
-            
-            chunk_count = 0
-            content_chunks = 0
-            logger.info("Entering async for loop...")
-            async for chunk in stream:
-                chunk_count += 1
-                
-                if chunk.choices and len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
-                    if delta and delta.content:
-                        content_chunks += 1
-                        if content_chunks == 1:
-                            logger.info(f"First content chunk received (chunk #{chunk_count})")
-                        yield delta.content
-            
-            logger.info(f"Exited async for loop normally")
-            
-            if content_chunks == 0:
-                logger.warning(f"Stream completed with 0 content chunks (total chunks: {chunk_count})")
-                logger.warning(f"This suggests the stream iterator ended immediately without yielding chunks")
-            else:
-                logger.info(f"Stream completed: {content_chunks} content chunks from {chunk_count} total chunks")
+            async for chunk in self._stream_response_internal(messages):
+                yield chunk
                     
         except Exception as e:
             logger.error(f"Failed to stream response: {e}")

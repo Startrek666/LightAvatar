@@ -141,6 +141,12 @@ class Settings(BaseSettings):
     ENABLE_MONITORING: bool = Field(default=True, description="Enable monitoring")
     METRICS_PORT: int = Field(default=9090, description="Prometheus metrics port")
     
+    # Web Search settings
+    SEARCH_ENABLED: bool = Field(default=True, description="Enable web search functionality")
+    SEARCH_MAX_RESULTS: int = Field(default=5, description="Maximum search results")
+    SEARCH_FETCH_CONTENT: bool = Field(default=True, description="Fetch full page content")
+    SEARCH_CONTENT_MAX_LENGTH: int = Field(default=2000, description="Maximum content length in characters")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

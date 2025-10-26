@@ -21,6 +21,14 @@
               </div>
             </div>
 
+            <!-- 联网搜索开关 -->
+            <div class="header-action-item">
+              <div class="switch-wrapper">
+                <a-switch v-model:checked="enableWebSearch" checked-children="开" un-checked-children="关" />
+                <span class="action-label">联网搜索</span>
+              </div>
+            </div>
+
             <a-tooltip title="个人中心">
               <a-button type="text" size="small" @click="goToProfile" :icon="h(UserOutlined)" />
             </a-tooltip>
@@ -129,6 +137,26 @@
       </a-layout-content>
     </a-layout>
 
+    <!-- Search Progress Modal -->
+    <a-modal 
+      v-model:open="searchProgressVisible" 
+      title="联网搜索中" 
+      :footer="null"
+      :closable="false"
+      :maskClosable="false"
+      width="400px">
+      <div class="search-progress-content">
+        <a-progress 
+          :percent="Math.round((searchProgress.step / searchProgress.total) * 100)" 
+          status="active" 
+        />
+        <div class="search-progress-message">
+          <a-spin :spinning="true" />
+          <span style="margin-left: 12px;">{{ searchProgress.message }}</span>
+        </div>
+      </div>
+    </a-modal>
+
     <!-- Settings Modal -->
     <a-modal v-model:open="settingsVisible" title="设置" width="600px" @ok="saveSettings">
       <a-form :model="settings" layout="vertical">
@@ -205,6 +233,15 @@ const isInitializing = ref(false) // 是否正在初始化
 // Feature toggles
 const enableVoiceInput = ref(true)  // 语音输入开关
 const showChatHistory = ref(true)   // 对话记录显示开关
+const enableWebSearch = ref(false)  // 联网搜索开关
+
+// Search progress modal
+const searchProgressVisible = ref(false)
+const searchProgress = ref({
+  step: 0,
+  total: 4,
+  message: ''
+})
 
 // Video playback queue for streaming
 const videoQueue = ref<Blob[]>([])
@@ -393,7 +430,8 @@ const sendTextMessage = () => {
   const payload = {
     type: 'text',
     text: messageToSend,
-    streaming: true  // Enable streaming mode
+    streaming: true,  // Enable streaming mode
+    use_search: enableWebSearch.value  // 是否启用联网搜索
   }
   console.log('🚀 [sendTextMessage] 发送数据到服务器:', payload)
   send(payload)
@@ -547,6 +585,25 @@ const handleWebSocketMessage = (data: any) => {
     message.destroy()  // 关闭loading提示
     isProcessing.value = false
     scrollToBottom()
+  }
+  else if (data.type === 'search_progress') {
+    // Search progress update
+    console.log('🔍 [handleWebSocketMessage] 搜索进度:', data.data)
+    searchProgress.value = {
+      step: data.data.step,
+      total: data.data.total,
+      message: data.data.message
+    }
+    
+    // 显示搜索进度对话框
+    if (data.data.step > 0 && data.data.step < data.data.total) {
+      searchProgressVisible.value = true
+    } else if (data.data.step >= data.data.total) {
+      // 搜索完成，关闭对话框
+      setTimeout(() => {
+        searchProgressVisible.value = false
+      }, 500)
+    }
   }
   else if (data.type === 'text_chunk') {
     // Streaming text chunk
@@ -1406,5 +1463,19 @@ onUnmounted(() => {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
+}
+
+/* 搜索进度对话框样式 */
+.search-progress-content {
+  padding: 16px 0;
+}
+
+.search-progress-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+  font-size: 14px;
+  color: #666;
 }
 </style>
