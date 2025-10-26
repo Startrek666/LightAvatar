@@ -74,24 +74,42 @@ class WebSearchHandler(BaseHandler):
             
             logger.info(f"Searching for: {query} (max_results={max_results})")
             
+            # 优化搜索关键词（为技术术语添加英文）
+            optimized_query = self._optimize_search_query(query)
+            if optimized_query != query:
+                logger.info(f"Optimized query: {optimized_query}")
+            
             # 执行 DuckDuckGo 搜索（新版本 API 使用同步方法）
             # 使用 asyncio.to_thread 将同步调用转为异步
             try:
-                # 添加中文地区偏好以获得更相关的结果
+                # 优化搜索参数以获得更相关的结果
+                # timelimit: 'd' (day), 'w' (week), 'm' (month), 'y' (year)
+                search_params = {
+                    'keywords': optimized_query,
+                    'max_results': max_results,
+                    'region': 'cn-zh',  # 中文地区
+                    'safesearch': 'moderate',  # 过滤不当内容
+                    'timelimit': 'm'  # 最近一个月的结果（获取更新鲜的内容）
+                }
+                
                 results = await asyncio.to_thread(
-                    lambda: list(self.ddgs.text(
-                        query, 
-                        max_results=max_results,
-                        region='cn-zh'  # 中文地区偏好
-                    ))
+                    lambda: list(self.ddgs.text(**search_params))
                 )
                 logger.info(f"DuckDuckGo returned {len(results)} raw results")
                 
-                # 打印第一个结果用于调试
+                # 打印前3个结果用于调试
                 if results:
-                    logger.info(f"First result: title='{results[0].get('title', '')}', url='{results[0].get('href', '')}'")
+                    logger.info(f"Search results preview:")
+                    for i, r in enumerate(results[:3], 1):
+                        logger.info(f"  {i}. {r.get('title', 'N/A')[:60]}... | {r.get('href', 'N/A')}")
                 else:
-                    logger.warning("DuckDuckGo returned empty results")
+                    logger.warning("DuckDuckGo returned empty results, trying without time limit...")
+                    # 回退：不限制时间再试一次
+                    search_params.pop('timelimit')
+                    results = await asyncio.to_thread(
+                        lambda: list(self.ddgs.text(**search_params))
+                    )
+                    logger.info(f"Retry without time limit: {len(results)} results")
                     
             except Exception as search_error:
                 logger.error(f"DuckDuckGo search error: {search_error}", exc_info=True)
@@ -146,6 +164,41 @@ class WebSearchHandler(BaseHandler):
             搜索结果列表
         """
         return await self.search(query)
+    
+    def _optimize_search_query(self, query: str) -> str:
+        """
+        优化搜索关键词，为技术术语添加英文关键词以改善搜索结果
+        
+        Args:
+            query: 原始查询
+            
+        Returns:
+            优化后的查询
+        """
+        # 技术术语映射（中文 -> 英文）
+        tech_terms = {
+            '开源大模型': 'open source LLM',
+            '大模型': 'large language model LLM',
+            'AI': 'artificial intelligence',
+            '人工智能': 'AI',
+            '深度学习': 'deep learning',
+            '机器学习': 'machine learning',
+            '神经网络': 'neural network',
+            'ChatGPT': 'ChatGPT OpenAI',
+            'Python': 'Python programming',
+            'JavaScript': 'JavaScript',
+            '区块链': 'blockchain',
+            '加密货币': 'cryptocurrency'
+        }
+        
+        optimized = query
+        for cn_term, en_term in tech_terms.items():
+            if cn_term in query and en_term not in query:
+                # 添加英文术语，但保持原查询
+                optimized = f"{query} {en_term}"
+                break  # 只添加第一个匹配的术语
+        
+        return optimized
     
     async def search(self, query: str, max_results: Optional[int] = None) -> List[Dict]:
         """

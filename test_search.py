@@ -50,9 +50,15 @@ async def test_search():
             print("  没有返回结果")
             
         # 测试带地区参数的中文搜索
-        print("\n\n方法3: 测试带中文地区参数的搜索")
+        print("\n\n方法3: 测试带优化参数的搜索")
         results3 = await asyncio.to_thread(
-            lambda: list(ddgs.text(query, max_results=max_results, region='cn-zh'))
+            lambda: list(ddgs.text(
+                keywords=query, 
+                max_results=max_results, 
+                region='cn-zh',
+                safesearch='moderate',
+                timelimit='m'  # 最近一个月
+            ))
         )
         print(f"结果数量: {len(results3)}")
         
