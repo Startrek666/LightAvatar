@@ -6,6 +6,7 @@ Web Search Handler - 联网搜索处理器
 import asyncio
 from typing import List, Dict, Optional, AsyncGenerator
 import httpx
+from loguru import logger
 from backend.handlers.base import BaseHandler
 
 
@@ -19,7 +20,7 @@ class WebSearchHandler(BaseHandler):
             from duckduckgo_search import AsyncDDGS
             self.ddgs = AsyncDDGS()
         except ImportError:
-            self.logger.error("duckduckgo-search not installed. Run: pip install duckduckgo-search")
+            logger.error("duckduckgo-search not installed. Run: pip install duckduckgo-search")
             raise
         
         # HTTP 客户端用于获取网页内容
@@ -35,7 +36,7 @@ class WebSearchHandler(BaseHandler):
         self.fetch_content = self.config.get('fetch_content', True)
         self.content_max_length = self.config.get('content_max_length', 2000)
         
-        self.logger.info(f"WebSearchHandler initialized: max_results={self.max_results}, fetch_content={self.fetch_content}")
+        logger.info(f"WebSearchHandler initialized: max_results={self.max_results}, fetch_content={self.fetch_content}")
     
     async def search_with_progress(
         self, 
@@ -61,7 +62,7 @@ class WebSearchHandler(BaseHandler):
             if progress_callback:
                 await progress_callback(1, 4, f"正在搜索: {query}")
             
-            self.logger.info(f"Searching for: {query} (max_results={max_results})")
+            logger.info(f"Searching for: {query} (max_results={max_results})")
             
             # 执行 DuckDuckGo 搜索
             results = []
@@ -72,7 +73,7 @@ class WebSearchHandler(BaseHandler):
             if progress_callback:
                 await progress_callback(2, 4, f"找到 {len(results)} 个结果")
             
-            self.logger.info(f"Found {len(results)} search results")
+            logger.info(f"Found {len(results)} search results")
             
             # 步骤3: 提取网页内容
             formatted_results = []
@@ -97,11 +98,11 @@ class WebSearchHandler(BaseHandler):
             if progress_callback:
                 await progress_callback(4, 4, "搜索完成")
             
-            self.logger.info(f"Search completed: {len(formatted_results)} results with content")
+            logger.info(f"Search completed: {len(formatted_results)} results with content")
             return formatted_results
             
         except Exception as e:
-            self.logger.error(f"Search failed: {e}", exc_info=True)
+            logger.error(f"Search failed: {e}", exc_info=True)
             if progress_callback:
                 await progress_callback(0, 4, f"搜索失败: {str(e)}")
             return []
@@ -143,7 +144,7 @@ class WebSearchHandler(BaseHandler):
         """
         try:
             # 下载网页
-            self.logger.debug(f"Fetching content from: {url}")
+            logger.debug(f"Fetching content from: {url}")
             response = await self.http_client.get(url)
             html = response.text
             
@@ -163,7 +164,7 @@ class WebSearchHandler(BaseHandler):
                         content = content[:self.content_max_length] + "..."
                     return content
             except ImportError:
-                self.logger.warning("trafilatura not installed, using simple text extraction")
+                logger.warning("trafilatura not installed, using simple text extraction")
             
             # 备用方案：简单文本提取
             from html.parser import HTMLParser
@@ -187,7 +188,7 @@ class WebSearchHandler(BaseHandler):
             return content if content else ""
                 
         except Exception as e:
-            self.logger.warning(f"Failed to fetch content from {url}: {e}")
+            logger.warning(f"Failed to fetch content from {url}: {e}")
             return ""
     
     async def cleanup(self):
