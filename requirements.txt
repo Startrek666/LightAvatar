@@ -42,7 +42,7 @@ openai==1.52.0
 httpx==0.27.2
 
 # Web Search functionality
-duckduckgo-search>=4.0.0  # DuckDuckGo search engine API
+ddgs>=1.0.0               # DuckDuckGo search engine API (renamed from duckduckgo-search)
 trafilatura>=1.6.0        # Web content extraction and text processing
 
 # Authentication

@@ -16,13 +16,21 @@ class WebSearchHandler(BaseHandler):
     async def _setup(self):
         """初始化搜索客户端"""
         try:
-            # 动态导入，避免未安装时影响其他功能
-            from duckduckgo_search import DDGS
-            # 新版本使用 DDGS，支持异步上下文管理器
+            # 优先尝试新包名
+            try:
+                from ddgs import DDGS
+                logger.info("Using ddgs package (recommended)")
+            except ImportError:
+                # 备用方案：旧包名
+                from duckduckgo_search import DDGS
+                logger.warning("Using deprecated duckduckgo_search package. Consider upgrading: pip install ddgs")
+            
+            # 初始化搜索客户端
             self.ddgs = DDGS()
+            
         except ImportError as e:
-            logger.error(f"duckduckgo-search not installed or import failed: {e}")
-            logger.error("Run: pip install duckduckgo-search")
+            logger.error(f"Search package not installed: {e}")
+            logger.error("Run: pip install ddgs")
             raise
         
         # HTTP 客户端用于获取网页内容
@@ -69,14 +77,22 @@ class WebSearchHandler(BaseHandler):
             # 执行 DuckDuckGo 搜索（新版本 API 使用同步方法）
             # 使用 asyncio.to_thread 将同步调用转为异步
             try:
+                # 添加中文地区偏好以获得更相关的结果
                 results = await asyncio.to_thread(
-                    lambda: list(self.ddgs.text(query, max_results=max_results))
+                    lambda: list(self.ddgs.text(
+                        query, 
+                        max_results=max_results,
+                        region='cn-zh'  # 中文地区偏好
+                    ))
                 )
                 logger.info(f"DuckDuckGo returned {len(results)} raw results")
                 
                 # 打印第一个结果用于调试
                 if results:
-                    logger.debug(f"First result sample: {results[0]}")
+                    logger.info(f"First result: title='{results[0].get('title', '')}', url='{results[0].get('href', '')}'")
+                else:
+                    logger.warning("DuckDuckGo returned empty results")
+                    
             except Exception as search_error:
                 logger.error(f"DuckDuckGo search error: {search_error}", exc_info=True)
                 results = []
