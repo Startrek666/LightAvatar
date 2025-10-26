@@ -106,6 +106,18 @@ class WebSearchHandler(BaseHandler):
                 await progress_callback(0, 4, f"搜索失败: {str(e)}")
             return []
     
+    async def process(self, query: str) -> List[Dict]:
+        """
+        处理搜索请求（实现 BaseHandler 的抽象方法）
+        
+        Args:
+            query: 搜索关键词
+            
+        Returns:
+            搜索结果列表
+        """
+        return await self.search(query)
+    
     async def search(self, query: str, max_results: Optional[int] = None) -> List[Dict]:
         """
         执行搜索（不带进度回调）
