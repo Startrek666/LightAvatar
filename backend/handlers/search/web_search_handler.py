@@ -17,10 +17,12 @@ class WebSearchHandler(BaseHandler):
         """初始化搜索客户端"""
         try:
             # 动态导入，避免未安装时影响其他功能
-            from duckduckgo_search import AsyncDDGS
-            self.ddgs = AsyncDDGS()
-        except ImportError:
-            logger.error("duckduckgo-search not installed. Run: pip install duckduckgo-search")
+            from duckduckgo_search import DDGS
+            # 新版本使用 DDGS，支持异步上下文管理器
+            self.ddgs = DDGS()
+        except ImportError as e:
+            logger.error(f"duckduckgo-search not installed or import failed: {e}")
+            logger.error("Run: pip install duckduckgo-search")
             raise
         
         # HTTP 客户端用于获取网页内容
@@ -64,10 +66,11 @@ class WebSearchHandler(BaseHandler):
             
             logger.info(f"Searching for: {query} (max_results={max_results})")
             
-            # 执行 DuckDuckGo 搜索
-            results = []
-            async for r in self.ddgs.text(query, max_results=max_results):
-                results.append(r)
+            # 执行 DuckDuckGo 搜索（新版本 API 使用同步方法）
+            # 使用 asyncio.to_thread 将同步调用转为异步
+            results = await asyncio.to_thread(
+                lambda: list(self.ddgs.text(query, max_results=max_results))
+            )
             
             # 步骤2: 获取到搜索结果
             if progress_callback:
