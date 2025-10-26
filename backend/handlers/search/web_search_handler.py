@@ -68,9 +68,18 @@ class WebSearchHandler(BaseHandler):
             
             # 执行 DuckDuckGo 搜索（新版本 API 使用同步方法）
             # 使用 asyncio.to_thread 将同步调用转为异步
-            results = await asyncio.to_thread(
-                lambda: list(self.ddgs.text(query, max_results=max_results))
-            )
+            try:
+                results = await asyncio.to_thread(
+                    lambda: list(self.ddgs.text(query, max_results=max_results))
+                )
+                logger.info(f"DuckDuckGo returned {len(results)} raw results")
+                
+                # 打印第一个结果用于调试
+                if results:
+                    logger.debug(f"First result sample: {results[0]}")
+            except Exception as search_error:
+                logger.error(f"DuckDuckGo search error: {search_error}", exc_info=True)
+                results = []
             
             # 步骤2: 获取到搜索结果
             if progress_callback:
