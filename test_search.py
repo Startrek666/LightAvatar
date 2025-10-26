@@ -53,7 +53,7 @@ async def test_search():
         print("\n\n方法3: 测试带优化参数的搜索")
         results3 = await asyncio.to_thread(
             lambda: list(ddgs.text(
-                keywords=query, 
+                query=query,  # 参数名是 query
                 max_results=max_results, 
                 region='cn-zh',
                 safesearch='moderate',
@@ -70,18 +70,43 @@ async def test_search():
                 print(f"  URL: {r.get('href', 'N/A')}")
                 print(f"  摘要: {r.get('body', 'N/A')[:80]}...")
         
-        # 测试英文搜索
-        print("\n\n方法4: 测试英文搜索")
-        query_en = "latest news today"
+        # 测试关键词优化（开源大模型）
+        print("\n\n方法4: 测试关键词优化 - 开源大模型")
+        query_llm = "最近有什么开源大模型"
+        # 模拟关键词优化
+        optimized_query_llm = f"{query_llm} open source LLM"
+        print(f"原查询: {query_llm}")
+        print(f"优化后: {optimized_query_llm}")
+        
         results4 = await asyncio.to_thread(
-            lambda: list(ddgs.text(query_en, max_results=max_results))
+            lambda: list(ddgs.text(
+                query=optimized_query_llm,
+                max_results=max_results,
+                region='cn-zh',
+                timelimit='m'
+            ))
         )
         print(f"结果数量: {len(results4)}")
         
         if results4:
+            print("\n前3个结果:")
+            for i, r in enumerate(results4[:3], 1):
+                print(f"\n结果 {i}:")
+                print(f"  标题: {r.get('title', 'N/A')[:70]}...")
+                print(f"  URL: {r.get('href', 'N/A')}")
+        
+        # 测试英文搜索
+        print("\n\n方法5: 测试英文搜索")
+        query_en = "latest news today"
+        results5 = await asyncio.to_thread(
+            lambda: list(ddgs.text(query_en, max_results=max_results))
+        )
+        print(f"结果数量: {len(results5)}")
+        
+        if results5:
             print("\n第一个结果:")
-            print(f"  标题: {results4[0].get('title', 'N/A')}")
-            print(f"  URL: {results4[0].get('href', 'N/A')}")
+            print(f"  标题: {results5[0].get('title', 'N/A')}")
+            print(f"  URL: {results5[0].get('href', 'N/A')}")
         
     except Exception as e:
         print(f"\n❌ 错误: {e}")

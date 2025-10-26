@@ -85,7 +85,7 @@ class WebSearchHandler(BaseHandler):
                 # 优化搜索参数以获得更相关的结果
                 # timelimit: 'd' (day), 'w' (week), 'm' (month), 'y' (year)
                 search_params = {
-                    'keywords': optimized_query,
+                    'query': optimized_query,  # 注意：参数名是 query 不是 keywords
                     'max_results': max_results,
                     'region': 'cn-zh',  # 中文地区
                     'safesearch': 'moderate',  # 过滤不当内容
