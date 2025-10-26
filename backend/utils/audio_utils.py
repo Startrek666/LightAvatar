@@ -51,7 +51,17 @@ class AudioProcessor:
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout, stderr = await process.communicate()
+            # ⚡ 关键修复：加上30秒超时，防止FFmpeg卡死
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), 
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"FFmpeg超时（30秒），强制终止进程")
+                process.kill()
+                await process.wait()
+                return b""
             
             if process.returncode != 0:
                 logger.error(f"FFmpeg error (code {process.returncode}): {stderr.decode()}")
