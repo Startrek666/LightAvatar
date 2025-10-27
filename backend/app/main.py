@@ -169,6 +169,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
     else:
         logger.warning(f"WebSocket连接未提供token: {session_id}")
     
+    # Create or get session (with user ID to enforce single session per user)
+    # 注意：必须在启动heartbeat之前创建session，这样如果创建失败可以直接返回
+    try:
+        session = await session_manager.create_session(session_id, user_id=user_id, username=username)
+    except ValueError as e:
+        # 用户已有活跃会话，拒绝连接
+        logger.warning(f"❌ 拒绝创建会话: {e}")
+        websocket_manager.disconnect(session_id)  # 清理WebSocket连接
+        await websocket.close(code=1008, reason=str(e))
+        return
+    
     # Start heartbeat task to detect disconnections
     # 增加心跳间隔避免视频渲染时拥塞
     heartbeat_task = asyncio.create_task(
@@ -176,14 +187,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
     )
     
     try:
-        # Create or get session (with user ID to enforce single session per user)
-        try:
-            session = await session_manager.create_session(session_id, user_id=user_id, username=username)
-        except ValueError as e:
-            # 用户已有活跃会话
-            logger.warning(f"拒绝创建会话: {e}")
-            await websocket.close(code=1008, reason=str(e))
-            return
         
         while True:
             # Receive data from client
@@ -329,8 +332,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
         websocket_manager.disconnect(session_id)
         
         # 标记Session为断开状态（不删除，支持重连和继续发送未完成的视频）
-        await session_manager.disconnect_session(session_id)
-        logger.info(f"⏸️ Session {session_id} 保留，等待重连（5分钟内重连可继续）")
+        # 只对成功创建的session才调用disconnect_session
+        if session_id in session_manager.sessions:
+            await session_manager.disconnect_session(session_id)
+            logger.info(f"⏸️ Session {session_id} 保留，等待重连（5分钟内重连可继续）")
+        else:
+            logger.debug(f"Session {session_id} 未创建或已删除，无需保留")
 
 
 @app.get("/api/config")

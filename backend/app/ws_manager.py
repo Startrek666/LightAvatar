@@ -49,7 +49,11 @@ class WebSocketManager:
             try:
                 await websocket.send_json(data)
             except Exception as e:
-                logger.error(f"Error sending JSON to {session_id}: {e}")
+                # 如果是因为连接已关闭，使用debug级别
+                if "close message has been sent" in str(e).lower() or "closed" in str(e).lower():
+                    logger.debug(f"WebSocket {session_id} 已关闭，无法发送消息")
+                else:
+                    logger.error(f"Error sending JSON to {session_id}: {e}")
                 self.disconnect(session_id)
     
     async def send_bytes(self, session_id: str, data: bytes):
