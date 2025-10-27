@@ -286,9 +286,8 @@ class OpenAIHandler(BaseHandler):
             import traceback
             logger.error(traceback.format_exc())
             raise
-        
+
         chunk_count = 0
-        content_chunks = 0
         total_content_length = 0
         logger.info("🔄 Entering async for loop to receive chunks...")
         
@@ -341,7 +340,7 @@ class OpenAIHandler(BaseHandler):
         logger.info(f"  Content chunks: {content_chunks}")
         logger.info(f"  Total content length: {total_content_length} chars")
         logger.info(f"  Estimated output tokens: ~{int(total_content_length * 0.6)}")
-        
+
         if content_chunks == 0:
             logger.error(f"❌ Stream returned 0 content chunks!")
             logger.error(f"   Total chunks received: {chunk_count}")

@@ -4,7 +4,7 @@ Web Search Handler - 联网搜索处理器
 """
 
 import asyncio
-from typing import List, Dict, Optional, AsyncGenerator
+from typing import List, Dict, Optional, AsyncGenerator, Callable, Tuple
 import httpx
 from loguru import logger
 from backend.handlers.base import BaseHandler
@@ -25,8 +25,8 @@ class WebSearchHandler(BaseHandler):
                 from duckduckgo_search import DDGS
                 logger.warning("Using deprecated duckduckgo_search package. Consider upgrading: pip install ddgs")
             
-            # 初始化搜索客户端
-            self.ddgs = DDGS()
+            # 保存 DDGS 类引用，避免在多线程环境下共享同一实例
+            self.ddgs_class = DDGS
             
         except ImportError as e:
             logger.error(f"Search package not installed: {e}")
@@ -48,6 +48,12 @@ class WebSearchHandler(BaseHandler):
         
         logger.info(f"WebSearchHandler initialized: max_results={self.max_results}, fetch_content={self.fetch_content}")
     
+    def _run_ddgs_search(self, params: Dict) -> List[Dict]:
+        """在独立客户端中执行 DuckDuckGo 搜索，避免共享状态"""
+        with self.ddgs_class() as ddgs:
+            logger.debug(f"Executing DDGS.text with params: {params}")
+            return list(ddgs.text(**params))
+
     async def search_with_progress(
         self, 
         query: str, 
@@ -73,47 +79,78 @@ class WebSearchHandler(BaseHandler):
                 await progress_callback(1, 4, f"正在搜索: {query}")
             
             logger.info(f"Searching for: {query} (max_results={max_results})")
-            
-            # 优化搜索关键词（为技术术语添加英文）
+
+            # 搜索策略分两阶段：
+            # 1. 纯中文搜索（优先）
+            # 2. 失败时，添加英文关键词作为补充
+
+            search_strategies: List[Tuple[str, Dict]] = []
+
+            # 策略A：原始中文查询
+            chinese_params = {
+                'query': query,
+                'max_results': max_results,
+                'region': 'cn-zh',
+                'safesearch': 'moderate',
+                'timelimit': 'm'
+            }
+            search_strategies.append(('中文原始查询', chinese_params))
+
+            # 策略B：英文增强查询（备选，用于没有中文有效结果时）
             optimized_query = self._optimize_search_query(query)
             if optimized_query != query:
-                logger.info(f"Optimized query: {optimized_query}")
-            
-            # 执行 DuckDuckGo 搜索（新版本 API 使用同步方法）
-            # 使用 asyncio.to_thread 将同步调用转为异步
-            try:
-                # 优化搜索参数以获得更相关的结果
-                # timelimit: 'd' (day), 'w' (week), 'm' (month), 'y' (year)
-                search_params = {
-                    'query': optimized_query,  # 注意：参数名是 query 不是 keywords
-                    'max_results': max_results,
-                    'region': 'cn-zh',  # 中文地区
-                    'safesearch': 'moderate',  # 过滤不当内容
-                    'timelimit': 'm'  # 最近一个月的结果（获取更新鲜的内容）
-                }
-                
-                results = await asyncio.to_thread(
-                    lambda: list(self.ddgs.text(**search_params))
-                )
-                logger.info(f"DuckDuckGo returned {len(results)} raw results")
-                
-                # 打印前3个结果用于调试
-                if results:
-                    logger.info(f"Search results preview:")
-                    for i, r in enumerate(results[:3], 1):
-                        logger.info(f"  {i}. {r.get('title', 'N/A')[:60]}... | {r.get('href', 'N/A')}")
-                else:
-                    logger.warning("DuckDuckGo returned empty results, trying without time limit...")
-                    # 回退：不限制时间再试一次
-                    search_params.pop('timelimit')
-                    results = await asyncio.to_thread(
-                        lambda: list(self.ddgs.text(**search_params))
-                    )
-                    logger.info(f"Retry without time limit: {len(results)} results")
-                    
-            except Exception as search_error:
-                logger.error(f"DuckDuckGo search error: {search_error}", exc_info=True)
-                results = []
+                english_params = chinese_params.copy()
+                english_params['query'] = optimized_query
+                search_strategies.append(('中文+英文增强', english_params))
+
+            results = []
+            used_strategy = None
+
+            for strategy_name, params in search_strategies:
+                try:
+                    logger.info(f"尝试搜索策略：{strategy_name} -> {params['query']}")
+                    strategy_results = await asyncio.to_thread(self._run_ddgs_search, params)
+                    logger.info(f" {strategy_name} 返回 {len(strategy_results)} 条结果")
+
+                    if strategy_results:
+                        results = strategy_results
+                        used_strategy = strategy_name
+                        break
+
+                    # 无结果时回退：移除 timelimit 再试一次
+                    logger.warning(f" {strategy_name} 无结果，尝试移除 timelimit")
+                    fallback_params = params.copy()
+                    fallback_params.pop('timelimit', None)
+                    logger.debug(f" {strategy_name} fallback params: {fallback_params}")
+                    strategy_results = await asyncio.to_thread(self._run_ddgs_search, fallback_params)
+                    logger.info(f" {strategy_name}（无时间限制）返回 {len(strategy_results)} 条结果")
+
+                    if strategy_results:
+                        results = strategy_results
+                        used_strategy = f"{strategy_name} (无 timelimit)"
+                        break
+
+                    # 仍无结果时，尝试移除 region 和 safesearch
+                    logger.warning(f" {strategy_name}（无时间限制）仍无结果，移除 region/safesearch 再试")
+                    fallback_params.pop('region', None)
+                    fallback_params.pop('safesearch', None)
+                    logger.debug(f" {strategy_name} fallback params (no region/safesearch): {fallback_params}")
+                    strategy_results = await asyncio.to_thread(self._run_ddgs_search, fallback_params)
+                    logger.info(f" {strategy_name}（无时间限制/无区域限制）返回 {len(strategy_results)} 条结果")
+
+                    if strategy_results:
+                        results = strategy_results
+                        used_strategy = f"{strategy_name} (无 timelimit/region/safesearch)"
+                        break
+
+                except Exception as search_error:
+                    logger.error(f"策略 {strategy_name} 搜索失败: {search_error}", exc_info=True)
+                    continue
+
+            if used_strategy:
+                logger.info(f"使用搜索策略: {used_strategy}")
+            else:
+                logger.warning("所有策略均未获得有效结果")
             
             # 步骤2: 获取到搜索结果
             if progress_callback:
