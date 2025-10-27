@@ -130,6 +130,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
     # 先接受 WebSocket 连接
     await websocket_manager.connect(websocket, session_id)
     
+    # 用户信息（用于会话管理）
+    user_id = None
+    username = None
+    
     # 然后验证token和权限
     if token:
         try:
@@ -151,7 +155,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                     await websocket.close(code=1008, reason="无数字人使用权限")
                     return
                 
-                logger.info(f"用户 {user.username} 已连接 WebSocket")
+                # 保存用户信息
+                user_id = user.id
+                username = user.username
+                
+                logger.info(f"用户 {user.username} (ID: {user.id}) 已连接 WebSocket")
             finally:
                 db_session.close()
         except Exception as e:
@@ -168,8 +176,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
     )
     
     try:
-        # Create or get session
-        session = await session_manager.create_session(session_id)
+        # Create or get session (with user ID to enforce single session per user)
+        try:
+            session = await session_manager.create_session(session_id, user_id=user_id, username=username)
+        except ValueError as e:
+            # 用户已有活跃会话
+            logger.warning(f"拒绝创建会话: {e}")
+            await websocket.close(code=1008, reason=str(e))
+            return
         
         while True:
             # Receive data from client

@@ -1018,7 +1018,20 @@ const startDialog = async () => {
     // 5. 连接 WebSocket
     console.log('🔌 连接 WebSocket...')
     const sessionId = Date.now().toString()
-    connect(`/ws/${sessionId}`, handleWebSocketMessage, handleWebSocketBinary)
+    
+    // WebSocket close handler to handle rejection due to multiple sessions
+    const handleWebSocketClose = (event: CloseEvent) => {
+      if (event.code === 1008) {
+        // Connection rejected due to policy violation (multiple sessions)
+        message.error({
+          content: event.reason || '您已有一个正在使用的会话，请先退出当前会话再重试',
+          duration: 5
+        })
+        isReady.value = false
+      }
+    }
+    
+    connect(`/ws/${sessionId}`, handleWebSocketMessage, handleWebSocketBinary, handleWebSocketClose)
     
     // 6. 等待一下让连接建立
     await new Promise(resolve => setTimeout(resolve, 500))

@@ -27,6 +27,8 @@ from backend.utils.text_utils import clean_markdown_for_tts
 class Session:
     """Represents a user session"""
     session_id: str
+    user_id: Optional[int] = None  # 用户ID，用于限制一个用户只能有一个会话
+    username: Optional[str] = None  # 用户名，用于日志
     created_at: datetime = field(default_factory=datetime.now)
     last_active: datetime = field(default_factory=datetime.now)
     
@@ -803,12 +805,25 @@ class SessionManager:
     
     def __init__(self, max_memory_mb: int = 4096, websocket_manager: Optional[WebSocketManager] = None):
         self.sessions: Dict[str, Session] = {}
+        self.user_sessions: Dict[int, str] = {}  # 用户ID -> session_id的映射，用于限制一个用户只能有一个活跃会话
         self.max_memory_mb = max_memory_mb
         self._lock = asyncio.Lock()
         self.websocket_manager = websocket_manager
     
-    async def create_session(self, session_id: str) -> Session:
-        """Create or reconnect to a session"""
+    async def create_session(self, session_id: str, user_id: Optional[int] = None, username: Optional[str] = None) -> Session:
+        """Create or reconnect to a session
+        
+        Args:
+            session_id: The session ID
+            user_id: The user ID (for enforcing single session per user)
+            username: The username (for logging)
+            
+        Returns:
+            Session object
+            
+        Raises:
+            ValueError: If user already has an active session
+        """
         async with self._lock:
             # 检查是否有已存在的Session（支持重连）
             if session_id in self.sessions:
@@ -825,6 +840,26 @@ class SessionManager:
                 
                 return existing_session
             
+            # 检查该用户是否已有活跃会话
+            if user_id is not None:
+                existing_session_id = self.user_sessions.get(user_id)
+                if existing_session_id and existing_session_id in self.sessions:
+                    existing_session = self.sessions[existing_session_id]
+                    # 只有在线的会话才算作冲突
+                    if existing_session.is_connected:
+                        logger.warning(
+                            f"❌ 用户 {username or user_id} 已有活跃会话 {existing_session_id}，"
+                            f"拒绝创建新会话 {session_id}"
+                        )
+                        raise ValueError(
+                            f"您已有一个正在使用的会话，请先退出当前会话再重试。"
+                            f"（会话ID: {existing_session_id[:8]}...）"
+                        )
+                    else:
+                        # 旧会话已断开，可以清理
+                        logger.info(f"清理用户 {username or user_id} 的旧断开会话 {existing_session_id}")
+                        await self._remove_session_internal(existing_session_id)
+            
             # Check memory before creating new session
             await self.check_memory()
             
@@ -834,11 +869,23 @@ class SessionManager:
                 await self._remove_oldest_inactive()
             
             # Create new session
-            session = Session(session_id=session_id)
+            session = Session(
+                session_id=session_id,
+                user_id=user_id,
+                username=username
+            )
             await session.initialize_handlers()
             
             self.sessions[session_id] = session
-            logger.info(f"Created session {session_id}")
+            
+            # 记录用户到会话的映射
+            if user_id is not None:
+                self.user_sessions[user_id] = session_id
+            
+            logger.info(
+                f"✅ 创建会话 {session_id}"
+                + (f" (用户: {username or user_id})" if user_id else "")
+            )
             
             return session
     
@@ -855,14 +902,24 @@ class SessionManager:
                 session.disconnected_at = datetime.now()
                 logger.info(f"🔌 Session {session_id} 断开连接，保留Session数据等待重连")
     
+    async def _remove_session_internal(self, session_id: str):
+        """内部方法：删除Session（不加锁，由调用者负责加锁）"""
+        if session_id in self.sessions:
+            session = self.sessions[session_id]
+            
+            # 清理用户映射
+            if session.user_id is not None and self.user_sessions.get(session.user_id) == session_id:
+                del self.user_sessions[session.user_id]
+                logger.debug(f"清理用户 {session.username or session.user_id} 的会话映射")
+            
+            session.release()
+            del self.sessions[session_id]
+            logger.info(f"🗑️ 已删除 Session {session_id}")
+    
     async def remove_session(self, session_id: str):
         """彻底删除Session（用于清理长时间未重连的Session）"""
         async with self._lock:
-            if session_id in self.sessions:
-                session = self.sessions[session_id]
-                session.release()
-                del self.sessions[session_id]
-                logger.info(f"🗑️ 已删除 Session {session_id}")
+            await self._remove_session_internal(session_id)
     
     async def check_memory(self):
         """Check memory usage and cleanup if needed"""

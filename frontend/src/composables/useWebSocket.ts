@@ -7,8 +7,9 @@ export function useWebSocket() {
     const shouldReconnect = ref(true)
     const messageHandler = ref<((data: any) => void) | null>(null)
     const binaryHandler = ref<((data: Blob) => void) | null>(null)
+    const closeHandler = ref<((event: CloseEvent) => void) | null>(null)
 
-    const connect = (url: string, onMessage?: (data: any) => void, onBinary?: (data: Blob) => void) => {
+    const connect = (url: string, onMessage?: (data: any) => void, onBinary?: (data: Blob) => void, onClose?: (event: CloseEvent) => void) => {
         if (ws.value?.readyState === WebSocket.OPEN) {
             return
         }
@@ -32,6 +33,10 @@ export function useWebSocket() {
 
         if (onBinary) {
             binaryHandler.value = onBinary
+        }
+
+        if (onClose) {
+            closeHandler.value = onClose
         }
 
         ws.value.onopen = () => {
@@ -63,15 +68,29 @@ export function useWebSocket() {
             console.error('WebSocket error:', error)
         }
 
-        ws.value.onclose = () => {
+        ws.value.onclose = (event: CloseEvent) => {
             console.log('WebSocket disconnected')
             isConnected.value = false
+
+            // Call close handler if provided
+            if (closeHandler.value) {
+                closeHandler.value(event)
+            }
+
+            // Check if close was due to user already having an active session
+            // Code 1008 is used for policy violations
+            if (event.code === 1008) {
+                console.warn('Connection rejected:', event.reason)
+                // Don't attempt to reconnect if rejected due to multiple sessions
+                shouldReconnect.value = false
+                return
+            }
 
             // Attempt to reconnect after 3 seconds if allowed
             if (shouldReconnect.value) {
                 setTimeout(() => {
                     if (!isConnected.value && shouldReconnect.value) {
-                        connect(url, messageHandler.value || undefined)
+                        connect(url, messageHandler.value || undefined, binaryHandler.value || undefined, closeHandler.value || undefined)
                     }
                 }, 3000)
             }
