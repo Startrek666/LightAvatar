@@ -1616,10 +1616,19 @@ onUnmounted(() => {
     white-space: nowrap;
   }
   
-  /* 超小屏幕隐藏部分标签文字 */
-  .header-action-item:nth-child(2) .action-label,
-  .header-action-item:nth-child(3) .action-label {
-    display: none;
+  /* 缩小节点按钮尺寸 */
+  .server-node-selector .node-button {
+    padding: 2px 6px !important;
+    font-size: 12px;
+  }
+  
+  .server-node-selector .node-icon {
+    font-size: 14px;
+  }
+  
+  .server-node-selector .auto-badge {
+    font-size: 8px;
+    padding: 0px 3px;
   }
 
   .avatar-display {
