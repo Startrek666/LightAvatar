@@ -35,7 +35,8 @@
                 <a-button type="text" size="small" class="node-button">
                   <span class="node-icon">{{ currentNode.icon }}</span>
                   <span class="node-name">
-                    {{ currentNode.displayName }}
+                    <span class="node-name-full">{{ currentNode.displayName }}</span>
+                    <span class="node-name-short">{{ currentNode.shortName }}</span>
                     <span v-if="isAutoNode" class="auto-badge">自动</span>
                   </span>
                 </a-button>
@@ -1147,6 +1148,26 @@ onUnmounted(() => {
   gap: 4px;
 }
 
+/* 默认显示完整名称，隐藏短名称 */
+.server-node-selector .node-name-full {
+  display: inline;
+}
+
+.server-node-selector .node-name-short {
+  display: none;
+}
+
+/* 移动端：隐藏完整名称，显示短名称 */
+@media (max-width: 768px) {
+  .server-node-selector .node-name-full {
+    display: none;
+  }
+  
+  .server-node-selector .node-name-short {
+    display: inline;
+  }
+}
+
 .server-node-selector .auto-badge {
   font-size: 10px;
   padding: 1px 4px;
@@ -1578,20 +1599,27 @@ onUnmounted(() => {
   }
 
   .header-actions {
-    gap: 6px;
+    gap: 4px;
   }
 
   .switch-wrapper {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
   }
 
   .action-label {
-    font-size: 10px;
+    font-size: 9px;
     color: #999;
     display: block;
+    white-space: nowrap;
+  }
+  
+  /* 超小屏幕隐藏部分标签文字 */
+  .header-action-item:nth-child(2) .action-label,
+  .header-action-item:nth-child(3) .action-label {
+    display: none;
   }
 
   .avatar-display {

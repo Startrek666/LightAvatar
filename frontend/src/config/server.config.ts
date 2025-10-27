@@ -6,6 +6,7 @@ export interface ServerNode {
   id: string;
   name: string;
   displayName: string;
+  shortName: string; // 简短名称，用于移动端显示
   host: string;
   region: string;
   description: string;
@@ -18,6 +19,7 @@ export const SERVER_NODES: ServerNode[] = [
     id: 'japan',
     name: 'Japan Edge',
     displayName: '日本节点',
+    shortName: 'JP',
     host: 'japan.digitalh.lemomate.com',
     region: 'jp',
     description: '优化路线，适合亚洲用户',
@@ -28,6 +30,7 @@ export const SERVER_NODES: ServerNode[] = [
     id: 'us',
     name: 'US Origin',
     displayName: '原始节点',
+    shortName: 'US',
     host: 'digitalh.lemomate.com',
     region: 'us',
     description: '美国服务器，全球默认节点',
