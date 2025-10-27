@@ -214,45 +214,113 @@ class OpenAIHandler(BaseHandler):
     
     async def _stream_response_internal(self, messages: List[Dict]) -> AsyncGenerator[str, None]:
         """Internal method for streaming response"""
-            
-        logger.info(f"Starting stream request to model: {self.model}, base_url: {self.api_url}")
-        logger.info(f"Request messages count: {len(messages)}, last message: {messages[-1]['content'][:50] if messages else 'None'}")
-        logger.info(f"Stream parameters: temperature={self.temperature}, max_tokens={self.max_tokens}")
         
-        logger.info(f"About to create stream with client: {self.client}")
-        logger.info(f"Client base_url: {self.client.base_url}")
+        # 计算输入的 token 数量（简单估算：中文按2字符/token，英文按4字符/token）
+        total_chars = sum(len(msg.get('content', '')) for msg in messages)
+        estimated_tokens = int(total_chars * 0.6)  # 平均估算
         
-        stream = await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            stream=True
-        )
-        logger.info(f"Stream object created: {type(stream)}")
-        logger.info(f"Stream object: {stream}")
+        logger.info(f"{'='*60}")
+        logger.info(f"Starting LLM stream request")
+        logger.info(f"  Model: {self.model}")
+        logger.info(f"  Base URL: {self.api_url}")
+        logger.info(f"  Messages count: {len(messages)}")
+        logger.info(f"  Total characters: {total_chars}")
+        logger.info(f"  Estimated input tokens: ~{estimated_tokens}")
+        logger.info(f"  Temperature: {self.temperature}")
+        logger.info(f"  Max tokens: {self.max_tokens}")
+        
+        # 记录每条消息的详细信息
+        for i, msg in enumerate(messages):
+            role = msg.get('role', 'unknown')
+            content = msg.get('content', '')
+            content_preview = content[:100] + ('...' if len(content) > 100 else '')
+            logger.info(f"  Message {i+1} [{role}]: {len(content)} chars - {content_preview}")
+        
+        logger.info(f"{'='*60}")
+        
+        try:
+            stream = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                stream=True
+            )
+            logger.info(f"✅ Stream object created successfully: {type(stream)}")
+        except Exception as e:
+            logger.error(f"❌ Failed to create stream: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
         
         chunk_count = 0
         content_chunks = 0
-        logger.info("Entering async for loop...")
-        async for chunk in stream:
-            chunk_count += 1
-            
-            if chunk.choices and len(chunk.choices) > 0:
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    content_chunks += 1
-                    if content_chunks == 1:
-                        logger.info(f"First content chunk received (chunk #{chunk_count})")
-                    yield delta.content
+        total_content_length = 0
+        logger.info("🔄 Entering async for loop to receive chunks...")
         
-        logger.info(f"Exited async for loop normally")
+        try:
+            async for chunk in stream:
+                chunk_count += 1
+                
+                # 记录第一个 chunk 的完整内容以便调试
+                if chunk_count == 1:
+                    logger.info(f"📦 First chunk received")
+                    logger.info(f"   Type: {type(chunk)}")
+                    logger.info(f"   Has choices: {hasattr(chunk, 'choices')}")
+                    if hasattr(chunk, 'choices'):
+                        logger.info(f"   Choices count: {len(chunk.choices) if chunk.choices else 0}")
+                    logger.info(f"   Raw chunk: {chunk}")
+                
+                if chunk.choices and len(chunk.choices) > 0:
+                    choice = chunk.choices[0]
+                    
+                    # 检查是否有 finish_reason
+                    if hasattr(choice, 'finish_reason') and choice.finish_reason:
+                        logger.info(f"🏁 Stream finished with reason: {choice.finish_reason}")
+                    
+                    delta = choice.delta
+                    if delta and delta.content:
+                        content_chunks += 1
+                        content_length = len(delta.content)
+                        total_content_length += content_length
+                        
+                        if content_chunks == 1:
+                            logger.info(f"✨ First content chunk received (chunk #{chunk_count})")
+                            logger.info(f"   Content preview: {delta.content[:50]}")
+                        elif content_chunks % 10 == 0:  # 每10个内容chunk记录一次
+                            logger.info(f"📝 Received {content_chunks} content chunks, total {total_content_length} chars")
+                        
+                        yield delta.content
+                else:
+                    if chunk_count <= 3:  # 只记录前3个空 chunk
+                        logger.warning(f"⚠️  Chunk #{chunk_count} has no choices or empty content")
+                        logger.warning(f"   Chunk structure: {chunk}")
+        except Exception as e:
+            logger.error(f"Error during stream iteration: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
+        
+        logger.info(f"{'='*60}")
+        logger.info(f"LLM stream completed")
+        logger.info(f"  Total chunks received: {chunk_count}")
+        logger.info(f"  Content chunks: {content_chunks}")
+        logger.info(f"  Total content length: {total_content_length} chars")
+        logger.info(f"  Estimated output tokens: ~{int(total_content_length * 0.6)}")
         
         if content_chunks == 0:
-            logger.warning(f"Stream completed with 0 content chunks (total chunks: {chunk_count})")
-            logger.warning(f"This suggests the stream iterator ended immediately without yielding chunks")
+            logger.error(f"❌ Stream returned 0 content chunks!")
+            logger.error(f"   Total chunks received: {chunk_count}")
+            logger.error(f"   API endpoint: {self.client.base_url}")
+            logger.error(f"   This suggests:")
+            logger.error(f"   1. LLM API returned empty response")
+            logger.error(f"   2. API may have rate limits or errors")
+            logger.error(f"   3. Input may have triggered content filter")
+            logger.error(f"   4. Model may not exist or is unavailable")
         else:
-            logger.info(f"Stream completed: {content_chunks} content chunks from {chunk_count} total chunks")
+            logger.info(f"✅ Stream successful: {content_chunks} chunks, {total_content_length} chars")
+        
+        logger.info(f"{'='*60}")
     
     async def stream_response(self, text: str, conversation_history: List[Dict] = None) -> AsyncGenerator[str, None]:
         """Generate streaming response (without search)"""
