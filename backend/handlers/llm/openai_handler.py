@@ -169,7 +169,7 @@ class OpenAIHandler(BaseHandler):
             
             # 如果启用搜索且有搜索处理器
             if use_search and search_handler:
-                logger.info(f"Performing web search for: {text}")
+                logger.info(f"🔍 Performing web search for: {text}")
                 
                 # 执行搜索
                 search_results = await search_handler.search_with_progress(
@@ -179,6 +179,10 @@ class OpenAIHandler(BaseHandler):
                 )
                 
                 if search_results:
+                    logger.info(f"\n{'*'*80}")
+                    logger.info(f"📚 构建搜索上下文 (共 {len(search_results)} 个结果)")
+                    logger.info(f"{'*'*80}\n")
+                    
                     # 构建搜索上下文
                     context = "我为你搜索到了以下相关信息：\n\n"
                     for i, result in enumerate(search_results, 1):
@@ -200,7 +204,29 @@ class OpenAIHandler(BaseHandler):
                         'content': context
                     })
                     
-                    logger.info(f"Added search context with {len(search_results)} results")
+                    # 详细记录发送给 LLM 的上下文
+                    logger.info(f"📝 发送给 LLM 的完整搜索上下文:")
+                    logger.info(f"{'─'*80}")
+                    logger.info(context)
+                    logger.info(f"{'─'*80}")
+                    
+                    # 统计信息
+                    context_chars = len(context)
+                    estimated_tokens = int(context_chars * 0.6)
+                    logger.info(f"📊 上下文统计:")
+                    logger.info(f"  字符数: {context_chars}")
+                    logger.info(f"  估计token数: ~{estimated_tokens}")
+                    logger.info(f"  搜索结果数: {len(search_results)}")
+                    
+                    # 记录每个结果的详细信息
+                    for i, result in enumerate(search_results, 1):
+                        content_len = len(result.get('content', ''))
+                        snippet_len = len(result.get('snippet', ''))
+                        logger.info(f"  结果{i}: 正文{content_len}字 | 摘要{snippet_len}字 | {result['title'][:40]}...")
+                    
+                    logger.info(f"\n{'*'*80}\n")
+                else:
+                    logger.warning(f"⚠️ 搜索未返回任何结果，将不使用搜索上下文")
             
             # 继续正常的流式响应
             async for chunk in self._stream_response_internal(messages):

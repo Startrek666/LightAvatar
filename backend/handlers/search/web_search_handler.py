@@ -130,6 +130,12 @@ class WebSearchHandler(BaseHandler):
                     'snippet': r.get('body', ''),
                 }
                 
+                logger.info(f"\n{'='*80}")
+                logger.info(f"搜索结果 #{i}:")
+                logger.info(f"  标题: {result['title']}")
+                logger.info(f"  链接: {result['url']}")
+                logger.info(f"  摘要: {result['snippet'][:200]}...")
+                
                 # 如果需要获取正文内容
                 if self.fetch_content:
                     if progress_callback:
@@ -137,14 +143,40 @@ class WebSearchHandler(BaseHandler):
                     
                     content = await self._fetch_page_content(result['url'])
                     result['content'] = content
+                    
+                    # 记录提取的内容
+                    if content:
+                        logger.info(f"  ✅ 成功提取正文内容 ({len(content)} 字符)")
+                        logger.info(f"  内容预览: {content[:300]}...")
+                        logger.debug(f"  完整内容:\n{content}")
+                    else:
+                        logger.warning(f"  ❌ 未能提取到有效内容")
                 
                 formatted_results.append(result)
+                logger.info(f"{'='*80}\n")
             
             # 步骤4: 完成
             if progress_callback:
                 await progress_callback(4, 4, "搜索完成")
             
-            logger.info(f"Search completed: {len(formatted_results)} results with content")
+            # 汇总日志
+            logger.info(f"\n{'#'*80}")
+            logger.info(f"📊 搜索汇总:")
+            logger.info(f"  查询: {query}")
+            logger.info(f"  优化查询: {optimized_query}")
+            logger.info(f"  结果数量: {len(formatted_results)}")
+            
+            total_content_length = sum(len(r.get('content', '')) for r in formatted_results)
+            logger.info(f"  总内容长度: {total_content_length} 字符")
+            
+            # 列出所有结果的标题
+            logger.info(f"  结果列表:")
+            for i, r in enumerate(formatted_results, 1):
+                has_content = '✓' if r.get('content') else '✗'
+                logger.info(f"    {i}. [{has_content}] {r['title'][:60]}...")
+            
+            logger.info(f"{'#'*80}\n")
+            
             return formatted_results
             
         except Exception as e:
