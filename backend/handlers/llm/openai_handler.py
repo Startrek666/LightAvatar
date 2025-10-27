@@ -288,6 +288,7 @@ class OpenAIHandler(BaseHandler):
             raise
 
         chunk_count = 0
+        content_chunks = 0
         total_content_length = 0
         logger.info("🔄 Entering async for loop to receive chunks...")
         
