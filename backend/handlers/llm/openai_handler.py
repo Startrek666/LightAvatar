@@ -238,13 +238,21 @@ class OpenAIHandler(BaseHandler):
         
         logger.info(f"{'='*60}")
         
+        # 如果输入过长，记录完整的 messages（用于调试）
+        if total_chars > 500:
+            logger.warning(f"⚠️  Large input detected ({total_chars} chars), logging full messages for debugging:")
+            import json
+            for i, msg in enumerate(messages):
+                logger.debug(f"Message {i+1} full content:\n{json.dumps(msg, ensure_ascii=False, indent=2)}")
+        
         try:
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
-                stream=True
+                stream=True,
+                timeout=30.0  # 添加超时防止挂起
             )
             logger.info(f"✅ Stream object created successfully: {type(stream)}")
         except Exception as e:

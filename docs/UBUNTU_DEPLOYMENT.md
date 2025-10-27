@@ -203,6 +203,11 @@ pip install numpy==1.26.4 --no-cache-dir
 
 # 如果onnxruntime安装失败
 pip install onnxruntime==1.19.2 --no-cache-dir
+
+# 如果需要使用联网搜索功能，确保安装正确的包
+pip uninstall -y duckduckgo-search  # 卸载旧版本
+pip install ddgs>=1.0.0              # 安装新版本
+pip install trafilatura>=1.6.0       # 网页内容提取
 ```
 
 ---
@@ -608,9 +613,26 @@ avatar:
   fps: 25
   resolution: [512, 512]
   template: "default.mp4"  # 或 default.jpg
+
+# 联网搜索配置（可选）
+search:
+  enabled: true           # 启用联网搜索功能
+  max_results: 5          # 每次搜索返回的最大结果数
+  fetch_content: true     # 是否获取网页正文内容
+  content_max_length: 2000  # 正文内容最大长度
 ```
 
 **保存**：按`Ctrl+X`，然后按`Y`，回车确认。
+
+**配置说明**：
+
+**联网搜索配置** (可选)：
+- `enabled`: 是否启用联网搜索功能，需要安装 `ddgs` 和 `trafilatura` 包
+- `max_results`: 搜索结果数量，建议 3-5 个
+- `fetch_content`: 是否提取网页正文（提供更详细的上下文给 LLM）
+- `content_max_length`: 每个网页正文的最大字符数，避免 token 超限
+
+如果不需要联网搜索功能，可以设置 `enabled: false` 或删除该配置段。
 
 ### 6.3 设置环境变量
 
@@ -1261,7 +1283,90 @@ export HF_ENDPOINT=https://hf-mirror.com
 python download_whisper.py
 ```
 
-### 问题6：日志查看
+### 问题6：联网搜索功能报错
+
+**症状**：
+```
+ERROR | DuckDuckGo search error: DDGS.text() got an unexpected keyword argument 'query'
+```
+
+**原因**：DuckDuckGo 搜索包版本不匹配。
+
+#### 6.1 检查当前安装的包
+
+```bash
+# 进入虚拟环境
+source /opt/lightavatar/venv/bin/activate
+
+# 检查安装的包
+pip show duckduckgo-search ddgs
+```
+
+#### 6.2 解决方案：更换为新版本包
+
+```bash
+# 卸载旧版本的包
+pip uninstall -y duckduckgo-search
+
+# 安装新版本
+pip install ddgs>=1.0.0
+pip install trafilatura>=1.6.0
+
+# 验证安装
+pip show ddgs trafilatura
+```
+
+#### 6.3 重启后端服务
+
+```bash
+sudo systemctl restart lightavatar-backend
+
+# 查看日志确认正常
+sudo tail -f /var/log/lightavatar/backend.log
+```
+
+#### 6.4 测试搜索功能
+
+```bash
+cd /opt/lightavatar
+source venv/bin/activate
+
+# 运行测试脚本
+python test_search.py
+
+# 如果看到搜索结果，说明已修复
+```
+
+**预期输出**：
+```
+✅ 使用新包: ddgs
+=== 测试 DuckDuckGo 搜索 ===
+搜索关键词: 今天有什么新闻
+最大结果数: 3
+方法1: 直接同步调用
+结果数量: 3
+第一个结果:
+  标题: ...
+  URL: ...
+```
+
+**包版本说明**：
+- ❌ **旧包**：`duckduckgo-search` - 使用 `keywords` 参数，已过时
+- ✅ **新包**：`ddgs>=1.0.0` - 使用 `query` 参数，推荐使用
+
+**如果仍然报错**：
+```bash
+# 完全重新安装所有依赖
+pip uninstall -y duckduckgo-search ddgs
+pip cache purge
+pip install ddgs==1.0.0 trafilatura==1.6.0
+
+# 如果 httpx 版本冲突
+pip install --upgrade openai
+pip install httpx>=0.24.0
+```
+
+### 问题7：日志查看
 
 ```bash
 # 实时查看后端日志

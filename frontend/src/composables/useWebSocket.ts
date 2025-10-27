@@ -1,4 +1,5 @@
 import { ref, onUnmounted } from 'vue'
+import { getWebSocketUrl } from '../config/server.config'
 
 export function useWebSocket() {
     const ws = ref<WebSocket | null>(null)
@@ -15,14 +16,13 @@ export function useWebSocket() {
         // Reset reconnect flag when manually connecting
         shouldReconnect.value = true
 
-        // Build WebSocket URL with token
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const host = window.location.host
+        // Build WebSocket URL with token using selected server node
         const token = localStorage.getItem('auth_token')
         const wsUrl = token 
-            ? `${protocol}//${host}${url}?token=${encodeURIComponent(token)}`
-            : `${protocol}//${host}${url}`
+            ? `${getWebSocketUrl(url)}?token=${encodeURIComponent(token)}`
+            : getWebSocketUrl(url)
 
+        console.log('Connecting to WebSocket:', wsUrl)
         ws.value = new WebSocket(wsUrl)
         ws.value.binaryType = 'blob'  // Set binary type to blob for video
 

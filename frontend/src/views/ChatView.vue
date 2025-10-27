@@ -29,6 +29,47 @@
               </div>
             </div>
 
+            <!-- 服务器节点选择 -->
+            <div class="header-action-item server-node-selector">
+              <a-dropdown :trigger="['click']">
+                <a-button type="text" size="small" class="node-button">
+                  <span class="node-icon">{{ currentNode.icon }}</span>
+                  <span class="node-name">
+                    {{ currentNode.displayName }}
+                    <span v-if="isAutoNode" class="auto-badge">自动</span>
+                  </span>
+                </a-button>
+                <template #overlay>
+                  <a-menu @click="handleNodeChange">
+                    <a-menu-item 
+                      v-for="node in availableNodes" 
+                      :key="node.id"
+                      :class="{ 'active-node': node.id === currentNode.id }">
+                      <div class="node-menu-item">
+                        <span class="node-menu-icon">{{ node.icon }}</span>
+                        <div class="node-menu-info">
+                          <div class="node-menu-name">{{ node.displayName }}</div>
+                          <div class="node-menu-desc">{{ node.description }}</div>
+                        </div>
+                        <span v-if="node.id === currentNode.id" class="node-check">✓</span>
+                      </div>
+                    </a-menu-item>
+                    <a-menu-divider />
+                    <a-menu-item key="auto">
+                      <div class="node-menu-item">
+                        <span class="node-menu-icon">🌐</span>
+                        <div class="node-menu-info">
+                          <div class="node-menu-name">自动选择</div>
+                          <div class="node-menu-desc">根据您的位置自动选择最优节点</div>
+                        </div>
+                        <span v-if="isAutoNode" class="node-check">✓</span>
+                      </div>
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </div>
+
             <a-tooltip title="个人中心">
               <a-button type="text" size="small" @click="goToProfile" :icon="h(UserOutlined)" />
             </a-tooltip>
@@ -206,6 +247,13 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
 import { useDocParser } from '@/composables/useDocParser'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import { 
+  SERVER_NODES, 
+  getCurrentNode, 
+  saveSelectedNode, 
+  clearSelectedNode,
+  type ServerNode 
+} from '@/config/server.config'
 // import { useChatStore } from '@/store/chat' // 暂未使用，保留以备将来功能扩展
 
 // const chatStore = useChatStore()
@@ -234,6 +282,11 @@ const isInitializing = ref(false) // 是否正在初始化
 const enableVoiceInput = ref(true)  // 语音输入开关
 const showChatHistory = ref(true)   // 对话记录显示开关
 const enableWebSearch = ref(false)  // 联网搜索开关
+
+// Server node selection
+const availableNodes = ref<ServerNode[]>(SERVER_NODES)
+const currentNode = ref<ServerNode>(getCurrentNode())
+const isAutoNode = computed(() => !localStorage.getItem('selected_server_node'))
 
 // Search progress modal
 const searchProgressVisible = ref(false)
@@ -280,6 +333,33 @@ const goToProfile = () => {
 
 const showSettings = () => {
   settingsVisible.value = true
+}
+
+// 处理节点切换
+const handleNodeChange = ({ key }: { key: string }) => {
+  if (key === 'auto') {
+    // 清除手动选择，使用自动检测
+    clearSelectedNode()
+    currentNode.value = getCurrentNode()
+    message.success(`已切换到自动选择节点: ${currentNode.value.displayName}`)
+  } else {
+    // 手动选择节点
+    const selectedNode = availableNodes.value.find(node => node.id === key)
+    if (selectedNode) {
+      saveSelectedNode(key)
+      currentNode.value = selectedNode
+      message.success(`已切换到 ${selectedNode.displayName}`)
+    }
+  }
+  
+  // 显示重新连接提示
+  if (isConnected.value) {
+    message.info('节点已切换，请刷新页面以应用新节点', 3)
+    // 可选：自动刷新页面
+    setTimeout(() => {
+      window.location.reload()
+    }, 2000)
+  }
 }
 
 const saveSettings = async () => {
@@ -1024,6 +1104,85 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+}
+
+/* 服务器节点选择器样式 */
+.server-node-selector .node-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.server-node-selector .node-button:hover {
+  background-color: rgba(24, 144, 255, 0.1);
+}
+
+.server-node-selector .node-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.server-node-selector .node-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.server-node-selector .auto-badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  background-color: #52c41a;
+  color: white;
+  border-radius: 2px;
+  font-weight: normal;
+}
+
+.node-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+  min-width: 280px;
+}
+
+.node-menu-item .node-menu-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.node-menu-item .node-menu-info {
+  flex: 1;
+}
+
+.node-menu-item .node-menu-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  line-height: 1.4;
+}
+
+.node-menu-item .node-menu-desc {
+  font-size: 12px;
+  color: #999;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.node-menu-item .node-check {
+  color: #1890ff;
+  font-size: 16px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.active-node {
+  background-color: rgba(24, 144, 255, 0.05);
 }
 
 .action-label {
