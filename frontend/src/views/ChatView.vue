@@ -1605,6 +1605,9 @@ onUnmounted(() => {
   flex: 0 0 auto;
   min-width: 40px;
   padding: 4px 15px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 发送按钮（右侧，仅图标） */
@@ -1612,6 +1615,31 @@ onUnmounted(() => {
   flex: 0 0 auto;
   min-width: 40px;
   padding: 4px 15px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 确保所有按钮内的图标居中 */
+.chat-input-wrapper .voice-button,
+.chat-input-wrapper .upload-button,
+.chat-input-wrapper .send-button {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 按钮内的图标样式 */
+.chat-input-wrapper .ant-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-input-wrapper .ant-btn > .anticon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 桌面端默认显示，移动端隐藏 */
@@ -1799,6 +1827,12 @@ onUnmounted(() => {
     justify-content: center;
     align-items: center;
     width: 100%;
+  }
+  
+  .mobile-send-button .anticon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* 移动端输入区域保持横向布局，但调整间距 */
