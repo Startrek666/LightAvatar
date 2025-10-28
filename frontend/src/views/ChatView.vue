@@ -155,23 +155,41 @@
             <CloseOutlined class="doc-close" @click="clearUploadedDoc" />
           </div>
           
-          <a-input-group compact>
-            <a-input v-model:value="inputText" placeholder="输入消息或点击录音按钮说话..." @pressEnter="sendTextMessage"
-              :disabled="!isConnected || isProcessing" size="large" />
-            <a-button size="large" @click="triggerFileUpload"
-              :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" :icon="h(PlusOutlined)"
-              title="上传文档 (PDF/DOCX/PPTX, 最大30MB)">
-            </a-button>
-            <a-button type="primary" size="large" @click="sendTextMessage"
-              :disabled="!inputText || !isConnected || isProcessing" :icon="h(SendOutlined)">
-              发送
-            </a-button>
-            <a-button v-if="enableVoiceInput" :type="isRecording ? 'danger' : 'default'" size="large"
-              @click="toggleRecording" :disabled="!isConnected || isProcessing"
-              :icon="h(AudioOutlined)">
-              {{ isRecording ? '录音中，再次点击停止录音' : '点击录音按钮说话' }}
-            </a-button>
-          </a-input-group>
+          <div class="chat-input-wrapper">
+            <!-- 左侧：语音按钮（仅图标） -->
+            <a-button v-if="enableVoiceInput" 
+              :type="isRecording ? 'danger' : 'default'" 
+              size="large"
+              class="voice-button"
+              @click="toggleRecording" 
+              :disabled="!isConnected || isProcessing"
+              :icon="h(AudioOutlined)"
+              :title="isRecording ? '点击停止录音' : '点击开始录音'" />
+            
+            <!-- 中间：输入框 + 文档上传按钮 -->
+            <a-input-group compact class="input-group">
+              <a-input v-model:value="inputText" 
+                placeholder="输入消息或点击录音按钮说话..." 
+                @pressEnter="sendTextMessage"
+                :disabled="!isConnected || isProcessing" 
+                size="large" 
+                class="message-input" />
+              <a-button size="large" 
+                @click="triggerFileUpload"
+                :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" 
+                :icon="h(PlusOutlined)"
+                title="上传文档 (PDF/DOCX/PPTX, 最大30MB)" />
+            </a-input-group>
+            
+            <!-- 右侧：发送按钮（仅图标） -->
+            <a-button type="primary" 
+              size="large" 
+              class="send-button"
+              @click="sendTextMessage"
+              :disabled="!inputText || !isConnected || isProcessing" 
+              :icon="h(SendOutlined)"
+              title="发送消息" />
+          </div>
           <!-- 隐藏的文件上传输入框 -->
           <input ref="fileInput" type="file" accept=".pdf,.docx,.pptx" style="display: none" @change="handleFileUpload" />
         </div>
@@ -714,7 +732,7 @@ const handleWebSocketMessage = (data: any) => {
       
       // 自动聚焦输入框，方便用户修改或直接发送
       nextTick(() => {
-        const inputElement = document.querySelector('.chat-input input') as HTMLInputElement
+        const inputElement = document.querySelector('.message-input') as HTMLInputElement
         if (inputElement) {
           inputElement.focus()
         }
@@ -1521,6 +1539,50 @@ onUnmounted(() => {
   background: rgba(255, 77, 79, 0.1);
 }
 
+/* 聊天输入区域布局 */
+.chat-input-wrapper {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+/* 语音按钮（左侧，仅图标） */
+.chat-input-wrapper .voice-button {
+  flex: 0 0 auto;
+  min-width: 40px;
+  padding: 4px 15px;
+}
+
+/* 录音中时按钮为红色 */
+.chat-input-wrapper .voice-button.ant-btn-danger {
+  background-color: #ff4d4f;
+  border-color: #ff4d4f;
+}
+
+.chat-input-wrapper .voice-button.ant-btn-danger:hover {
+  background-color: #ff7875;
+  border-color: #ff7875;
+}
+
+/* 中间输入框组 */
+.chat-input-wrapper .input-group {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input-wrapper .input-group .message-input {
+  flex: 1 1 auto;
+}
+
+/* 发送按钮（右侧，仅图标） */
+.chat-input-wrapper .send-button {
+  flex: 0 0 auto;
+  min-width: 40px;
+  padding: 4px 15px;
+}
+
 .input-area .ant-input-group.ant-input-group-compact {
   display: flex;
   width: 100%;
@@ -1681,6 +1743,17 @@ onUnmounted(() => {
 
   .input-area {
     padding: 12px;
+  }
+
+  /* 移动端输入区域保持横向布局，但调整间距 */
+  .chat-input-wrapper {
+    gap: 6px;
+  }
+
+  .chat-input-wrapper .voice-button,
+  .chat-input-wrapper .send-button {
+    min-width: 36px;
+    padding: 4px 12px;
   }
 
   .input-area .ant-input-group.ant-input-group-compact {
