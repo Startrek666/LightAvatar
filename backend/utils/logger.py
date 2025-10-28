@@ -15,7 +15,7 @@ def setup_logger():
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        level="DEBUG",  # 改为 DEBUG 级别以显示更详细的日志
+        level="INFO",  # 控制台使用 INFO 级别，避免刷屏
         colorize=True
     )
     

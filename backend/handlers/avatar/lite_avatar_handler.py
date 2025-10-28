@@ -343,25 +343,46 @@ class LiteAvatarHandler(BaseHandler):
                 if not audio_data:
                     raise ValueError("缺少audio_data参数")
                 
-                # 1. 音频转参数
+                # 1. 音频转参数（带超时保护）
                 logger.info("提取口型参数...")
                 start = time.time()
-                param_res = await self._audio_to_params(audio_data)
-                logger.debug(f"口型参数提取耗时: {time.time() - start:.2f}秒")
+                try:
+                    param_res = await asyncio.wait_for(
+                        self._audio_to_params(audio_data),
+                        timeout=60.0  # 60秒超时
+                    )
+                    logger.debug(f"口型参数提取耗时: {time.time() - start:.2f}秒")
+                except asyncio.TimeoutError:
+                    logger.error("❌ 口型参数提取超时（60秒）")
+                    raise ValueError("口型参数提取超时")
                 
-                # 2. 参数转视频帧
+                # 2. 参数转视频帧（带超时保护）
                 logger.info(f"渲染{len(param_res)}帧...")
                 start = time.time()
-                frames = await self._params_to_frames(param_res)
-                video_duration = len(frames) / self.fps if self.fps else 0
-                logger.info(f"视频帧数: {len(frames)}, 预期时长: {video_duration:.2f}秒")
-                logger.debug(f"帧渲染耗时: {time.time() - start:.2f}秒")
+                try:
+                    frames = await asyncio.wait_for(
+                        self._params_to_frames(param_res),
+                        timeout=120.0  # 120秒超时（渲染可能较慢）
+                    )
+                    video_duration = len(frames) / self.fps if self.fps else 0
+                    logger.info(f"视频帧数: {len(frames)}, 预期时长: {video_duration:.2f}秒")
+                    logger.debug(f"帧渲染耗时: {time.time() - start:.2f}秒")
+                except asyncio.TimeoutError:
+                    logger.error("❌ 视频帧渲染超时（120秒）")
+                    raise ValueError("视频帧渲染超时")
                 
-                # 3. 合成视频
+                # 3. 合成视频（带超时保护）
                 logger.info("合成视频...")
                 start = time.time()
-                video_data = await self._frames_to_video(frames, audio_data)
-                logger.debug(f"视频合成耗时: {time.time() - start:.2f}秒")
+                try:
+                    video_data = await asyncio.wait_for(
+                        self._frames_to_video(frames, audio_data),
+                        timeout=60.0  # 60秒超时
+                    )
+                    logger.debug(f"视频合成耗时: {time.time() - start:.2f}秒")
+                except asyncio.TimeoutError:
+                    logger.error("❌ 视频合成超时（60秒）")
+                    raise ValueError("视频合成超时")
                 
                 logger.info(f"总耗时: {time.time() - start_total:.2f}秒")
                 
@@ -404,27 +425,46 @@ class LiteAvatarHandler(BaseHandler):
             audio_duration = len(audio_array) / sr if sr else 0
             logger.info(f"音频时长: {audio_duration:.2f}秒, 采样率: {sr}")
             
-            # 提取Paraformer特征
+            # 提取Paraformer特征（带超时保护）
             # 向上取整确保视频时长 >= 音频时长
             import math
             frame_cnt = math.ceil(len(audio_array) / 16000 * self.fps)
-            au_data = await asyncio.get_event_loop().run_in_executor(
-                self.executor,
-                self._extract_paraformer_feature,
-                audio_array,
-                frame_cnt
-            )
+            logger.info(f"🎯 开始提取音频特征 (帧数: {frame_cnt})...")
+            try:
+                au_data = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        self.executor,
+                        self._extract_paraformer_feature,
+                        audio_array,
+                        frame_cnt
+                    ),
+                    timeout=30.0  # 30秒超时
+                )
+                logger.info(f"✅ 音频特征提取完成: {au_data.shape}")
+            except asyncio.TimeoutError:
+                logger.error("❌ 音频特征提取超时（30秒）")
+                raise ValueError("音频特征提取超时")
+            
             # 清理特征中的NaN/Inf，避免后续推理异常
             au_data = np.nan_to_num(au_data, nan=0.0, posinf=0.0, neginf=0.0)
             
-            # 预测口型参数
+            # 预测口型参数（带超时保护）
             ph_data = np.zeros((au_data.shape[0], 2))
-            param_res = await asyncio.get_event_loop().run_in_executor(
-                self.executor,
-                self._inference_mouth_params,
-                au_data,
-                ph_data
-            )
+            logger.info(f"🎯 开始推理口型参数...")
+            try:
+                param_res = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        self.executor,
+                        self._inference_mouth_params,
+                        au_data,
+                        ph_data
+                    ),
+                    timeout=30.0  # 30秒超时
+                )
+                logger.info(f"✅ 口型参数推理完成: {len(param_res)} 个参数")
+            except asyncio.TimeoutError:
+                logger.error("❌ 口型参数推理超时（30秒）")
+                raise ValueError("口型参数推理超时")
             
             # FPS转换
             if self.fps != 30:
