@@ -156,7 +156,7 @@
           </div>
           
           <a-input-group compact>
-            <a-input v-model:value="inputText" placeholder="输入消息或按住录音按钮说话..." @pressEnter="sendTextMessage"
+            <a-input v-model:value="inputText" placeholder="输入消息或点击录音按钮说话..." @pressEnter="sendTextMessage"
               :disabled="!isConnected || isProcessing" size="large" />
             <a-button size="large" @click="triggerFileUpload"
               :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" :icon="h(PlusOutlined)"
@@ -167,10 +167,9 @@
               发送
             </a-button>
             <a-button v-if="enableVoiceInput" :type="isRecording ? 'danger' : 'default'" size="large"
-              @mousedown="startRecording" @mouseup="stopRecording" @mouseleave="stopRecording"
-              @touchstart="startRecording" @touchend="stopRecording" :disabled="!isConnected || isProcessing"
+              @click="toggleRecording" :disabled="!isConnected || isProcessing"
               :icon="h(AudioOutlined)">
-              {{ isRecording ? '录音中' : '按住说话' }}
+              {{ isRecording ? '录音中，再次点击停止录音' : '点击录音按钮说话' }}
             </a-button>
           </a-input-group>
           <!-- 隐藏的文件上传输入框 -->
@@ -568,6 +567,21 @@ const stopRecording = () => {
     console.log('⏳ 等待语音识别结果...')
   } else {
     console.log('⚠️ 尝试停止录音但当前未在录音状态')
+  }
+}
+
+// ✅ 点击切换录音状态（开始/停止）
+const toggleRecording = () => {
+  console.log('🎤 toggleRecording 被调用，当前录音状态:', isRecording.value)
+  
+  if (isRecording.value) {
+    // 当前正在录音 -> 停止录音
+    console.log('  → 停止录音')
+    stopRecording()
+  } else {
+    // 当前未录音 -> 开始录音
+    console.log('  → 开始录音')
+    startRecording()
   }
 }
 
