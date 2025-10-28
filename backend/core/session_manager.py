@@ -157,14 +157,16 @@ class Session:
         buffer_size = sum(len(chunk) for chunk in self.audio_buffer)
         logger.debug(f"[音频] Session {self.session_id}: 缓冲区大小: {buffer_size} 字节 ({len(self.audio_buffer)} 块)")
         
+        # ✅ 禁用VAD自动触发，只在用户点击停止录音时才处理
+        # 避免录音还没结束就开始识别
         # Check VAD
-        if self.vad_handler:
-            is_speech = await self.vad_handler.detect(audio_data)
-            logger.debug(f"[VAD] Session {self.session_id}: 语音检测结果: {'检测到语音' if is_speech else '无语音'}")
-            if is_speech and not self.is_processing:
-                logger.info(f"[语音识别] Session {self.session_id}: 开始处理语音...")
-                self.is_processing = True
-                asyncio.create_task(self._process_speech())
+        # if self.vad_handler:
+        #     is_speech = await self.vad_handler.detect(audio_data)
+        #     logger.debug(f"[VAD] Session {self.session_id}: 语音检测结果: {'检测到语音' if is_speech else '无语音'}")
+        #     if is_speech and not self.is_processing:
+        #         logger.info(f"[语音识别] Session {self.session_id}: 开始处理语音...")
+        #         self.is_processing = True
+        #         asyncio.create_task(self._process_speech())
     
     async def finish_audio_recording(self, callback=None):
         """Force process remaining audio when recording ends
@@ -231,46 +233,21 @@ class Session:
             
             logger.info(f"[ASR] Session {self.session_id}: 识别成功，文本: {text}")
             
-            # ✅ 发送识别结果给前端
+            # ✅ 只发送识别结果给前端，不自动调用LLM
+            # 让前端填充到输入框，由用户决定是否发送
             if callback:
                 await callback("asr_result", {
                     "text": text,
                     "success": True
                 })
+                logger.info(f"[ASR] Session {self.session_id}: 已将识别结果发送给前端")
             
-            # Add to conversation history
-            self.conversation_history.append({
-                "role": "user",
-                "content": text,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            # LLM
-            logger.info(f"[LLM] Session {self.session_id}: 开始生成回复...")
-            response = await self.llm_handler.generate_response(
-                text, 
-                self.conversation_history
-            )
-            logger.info(f"[LLM] Session {self.session_id}: 回复生成完成，长度: {len(response)} 字符")
-            
-            # Add response to history
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": response,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            # TTS
-            audio_output = await self.tts_handler.synthesize(response)
-            
-            # Avatar generation
-            video_frames = await self.avatar_handler.generate(
-                audio_output,
-                self.config.get("avatar_template", settings.AVATAR_TEMPLATE)
-            )
-            
-            # Send results back through WebSocket
-            # This will be handled by the WebSocket manager
+            # ✅ 不再自动调用LLM，由用户确认后通过文本消息发送
+            # 以下代码已移除：
+            # - Add to conversation history
+            # - LLM generation
+            # - TTS
+            # - Avatar generation
             
         except Exception as e:
             logger.error(f"Error processing speech in session {self.session_id}: {e}")

@@ -456,19 +456,15 @@ const clearUploadedDoc = () => {
   message.info('已取消文档')
 }
 
-const sendTextMessage = (textToSend?: string) => {
+const sendTextMessage = () => {
   console.log('📤 [sendTextMessage] 开始发送消息')
   console.log('  - inputText:', inputText.value)
-  console.log('  - textToSend:', textToSend)
   console.log('  - isConnected:', isConnected.value)
   console.log('  - isProcessing:', isProcessing.value)
   
-  // 使用传入的文本或输入框的文本
-  const userInput = (textToSend || inputText.value).trim()
-  
-  if (!userInput || !isConnected.value || isProcessing.value) {
+  if (!inputText.value.trim() || !isConnected.value || isProcessing.value) {
     console.warn('⚠️ [sendTextMessage] 发送被阻止:', {
-      isEmpty: !userInput,
+      isEmpty: !inputText.value.trim(),
       notConnected: !isConnected.value,
       isProcessing: isProcessing.value
     })
@@ -480,10 +476,11 @@ const sendTextMessage = (textToSend?: string) => {
     unlockVideoPlayback()
   }
 
+  const userInput = inputText.value.trim()
   let messageToSend = userInput
   
-  // 如果有上传的文档，将文档内容添加到发送的消息中（仅适用于手动输入）
-  if (!textToSend && uploadedDocText.value) {
+  // 如果有上传的文档，将文档内容添加到发送的消息中
+  if (uploadedDocText.value) {
     messageToSend = `${userInput}\n\n[文档内容]\n${uploadedDocText.value}`
     console.log('📄 发送消息包含文档内容，总长度:', messageToSend.length)
     // 清空文档文本和信息，避免重复发送
@@ -491,19 +488,15 @@ const sendTextMessage = (textToSend?: string) => {
     uploadedDocInfo.value = null
   }
   
-  // Clear input immediately (仅手动输入时清空)
-  if (!textToSend) {
-    inputText.value = ''
-  }
+  // Clear input immediately (multiple approaches for reliability)
+  inputText.value = ''
   
-  // Add user message - 只在没有传入textToSend时添加（ASR会自己添加）
-  if (!textToSend) {
-    messages.value.push({
-      role: 'user',
-      content: userInput,
-      timestamp: new Date()
-    })
-  }
+  // Add user message - 只显示用户输入的提示词，不显示文档内容
+  messages.value.push({
+    role: 'user',
+    content: userInput,
+    timestamp: new Date()
+  })
 
   // Prepare assistant message for streaming
   const assistantMessage = {
@@ -524,13 +517,6 @@ const sendTextMessage = (textToSend?: string) => {
   console.log('🚀 [sendTextMessage] 发送数据到服务器:', payload)
   send(payload)
   console.log('✅ [sendTextMessage] 消息已发送')
-
-  // 只在没有传入textToSend时才清空输入框
-  if (!textToSend) {
-    nextTick(() => {
-      inputText.value = ''
-    })
-  }
 
   scrollToBottom()
 }
@@ -701,19 +687,24 @@ const handleWebSocketMessage = (data: any) => {
     message.destroy() // 关闭"正在识别语音..."提示
     
     if (data.data.success && data.data.text) {
-      // 识别成功，显示用户消息
+      // ✅ 识别成功，填充到输入框，不自动发送
       console.log('✅ 识别成功:', data.data.text)
-      message.success('识别成功', 1)
+      message.success(`识别成功：${data.data.text}`, 3)
       
-      messages.value.push({
-        role: 'user',
-        content: data.data.text,
-        timestamp: new Date()
+      // 填充到输入框
+      inputText.value = data.data.text
+      console.log('📝 已填充到输入框，等待用户确认发送')
+      
+      // 结束处理状态
+      isProcessing.value = false
+      
+      // 自动聚焦输入框，方便用户修改或直接发送
+      nextTick(() => {
+        const inputElement = document.querySelector('.chat-input input') as HTMLInputElement
+        if (inputElement) {
+          inputElement.focus()
+        }
       })
-      
-      // 自动发送识别的文本给LLM
-      console.log('📤 自动发送识别结果给LLM')
-      sendTextMessage(data.data.text)
     } else {
       // 识别失败
       console.warn('⚠️ 识别失败:', data.data.message || '未检测到语音')
