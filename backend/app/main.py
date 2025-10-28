@@ -205,7 +205,18 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
             elif message_type == "audio_end":
                 # Handle recording end signal
                 logger.info(f"[WebSocket] Session {session_id}: 收到录音结束信号")
-                await session.finish_audio_recording()
+                
+                # ✅ 定义callback来发送ASR结果
+                async def asr_callback(msg_type: str, msg_data: dict):
+                    """Callback to send ASR results"""
+                    if msg_type == "asr_result":
+                        await websocket_manager.send_json(session_id, {
+                            "type": "asr_result",
+                            "data": msg_data
+                        })
+                        logger.info(f"[WebSocket] Session {session_id}: 已发送ASR结果: {msg_data}")
+                
+                await session.finish_audio_recording(callback=asr_callback)
                 
             elif message_type == "text":
                 # Check if streaming is enabled

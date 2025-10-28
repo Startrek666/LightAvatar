@@ -456,15 +456,19 @@ const clearUploadedDoc = () => {
   message.info('已取消文档')
 }
 
-const sendTextMessage = () => {
+const sendTextMessage = (textToSend?: string) => {
   console.log('📤 [sendTextMessage] 开始发送消息')
   console.log('  - inputText:', inputText.value)
+  console.log('  - textToSend:', textToSend)
   console.log('  - isConnected:', isConnected.value)
   console.log('  - isProcessing:', isProcessing.value)
   
-  if (!inputText.value.trim() || !isConnected.value || isProcessing.value) {
+  // 使用传入的文本或输入框的文本
+  const userInput = (textToSend || inputText.value).trim()
+  
+  if (!userInput || !isConnected.value || isProcessing.value) {
     console.warn('⚠️ [sendTextMessage] 发送被阻止:', {
-      isEmpty: !inputText.value.trim(),
+      isEmpty: !userInput,
       notConnected: !isConnected.value,
       isProcessing: isProcessing.value
     })
@@ -476,11 +480,10 @@ const sendTextMessage = () => {
     unlockVideoPlayback()
   }
 
-  const userInput = inputText.value.trim()
   let messageToSend = userInput
   
-  // 如果有上传的文档，将文档内容添加到发送的消息中
-  if (uploadedDocText.value) {
+  // 如果有上传的文档，将文档内容添加到发送的消息中（仅适用于手动输入）
+  if (!textToSend && uploadedDocText.value) {
     messageToSend = `${userInput}\n\n[文档内容]\n${uploadedDocText.value}`
     console.log('📄 发送消息包含文档内容，总长度:', messageToSend.length)
     // 清空文档文本和信息，避免重复发送
@@ -488,15 +491,19 @@ const sendTextMessage = () => {
     uploadedDocInfo.value = null
   }
   
-  // Clear input immediately (multiple approaches for reliability)
-  inputText.value = ''
+  // Clear input immediately (仅手动输入时清空)
+  if (!textToSend) {
+    inputText.value = ''
+  }
   
-  // Add user message - 只显示用户输入的提示词，不显示文档内容
-  messages.value.push({
-    role: 'user',
-    content: userInput,
-    timestamp: new Date()
-  })
+  // Add user message - 只在没有传入textToSend时添加（ASR会自己添加）
+  if (!textToSend) {
+    messages.value.push({
+      role: 'user',
+      content: userInput,
+      timestamp: new Date()
+    })
+  }
 
   // Prepare assistant message for streaming
   const assistantMessage = {
@@ -518,10 +525,12 @@ const sendTextMessage = () => {
   send(payload)
   console.log('✅ [sendTextMessage] 消息已发送')
 
-  // Ensure input is cleared in next tick
-  nextTick(() => {
-    inputText.value = ''
-  })
+  // 只在没有传入textToSend时才清空输入框
+  if (!textToSend) {
+    nextTick(() => {
+      inputText.value = ''
+    })
+  }
 
   scrollToBottom()
 }
@@ -684,6 +693,32 @@ const handleWebSocketMessage = (data: any) => {
       setTimeout(() => {
         searchProgressVisible.value = false
       }, 500)
+    }
+  }
+  else if (data.type === 'asr_result') {
+    // ✅ ASR语音识别结果
+    console.log('🎤 [handleWebSocketMessage] 收到ASR识别结果:', data.data)
+    message.destroy() // 关闭"正在识别语音..."提示
+    
+    if (data.data.success && data.data.text) {
+      // 识别成功，显示用户消息
+      console.log('✅ 识别成功:', data.data.text)
+      message.success('识别成功', 1)
+      
+      messages.value.push({
+        role: 'user',
+        content: data.data.text,
+        timestamp: new Date()
+      })
+      
+      // 自动发送识别的文本给LLM
+      console.log('📤 自动发送识别结果给LLM')
+      sendTextMessage(data.data.text)
+    } else {
+      // 识别失败
+      console.warn('⚠️ 识别失败:', data.data.message || '未检测到语音')
+      message.warning(data.data.message || '未检测到语音内容，请重试', 3)
+      isProcessing.value = false
     }
   }
   else if (data.type === 'text_chunk') {

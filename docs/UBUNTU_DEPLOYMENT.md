@@ -271,8 +271,8 @@ cat > download_whisper.py << 'EOF'
 from faster_whisper import WhisperModel
 
 # 下载small模型（推荐）
-print("正在下载Whisper small模型...")
-model = WhisperModel("small", device="cpu", compute_type="int8", download_root="./models/whisper")
+print("正在下载Whisper base模型...")
+model = WhisperModel("base", device="cpu", compute_type="int8", download_root="./models/whisper")
 print("下载完成！")
 EOF
 

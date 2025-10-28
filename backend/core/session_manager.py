@@ -166,8 +166,12 @@ class Session:
                 self.is_processing = True
                 asyncio.create_task(self._process_speech())
     
-    async def finish_audio_recording(self):
-        """Force process remaining audio when recording ends"""
+    async def finish_audio_recording(self, callback=None):
+        """Force process remaining audio when recording ends
+        
+        Args:
+            callback: Optional callback function to send results
+        """
         self.update_activity()
         
         buffer_size = sum(len(chunk) for chunk in self.audio_buffer)
@@ -177,11 +181,18 @@ class Session:
         if self.audio_buffer and not self.is_processing:
             logger.info(f"[语音识别] Session {self.session_id}: 强制处理缓冲的音频...")
             self.is_processing = True
-            await self._process_speech()
+            await self._process_speech(callback=callback)
         elif self.is_processing:
             logger.info(f"[语音识别] Session {self.session_id}: 已在处理中，跳过")
         else:
             logger.warning(f"[录音结束] Session {self.session_id}: 缓冲区为空，无音频可处理")
+            # ✅ 即使缓冲区为空也要通知前端
+            if callback:
+                await callback("asr_result", {
+                    "text": "",
+                    "success": False,
+                    "message": "未收到音频数据"
+                })
         
         # 重置VAD状态
         if self.vad_handler:
@@ -190,8 +201,12 @@ class Session:
         
         logger.info(f"[录音结束] Session {self.session_id}: 录音处理完成")
     
-    async def _process_speech(self):
-        """Process accumulated speech"""
+    async def _process_speech(self, callback=None):
+        """Process accumulated speech
+        
+        Args:
+            callback: Optional callback function to send results
+        """
         try:
             # Combine audio buffer
             audio = b''.join(self.audio_buffer)
@@ -200,12 +215,28 @@ class Session:
             
             # ASR
             text = await self.asr_handler.transcribe(audio)
+            
             if not text:
                 logger.warning(f"[ASR] Session {self.session_id}: 识别结果为空")
                 self.is_processing = False
+                
+                # ✅ 关键修复：即使识别为空也要通知前端
+                if callback:
+                    await callback("asr_result", {
+                        "text": "",
+                        "success": False,
+                        "message": "未检测到语音内容，请重试"
+                    })
                 return
             
             logger.info(f"[ASR] Session {self.session_id}: 识别成功，文本: {text}")
+            
+            # ✅ 发送识别结果给前端
+            if callback:
+                await callback("asr_result", {
+                    "text": text,
+                    "success": True
+                })
             
             # Add to conversation history
             self.conversation_history.append({

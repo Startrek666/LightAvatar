@@ -79,13 +79,22 @@ class WhisperHandler(BaseHandler):
                 audio_data = audio_data[:-1]
             
             if len(audio_data) == 0:
+                logger.warning(f"[ASR] 音频数据为空")
                 return ""
+            
+            logger.info(f"[ASR] 开始识别，音频字节数: {len(audio_data)}")
             
             # Convert bytes to numpy array
             audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
             audio_array = audio_array / 32768.0  # Normalize to [-1, 1]
             
-            # Transcribe
+            logger.info(f"[ASR] 音频数组长度: {len(audio_array)}, 时长: {len(audio_array) / 16000:.2f}秒")
+            
+            # 计算音频音量（RMS）
+            rms = np.sqrt(np.mean(audio_array ** 2))
+            logger.info(f"[ASR] 音频RMS音量: {rms:.4f}")
+            
+            # 降低VAD阈值，提高语音检测灵敏度
             segments, info = self.model.transcribe(
                 audio_array,
                 language=self.language,
@@ -94,17 +103,27 @@ class WhisperHandler(BaseHandler):
                 temperature=self.temperature,
                 vad_filter=True,
                 vad_parameters={
-                    "threshold": 0.5,
-                    "min_speech_duration_ms": 250,
+                    "threshold": 0.3,  # 降低阈值从0.5到0.3
+                    "min_speech_duration_ms": 200,  # 降低最小语音时长
                     "min_silence_duration_ms": 500
                 }
             )
             
+            logger.info(f"[ASR] Whisper检测到的语言: {info.language}, 概率: {info.language_probability:.2f}")
+            
             # Combine segments
-            text = " ".join([segment.text.strip() for segment in segments])
+            segment_list = list(segments)
+            logger.info(f"[ASR] 检测到 {len(segment_list)} 个语音段")
+            
+            for i, segment in enumerate(segment_list):
+                logger.info(f"[ASR] 段 {i+1}: [{segment.start:.2f}s - {segment.end:.2f}s] {segment.text}")
+            
+            text = " ".join([segment.text.strip() for segment in segment_list])
             
             if text:
-                logger.info(f"Transcribed: {text}")
+                logger.info(f"[ASR] ✅ 识别成功: {text}")
+            else:
+                logger.warning(f"[ASR] ❌ 识别结果为空（音频有效但未检测到语音）")
             
             return text
             
