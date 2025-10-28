@@ -155,40 +155,62 @@
             <CloseOutlined class="doc-close" @click="clearUploadedDoc" />
           </div>
           
-          <div class="chat-input-wrapper">
-            <!-- 左侧：语音按钮（仅图标） -->
-            <a-button v-if="enableVoiceInput" 
-              :type="isRecording ? 'danger' : 'default'" 
-              size="large"
-              class="voice-button"
-              @click="toggleRecording" 
-              :disabled="!isConnected || isProcessing"
-              :icon="h(AudioOutlined)"
-              :title="isRecording ? '点击停止录音' : '点击开始录音'" />
-            
-            <!-- 中间：输入框 + 文档上传按钮 -->
-            <a-input-group compact class="input-group">
+          <div class="chat-input-container">
+            <!-- 第一行：语音按钮 + 输入框 + 上传按钮 -->
+            <div class="chat-input-wrapper">
+              <!-- 左侧：语音按钮（仅图标） -->
+              <a-button v-if="enableVoiceInput" 
+                :type="isRecording ? 'danger' : 'default'" 
+                size="large"
+                class="voice-button"
+                @click="toggleRecording" 
+                :disabled="!isConnected || isProcessing"
+                :icon="h(AudioOutlined)"
+                :title="isRecording ? '点击停止录音' : '点击开始录音'" />
+              
+              <!-- 中间：输入框 -->
               <a-input v-model:value="inputText" 
                 placeholder="输入消息或点击录音按钮说话..." 
                 @pressEnter="sendTextMessage"
                 :disabled="!isConnected || isProcessing" 
                 size="large" 
                 class="message-input" />
+              
+              <!-- 右侧：上传按钮（桌面端）+ 发送按钮（桌面端） -->
               <a-button size="large" 
+                class="upload-button desktop-only"
                 @click="triggerFileUpload"
                 :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" 
                 :icon="h(PlusOutlined)"
                 title="上传文档 (PDF/DOCX/PPTX, 最大30MB)" />
-            </a-input-group>
+              
+              <a-button type="primary" 
+                size="large" 
+                class="send-button desktop-only"
+                @click="sendTextMessage"
+                :disabled="!inputText || !isConnected || isProcessing" 
+                :icon="h(SendOutlined)"
+                title="发送消息" />
+              
+              <!-- 移动端右侧：上传按钮 -->
+              <a-button size="large" 
+                class="upload-button mobile-only"
+                @click="triggerFileUpload"
+                :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" 
+                :icon="h(PlusOutlined)"
+                title="上传文档 (PDF/DOCX/PPTX, 最大30MB)" />
+            </div>
             
-            <!-- 右侧：发送按钮（仅图标） -->
+            <!-- 第二行：发送按钮（仅移动端显示） -->
             <a-button type="primary" 
               size="large" 
-              class="send-button"
+              block
+              class="send-button mobile-only mobile-send-button"
               @click="sendTextMessage"
               :disabled="!inputText || !isConnected || isProcessing" 
-              :icon="h(SendOutlined)"
-              title="发送消息" />
+              :icon="h(SendOutlined)">
+              发送消息
+            </a-button>
           </div>
           <!-- 隐藏的文件上传输入框 -->
           <input ref="fileInput" type="file" accept=".pdf,.docx,.pptx" style="display: none" @change="handleFileUpload" />
@@ -1539,7 +1561,15 @@ onUnmounted(() => {
   background: rgba(255, 77, 79, 0.1);
 }
 
-/* 聊天输入区域布局 */
+/* 聊天输入容器 */
+.chat-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+/* 聊天输入区域布局（第一行） */
 .chat-input-wrapper {
   display: flex;
   align-items: stretch;
@@ -1565,15 +1595,16 @@ onUnmounted(() => {
   border-color: #ff7875;
 }
 
-/* 中间输入框组 */
-.chat-input-wrapper .input-group {
+/* 中间输入框 */
+.chat-input-wrapper .message-input {
   flex: 1 1 auto;
-  display: flex;
-  gap: 8px;
 }
 
-.chat-input-wrapper .input-group .message-input {
-  flex: 1 1 auto;
+/* 上传按钮 */
+.chat-input-wrapper .upload-button {
+  flex: 0 0 auto;
+  min-width: 40px;
+  padding: 4px 15px;
 }
 
 /* 发送按钮（右侧，仅图标） */
@@ -1581,6 +1612,15 @@ onUnmounted(() => {
   flex: 0 0 auto;
   min-width: 40px;
   padding: 4px 15px;
+}
+
+/* 桌面端默认显示，移动端隐藏 */
+.mobile-only {
+  display: none !important;
+}
+
+.desktop-only {
+  display: inline-flex !important;
 }
 
 .input-area .ant-input-group.ant-input-group-compact {
@@ -1745,13 +1785,29 @@ onUnmounted(() => {
     padding: 12px;
   }
 
+  /* 移动端：隐藏桌面端按钮，显示移动端按钮 */
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: inline-flex !important;
+  }
+
+  .mobile-send-button {
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+  }
+
   /* 移动端输入区域保持横向布局，但调整间距 */
   .chat-input-wrapper {
     gap: 6px;
   }
 
   .chat-input-wrapper .voice-button,
-  .chat-input-wrapper .send-button {
+  .chat-input-wrapper .upload-button {
     min-width: 36px;
     padding: 4px 12px;
   }
