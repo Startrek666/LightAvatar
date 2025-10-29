@@ -525,9 +525,14 @@ const sendTextMessage = () => {
   console.log('  - isConnected:', isConnected.value)
   console.log('  - isProcessing:', isProcessing.value)
   
-  if (!inputText.value.trim() || !isConnected.value || isProcessing.value) {
+  // 保存用户输入并立即清空输入框（无论是否发送成功）
+  const userInput = inputText.value.trim()
+  inputText.value = ''
+  
+  // 检查发送条件
+  if (!userInput || !isConnected.value || isProcessing.value) {
     console.warn('⚠️ [sendTextMessage] 发送被阻止:', {
-      isEmpty: !inputText.value.trim(),
+      isEmpty: !userInput,
       notConnected: !isConnected.value,
       isProcessing: isProcessing.value
     })
@@ -539,7 +544,6 @@ const sendTextMessage = () => {
     unlockVideoPlayback()
   }
 
-  const userInput = inputText.value.trim()
   let messageToSend = userInput
   
   // 如果有上传的文档，将文档内容添加到发送的消息中
@@ -550,9 +554,6 @@ const sendTextMessage = () => {
     uploadedDocText.value = ''
     uploadedDocInfo.value = null
   }
-  
-  // Clear input immediately (multiple approaches for reliability)
-  inputText.value = ''
   
   // Add user message - 只显示用户输入的提示词，不显示文档内容
   messages.value.push({
