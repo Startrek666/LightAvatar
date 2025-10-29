@@ -385,10 +385,6 @@ const settings = ref({
 })
 
 // Methods
-const goToProfile = () => {
-  router.push('/profile')
-}
-
 const showSettings = () => {
   settingsVisible.value = true
 }
