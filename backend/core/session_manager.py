@@ -20,7 +20,7 @@ from backend.handlers.avatar.lite_avatar_handler import LiteAvatarHandler
 from backend.handlers.search.web_search_handler import WebSearchHandler
 from backend.app.config import settings
 from backend.app.ws_manager import WebSocketManager
-from backend.utils.text_utils import clean_markdown_for_tts
+from backend.utils.text_utils import clean_markdown_for_tts, has_speakable_content
 
 
 @dataclass
@@ -522,12 +522,12 @@ class Session:
                     if clean_sentence:
                         # 清理Markdown格式和emoji（去除**、*、😊等符号）
                         clean_sentence = clean_markdown_for_tts(clean_sentence)
-                        # 清理后再次检查是否为空（例如纯emoji句子清理后会变成空字符串）
-                        if clean_sentence.strip():
+                        # 清理后再次检查是否为空，并且检查是否包含可发音内容
+                        if clean_sentence.strip() and has_speakable_content(clean_sentence):
                             await sentence_queue.put(clean_sentence)
                             logger.info(f"[实时] 句子入队: {clean_sentence[:30]}...")
                         else:
-                            logger.info(f"[实时] 跳过空句子（清理后为空）: 原文='{sentence_buffer[:30]}...'")
+                            logger.info(f"[实时] 跳过空句子或纯标点（清理后无可发音内容）: 原文='{sentence_buffer[:30]}...'")
                     sentence_buffer = ""
             
             # Collect any remaining text
@@ -537,12 +537,12 @@ class Session:
             if sentence_buffer.strip():
                 clean_sentence = clean_markdown_for_tts(sentence_buffer.strip())
                 logger.info(f"[实时] 清理后的剩余文字: '{clean_sentence[:100]}...'")
-                # 清理后再次检查是否为空
-                if clean_sentence.strip():
+                # 清理后再次检查是否为空，并且检查是否包含可发音内容
+                if clean_sentence.strip() and has_speakable_content(clean_sentence):
                     await sentence_queue.put(clean_sentence)
                     logger.info(f"[实时] 剩余文字入队: {clean_sentence[:30]}...")
                 else:
-                    logger.info(f"[实时] 跳过空句子（清理后为空）: 原文='{sentence_buffer[:50]}...'")
+                    logger.info(f"[实时] 跳过空句子或纯标点（清理后无可发音内容）: 原文='{sentence_buffer[:50]}...'")
             
             # 发送结束信号
             await sentence_queue.put(None)

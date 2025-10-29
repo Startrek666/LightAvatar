@@ -91,6 +91,30 @@ def clean_markdown_for_tts(text: str) -> str:
     return text.strip()
 
 
+def has_speakable_content(text: str) -> bool:
+    """
+    检查文本是否包含可发音的内容
+    
+    过滤掉只包含标点符号、空白字符的文本，这些无法被TTS处理。
+    
+    Args:
+        text: 待检查的文本
+        
+    Returns:
+        True: 包含可发音内容
+        False: 只包含标点符号/空白字符
+    """
+    if not text:
+        return False
+    
+    # 移除所有空白字符和常见标点符号
+    # 保留中文、英文、数字等可发音字符
+    speakable = re.sub(r'[\s\.,;:!?。，、；：！？…\.]+', '', text)
+    
+    # 如果清理后还有内容，说明包含可发音字符
+    return len(speakable) > 0
+
+
 def split_long_text(text: str, max_length: int = 200) -> list:
     """
     将长文本分割成多个片段，便于TTS处理
