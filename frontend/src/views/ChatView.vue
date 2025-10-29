@@ -3,21 +3,39 @@
     <a-layout>
       <a-layout-header class="header">
         <div class="header-content">
-          <h1 class="header-title">Avatar Chat</h1>
+          <h1 class="header-title">{{ t('header.title') }}</h1>
           <div class="header-actions">
-            <!-- 语音输入开关 -->
-            <div class="header-action-item">
-              <div class="switch-wrapper">
-                <a-switch v-model:checked="enableVoiceInput" checked-children="开" un-checked-children="关" />
-                <span class="action-label">语音输入</span>
-              </div>
+            <!-- 语言选择 -->
+            <div class="header-action-item language-selector">
+              <a-dropdown :trigger="['click']">
+                <a-button type="text" size="small" class="language-button">
+                  <GlobalOutlined />
+                  <span class="language-label">{{ locale === 'zh' ? '中文' : 'EN' }}</span>
+                </a-button>
+                <template #overlay>
+                  <a-menu @click="handleLanguageChange">
+                    <a-menu-item key="zh">
+                      <div class="language-menu-item">
+                        <span>简体中文</span>
+                        <span v-if="locale === 'zh'" class="language-check">✓</span>
+                      </div>
+                    </a-menu-item>
+                    <a-menu-item key="en">
+                      <div class="language-menu-item">
+                        <span>English</span>
+                        <span v-if="locale === 'en'" class="language-check">✓</span>
+                      </div>
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
             </div>
 
             <!-- 对话记录开关 -->
             <div class="header-action-item">
               <div class="switch-wrapper">
                 <a-switch v-model:checked="showChatHistory" checked-children="显" un-checked-children="隐" />
-                <span class="action-label">对话记录</span>
+                <span class="action-label">{{ t('header.conversationHistory') }}</span>
               </div>
             </div>
 
@@ -25,7 +43,7 @@
             <div class="header-action-item">
               <div class="switch-wrapper">
                 <a-switch v-model:checked="enableWebSearch" checked-children="开" un-checked-children="关" />
-                <span class="action-label">联网搜索</span>
+                <span class="action-label">{{ t('header.webSearch') }}</span>
               </div>
             </div>
 
@@ -37,7 +55,7 @@
                   <span class="node-name">
                     <span class="node-name-full">{{ currentNode.displayName }}</span>
                     <span class="node-name-short">{{ currentNode.shortName }}</span>
-                    <span v-if="isAutoNode" class="auto-badge">自动</span>
+                    <span v-if="isAutoNode" class="auto-badge">{{ t('header.auto') }}</span>
                   </span>
                 </a-button>
                 <template #overlay>
@@ -50,7 +68,7 @@
                         <span class="node-menu-icon">{{ node.icon }}</span>
                         <div class="node-menu-info">
                           <div class="node-menu-name">{{ node.displayName }}</div>
-                          <div class="node-menu-desc">{{ node.description }}</div>
+                          <div class="node-menu-desc">{{ t(`serverNode.${node.id}`) }}</div>
                         </div>
                         <span v-if="node.id === currentNode.id" class="node-check">✓</span>
                       </div>
@@ -60,8 +78,8 @@
                       <div class="node-menu-item">
                         <span class="node-menu-icon">🌐</span>
                         <div class="node-menu-info">
-                          <div class="node-menu-name">自动选择</div>
-                          <div class="node-menu-desc">根据您的位置自动选择最优节点</div>
+                          <div class="node-menu-name">{{ t('serverNode.selectNode') }}</div>
+                          <div class="node-menu-desc">{{ t('serverNode.auto') }}</div>
                         </div>
                         <span v-if="isAutoNode" class="node-check">✓</span>
                       </div>
@@ -71,14 +89,11 @@
               </a-dropdown>
             </div>
 
-            <a-tooltip title="个人中心">
-              <a-button type="text" size="small" @click="goToProfile" :icon="h(UserOutlined)" />
-            </a-tooltip>
-            <a-tooltip title="设置">
+            <a-tooltip :title="t('header.settings')">
               <a-button type="text" size="small" @click="showSettings" :icon="h(SettingOutlined)" />
             </a-tooltip>
             <a-badge :count="isConnected ? 0 : 1" :dot="true">
-              <a-tooltip :title="isConnected ? '已连接' : '未连接'">
+              <a-tooltip :title="isConnected ? t('chat.connected') : t('chat.disconnected')">
                 <a-button type="text" size="small"
                   :icon="h(isConnected ? WifiOutlined : DisconnectOutlined)" />
               </a-tooltip>
@@ -91,14 +106,14 @@
         <!-- 开始对话按钮 -->
         <div v-if="!isReady" class="start-dialog-overlay">
           <div class="start-dialog-content">
-            <h2>Lemomate数字人助手</h2>
-            <p>点击下方按钮开始对话</p>
+            <h2>{{ t('header.title') }}</h2>
+            <p>{{ t('chat.startDialogHint') }}</p>
             <a-button 
               type="primary" 
               size="large" 
               :loading="isInitializing"
               @click="startDialog">
-              {{ isInitializing ? '准备中...' : '开始对话' }}
+              {{ isInitializing ? t('common.loading') : t('chat.startDialog') }}
             </a-button>
           </div>
         </div>
@@ -113,7 +128,7 @@
               loop playsinline />
             <!-- 只在无视频播放且正在处理时显示蒙层 -->
             <div v-if="showProcessingIndicator" class="processing-indicator">
-              <a-spin size="large" tip="处理中..." />
+              <a-spin size="large" :tip="t('search.processing')" />
             </div>
           </div>
 
@@ -170,7 +185,7 @@
               
               <!-- 中间：输入框 -->
               <a-input v-model:value="inputText" 
-                placeholder="输入消息或点击录音按钮说话..." 
+                :placeholder="t('chat.inputPlaceholder')" 
                 @pressEnter="sendTextMessage"
                 :disabled="!isConnected || isProcessing" 
                 size="large" 
@@ -182,7 +197,7 @@
                 @click="triggerFileUpload"
                 :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" 
                 :icon="h(PlusOutlined)"
-                title="上传文档 (PDF/DOCX/PPTX, 最大30MB)" />
+                :title="t('chat.uploadDocHint')" />
               
               <a-button type="primary" 
                 size="large" 
@@ -190,7 +205,7 @@
                 @click="sendTextMessage"
                 :disabled="!inputText || !isConnected || isProcessing" 
                 :icon="h(SendOutlined)"
-                title="发送消息" />
+                :title="t('chat.sendMessage')" />
               
               <!-- 移动端右侧：上传按钮 -->
               <a-button size="large" 
@@ -198,7 +213,7 @@
                 @click="triggerFileUpload"
                 :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" 
                 :icon="h(PlusOutlined)"
-                title="上传文档 (PDF/DOCX/PPTX, 最大30MB)" />
+                :title="t('chat.uploadDocHint')" />
             </div>
             
             <!-- 第二行：发送按钮（仅移动端显示） -->
@@ -209,7 +224,7 @@
               @click="sendTextMessage"
               :disabled="!inputText || !isConnected || isProcessing" 
               :icon="h(SendOutlined)">
-              发送消息
+              {{ t('chat.sendMessage') }}
             </a-button>
           </div>
           <!-- 隐藏的文件上传输入框 -->
@@ -221,7 +236,7 @@
     <!-- Search Progress Modal -->
     <a-modal 
       v-model:open="searchProgressVisible" 
-      title="联网搜索中" 
+      :title="t('search.title')" 
       :footer="null"
       :closable="false"
       :maskClosable="false"
@@ -239,27 +254,27 @@
     </a-modal>
 
     <!-- Settings Modal -->
-    <a-modal v-model:open="settingsVisible" title="设置" width="600px" @ok="saveSettings">
+    <a-modal v-model:open="settingsVisible" :title="t('settings.title')" width="600px" @ok="saveSettings">
       <a-form :model="settings" layout="vertical">
-        <a-form-item label="LLM 大模型">
+        <a-form-item :label="t('settings.llmModel')">
           <a-select v-model:value="settings.llm.model">
-            <a-select-option value="qwen">Qwen 2.5B（通用对话）</a-select-option>
-            <a-select-option value="gemma">Gemma 3B（更智能）</a-select-option>
+            <a-select-option value="qwen">{{ t('models.qwen') }}</a-select-option>
+            <a-select-option value="gemma">{{ t('models.gemma') }}</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="TTS 语音">
+        <a-form-item :label="t('settings.ttsVoice')">
           <a-select v-model:value="settings.tts.voice">
-            <a-select-option value="zh-CN-XiaoxiaoNeural">晓晓（女）</a-select-option>
-            <a-select-option value="zh-CN-YunxiNeural">云希（男）</a-select-option>
-            <a-select-option value="zh-CN-YunjianNeural">云健（男）</a-select-option>
-            <a-select-option value="zh-CN-XiaoyiNeural">晓伊（女）</a-select-option>
+            <a-select-option value="zh-CN-XiaoxiaoNeural">{{ t('voices.xiaoxiao') }}</a-select-option>
+            <a-select-option value="zh-CN-YunxiNeural">{{ t('voices.yunxi') }}</a-select-option>
+            <a-select-option value="zh-CN-YunjianNeural">{{ t('voices.yunjian') }}</a-select-option>
+            <a-select-option value="zh-CN-XiaoyiNeural">{{ t('voices.xiaoyi') }}</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="数字人模板">
+        <a-form-item :label="t('settings.avatarTemplate')">
           <a-select v-model:value="settings.avatar.template">
-            <a-select-option value="default.mp4">默认</a-select-option>
-            <a-select-option value="female.mp4">女性形象</a-select-option>
-            <a-select-option value="male.mp4">男性形象</a-select-option>
+            <a-select-option value="default.mp4">{{ t('avatars.default') }}</a-select-option>
+            <a-select-option value="female.mp4">{{ t('avatars.default') }}</a-select-option>
+            <a-select-option value="male.mp4">{{ t('avatars.male') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-form>
@@ -270,6 +285,7 @@
 <script setup lang="ts">
 import { ref, h, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
   SettingOutlined,
@@ -281,7 +297,8 @@ import {
   AudioOutlined,
   PlusOutlined,
   FileTextOutlined,
-  CloseOutlined
+  CloseOutlined,
+  GlobalOutlined
 } from '@ant-design/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
@@ -298,6 +315,7 @@ import {
 
 // const chatStore = useChatStore()
 const router = useRouter()
+const { t, locale } = useI18n()
 const { connect, disconnect, send, isConnected, shouldReconnect } = useWebSocket()
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
 const { parseDocument, isUploading: isUploadingDoc } = useDocParser()
@@ -375,26 +393,33 @@ const showSettings = () => {
   settingsVisible.value = true
 }
 
+// 处理语言切换
+const handleLanguageChange = ({ key }: { key: string }) => {
+  locale.value = key
+  localStorage.setItem('language', key)
+  message.success(t('common.success'))
+}
+
 // 处理节点切换
 const handleNodeChange = ({ key }: { key: string }) => {
   if (key === 'auto') {
     // 清除手动选择，使用自动检测
     clearSelectedNode()
     currentNode.value = getCurrentNode()
-    message.success(`已切换到自动选择节点: ${currentNode.value.displayName}`)
+    message.success(`${t('serverNode.auto')}: ${currentNode.value.displayName}`)
   } else {
     // 手动选择节点
     const selectedNode = availableNodes.value.find(node => node.id === key)
     if (selectedNode) {
       saveSelectedNode(key)
       currentNode.value = selectedNode
-      message.success(`已切换到 ${selectedNode.displayName}`)
+      message.success(selectedNode.displayName)
     }
   }
   
   // 显示重新连接提示
   if (isConnected.value) {
-    message.info('节点已切换，请刷新页面以应用新节点', 3)
+    message.info(t('chat.nodeChanged'), 3)
     // 可选：自动刷新页面
     setTimeout(() => {
       window.location.reload()
@@ -411,7 +436,7 @@ const saveSettings = async () => {
     })
 
     if (response.ok) {
-      message.success('设置已保存')
+      message.success(t('common.success'))
       settingsVisible.value = false
 
       // Send config update through WebSocket
@@ -422,10 +447,10 @@ const saveSettings = async () => {
         })
       }
     } else {
-      message.error('保存设置失败')
+      message.error(t('common.error'))
     }
   } catch (error) {
-    message.error('保存设置出错')
+    message.error(t('common.error'))
   }
 }
 
@@ -492,7 +517,7 @@ const handleFileUpload = async (event: Event) => {
 const clearUploadedDoc = () => {
   uploadedDocText.value = ''
   uploadedDocInfo.value = null
-  message.info('已取消文档')
+  message.info(t('chat.cancelDoc'))
 }
 
 const sendTextMessage = () => {
@@ -571,7 +596,7 @@ const startRecording = async () => {
   }
 
   console.log('开始录音...')
-  message.info('开始录音，请说话...', 1)
+  message.info(t('chat.recordingStarted'), 1)
 
   try {
     let chunkCount = 0
@@ -588,7 +613,7 @@ const startRecording = async () => {
     console.log('✅ 录音器启动成功')
   } catch (error) {
     console.error('❌ 录音启动失败:', error)
-    message.error('无法访问麦克风')
+    message.error(t('chat.micError'))
   }
 }
 
@@ -602,7 +627,7 @@ const stopRecording = () => {
       type: 'audio_end'
     })
     
-    message.loading('正在识别语音...', 0)
+    message.loading(t('chat.recognizing'), 0)
     isProcessing.value = true
     console.log('⏳ 等待语音识别结果...')
   } else {
@@ -1198,6 +1223,40 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+}
+
+/* 语言选择器样式 */
+.language-selector .language-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.language-selector .language-button:hover {
+  background-color: rgba(24, 144, 255, 0.1);
+}
+
+.language-selector .language-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+}
+
+.language-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  min-width: 150px;
+}
+
+.language-menu-item .language-check {
+  color: #1890ff;
+  font-weight: bold;
 }
 
 /* 服务器节点选择器样式 */

@@ -22,6 +22,7 @@ from backend.app.integration_api import router as integration_router
 from backend.core.session_manager import SessionManager
 from backend.core.health_monitor import HealthMonitor
 from backend.utils.logger import setup_logger
+from backend.utils.process_monitor import start_process_monitor
 
 # Setup logging
 setup_logger()
@@ -56,6 +57,10 @@ async def lifespan(app: FastAPI):
     
     # Start health monitor
     health_monitor_task = asyncio.create_task(health_monitor.start())
+    
+    # Start process monitor (后台任务，监控FFmpeg进程)
+    process_monitor_task = asyncio.create_task(start_process_monitor())
+    logger.info("Process monitor started")
     
     # Start periodic cleanup
     cleanup_task = asyncio.create_task(session_manager.periodic_cleanup())
