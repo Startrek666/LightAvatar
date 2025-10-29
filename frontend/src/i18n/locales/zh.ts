@@ -68,6 +68,8 @@ export default {
   },
   settings: {
     title: '设置',
+    profile: '个人中心',
+    profileHint: '查看和管理个人信息',
     llmModel: 'LLM 模型',
     llmModelHint: '选择大语言模型',
     ttsVoice: 'TTS 语音',

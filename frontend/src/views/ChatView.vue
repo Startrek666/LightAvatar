@@ -256,6 +256,13 @@
     <!-- Settings Modal -->
     <a-modal v-model:open="settingsVisible" :title="t('settings.title')" width="600px" @ok="saveSettings">
       <a-form :model="settings" layout="vertical">
+        <a-form-item :label="t('settings.profile')" :help="t('settings.profileHint')">
+          <a-button type="primary" block @click="goToProfile">
+            <UserOutlined />
+            {{ t('settings.profile') }}
+          </a-button>
+        </a-form-item>
+        <a-divider />
         <a-form-item :label="t('settings.llmModel')">
           <a-select v-model:value="settings.llm.model">
             <a-select-option value="qwen">{{ t('models.qwen') }}</a-select-option>
@@ -284,6 +291,7 @@
 
 <script setup lang="ts">
 import { ref, h, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
@@ -313,6 +321,7 @@ import {
 // import { useChatStore } from '@/store/chat' // 暂未使用，保留以备将来功能扩展
 
 // const chatStore = useChatStore()
+const router = useRouter()
 const { t, locale } = useI18n()
 const { connect, disconnect, send, isConnected, shouldReconnect } = useWebSocket()
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
@@ -385,6 +394,10 @@ const settings = ref({
 // Methods
 const showSettings = () => {
   settingsVisible.value = true
+}
+
+const goToProfile = () => {
+  router.push('/profile')
 }
 
 // 处理语言切换
@@ -1809,20 +1822,31 @@ onUnmounted(() => {
 
 @media (max-width: 576px) {
   .header {
-    padding: 0 8px;
-    min-height: 56px;
+    padding: 0 6px;
+    min-height: 52px;
   }
 
   .header-content {
-    padding: 6px 0;
+    padding: 4px 0;
+    gap: 6px;
   }
 
   .header-title {
-    font-size: 14px;
+    font-size: 13px;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .header-actions {
-    gap: 4px;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .header-action-item {
+    gap: 2px;
   }
 
   .switch-wrapper {
@@ -1833,25 +1857,86 @@ onUnmounted(() => {
   }
 
   .action-label {
-    font-size: 9px;
+    font-size: 8px;
     color: #999;
     display: block;
     white-space: nowrap;
+    line-height: 1;
+  }
+  
+  /* 缩小语言选择器 */
+  .language-selector .language-button {
+    padding: 2px 4px !important;
+    gap: 2px;
+  }
+  
+  .language-selector .language-button :deep(.anticon) {
+    font-size: 12px;
+  }
+  
+  .language-selector .language-label {
+    font-size: 10px;
   }
   
   /* 缩小节点按钮尺寸 */
   .server-node-selector .node-button {
-    padding: 2px 6px !important;
-    font-size: 12px;
+    padding: 2px 4px !important;
+    font-size: 11px;
+    gap: 2px;
   }
   
   .server-node-selector .node-icon {
-    font-size: 14px;
+    font-size: 12px;
+  }
+  
+  .server-node-selector .node-name {
+    gap: 2px;
   }
   
   .server-node-selector .auto-badge {
-    font-size: 8px;
-    padding: 0px 3px;
+    font-size: 7px;
+    padding: 0px 2px;
+  }
+  
+  /* 缩小设置和连接按钮 */
+  .header-actions > .ant-btn,
+  .header-actions > .ant-badge > .ant-tooltip > .ant-btn {
+    padding: 2px 4px !important;
+    height: auto !important;
+    min-width: auto !important;
+  }
+  
+  .header-actions > .ant-btn :deep(.anticon),
+  .header-actions > .ant-badge :deep(.anticon) {
+    font-size: 14px;
+  }
+  
+  /* 缩小开关按钮 */
+  .header-action-item :deep(.ant-switch) {
+    min-width: 32px;
+    height: 16px;
+    line-height: 16px;
+  }
+  
+  .header-action-item :deep(.ant-switch-handle) {
+    width: 12px;
+    height: 12px;
+    top: 2px;
+  }
+  
+  .header-action-item :deep(.ant-switch-checked .ant-switch-handle) {
+    inset-inline-start: calc(100% - 14px);
+  }
+  
+  .header-action-item :deep(.ant-switch-inner) {
+    font-size: 9px;
+    padding-inline-start: 18px;
+    padding-inline-end: 5px;
+  }
+  
+  .header-action-item :deep(.ant-switch-checked .ant-switch-inner) {
+    padding-inline-start: 5px;
+    padding-inline-end: 18px;
   }
 
   .avatar-display {

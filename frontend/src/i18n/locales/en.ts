@@ -68,6 +68,8 @@ export default {
   },
   settings: {
     title: 'Settings',
+    profile: 'Profile',
+    profileHint: 'View and manage personal information',
     llmModel: 'LLM Model',
     llmModelHint: 'Select language model',
     ttsVoice: 'TTS Voice',
