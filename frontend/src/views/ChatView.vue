@@ -18,7 +18,7 @@
                       <div class="language-menu-item">
                         <span>简体中文</span>
                         <span v-if="locale === 'zh'" class="language-check">✓</span>
-                      </div>
+              </div>
                     </a-menu-item>
                     <a-menu-item key="en">
                       <div class="language-menu-item">
@@ -284,7 +284,6 @@
 
 <script setup lang="ts">
 import { ref, h, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
@@ -314,7 +313,6 @@ import {
 // import { useChatStore } from '@/store/chat' // 暂未使用，保留以备将来功能扩展
 
 // const chatStore = useChatStore()
-const router = useRouter()
 const { t, locale } = useI18n()
 const { connect, disconnect, send, isConnected, shouldReconnect } = useWebSocket()
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
