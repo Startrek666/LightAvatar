@@ -2,12 +2,25 @@
   <div class="profile-container">
     <div class="profile-header">
       <div class="header-content">
-        <h1 class="header-title">个人中心</h1>
+        <h1 class="header-title">{{ t('profile.title') }}</h1>
         <a-space :size="12">
+          <!-- 语言切换 -->
+          <a-dropdown :trigger="['click']">
+            <a-button size="large">
+              <GlobalOutlined />
+              {{ locale === 'zh' ? '中文' : 'EN' }}
+            </a-button>
+            <template #overlay>
+              <a-menu @click="handleLanguageChange">
+                <a-menu-item key="zh">简体中文</a-menu-item>
+                <a-menu-item key="en">English</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
           <a-button @click="$router.push('/chat')" v-if="userInfo?.can_use_avatar" size="large">
-            返回对话
+            {{ t('profile.backToChat') }}
           </a-button>
-          <a-button @click="handleLogout" danger size="large">退出登录</a-button>
+          <a-button @click="handleLogout" danger size="large">{{ t('profile.logout') }}</a-button>
         </a-space>
       </div>
     </div>
@@ -33,36 +46,36 @@
 
             <div class="info-items">
               <div class="info-item">
-                <span class="info-label">角色</span>
+                <span class="info-label">{{ t('profile.role') }}</span>
                 <a-tag :color="userInfo?.role === 'admin' ? '#C9A961' : '#666'" class="info-value-tag">
-                  {{ userInfo?.role === 'admin' ? '管理员' : '普通用户' }}
+                  {{ userInfo?.role === 'admin' ? t('profile.admin') : t('profile.user') }}
                 </a-tag>
               </div>
 
               <div class="info-item">
-                <span class="info-label">数字人权限</span>
+                <span class="info-label">{{ t('profile.avatarPermission') }}</span>
                 <a-tag :color="userInfo?.can_use_avatar ? '#52C41A' : '#D9D9D9'" class="info-value-tag">
-                  {{ userInfo?.can_use_avatar ? '已开通' : '未开通' }}
+                  {{ userInfo?.can_use_avatar ? t('profile.enabled') : t('profile.disabled') }}
                 </a-tag>
               </div>
 
               <div class="info-item">
-                <span class="info-label">账户状态</span>
+                <span class="info-label">{{ t('profile.accountStatus') }}</span>
                 <a-tag :color="userInfo?.is_active ? '#52C41A' : '#FF4D4F'" class="info-value-tag">
-                  {{ userInfo?.is_active ? '正常' : '已禁用' }}
+                  {{ userInfo?.is_active ? t('profile.active') : t('profile.inactive') }}
                 </a-tag>
               </div>
 
               <div class="info-item">
-                <span class="info-label">注册时间</span>
+                <span class="info-label">{{ t('profile.registrationTime') }}</span>
                 <span class="info-value">{{ formatDate(userInfo?.created_at) }}</span>
               </div>
             </div>
 
             <a-alert
               v-if="!userInfo?.can_use_avatar"
-              message="权限提示"
-              description="您暂无数字人使用权限，如需使用请联系管理员开通"
+              :message="t('profile.permissionTip')"
+              :description="t('profile.permissionDescription')"
               type="warning"
               show-icon
               style="margin-top: 20px;"
@@ -73,50 +86,50 @@
         <!-- 修改密码卡片 -->
         <a-col :xs="24" :lg="12">
           <a-card class="password-card" :bordered="false">
-            <h3 class="card-title">修改密码</h3>
+            <h3 class="card-title">{{ t('profile.changePassword') }}</h3>
             <a-form
               :model="passwordForm"
               @finish="handleChangePassword"
               layout="vertical"
             >
               <a-form-item
-                label="当前密码"
+                :label="t('profile.currentPassword')"
                 name="old_password"
-                :rules="[{ required: true, message: '请输入当前密码' }]"
+                :rules="[{ required: true, message: t('profile.currentPasswordRequired') }]"
               >
                 <a-input-password
                   v-model:value="passwordForm.old_password"
-                  placeholder="请输入当前密码"
+                  :placeholder="t('profile.currentPasswordPlaceholder')"
                   size="large"
                 />
               </a-form-item>
 
               <a-form-item
-                label="新密码"
+                :label="t('profile.newPassword')"
                 name="new_password"
                 :rules="[
-                  { required: true, message: '请输入新密码' },
-                  { min: 6, message: '密码至少6个字符' }
+                  { required: true, message: t('profile.newPasswordRequired') },
+                  { min: 6, message: t('profile.newPasswordLength') }
                 ]"
               >
                 <a-input-password
                   v-model:value="passwordForm.new_password"
-                  placeholder="请输入新密码（至少6位）"
+                  :placeholder="t('profile.newPasswordPlaceholder')"
                   size="large"
                 />
               </a-form-item>
 
               <a-form-item
-                label="确认新密码"
+                :label="t('profile.confirmPassword')"
                 name="confirm_password"
                 :rules="[
-                  { required: true, message: '请确认新密码' },
+                  { required: true, message: t('profile.confirmPasswordRequired') },
                   { validator: validateConfirmPassword }
                 ]"
               >
                 <a-input-password
                   v-model:value="passwordForm.confirm_password"
-                  placeholder="请再次输入新密码"
+                  :placeholder="t('profile.confirmPasswordPlaceholder')"
                   size="large"
                 />
               </a-form-item>
@@ -129,7 +142,7 @@
                   size="large"
                   block
                 >
-                  修改密码
+                  {{ t('profile.changePassword') }}
                 </a-button>
               </a-form-item>
             </a-form>
@@ -143,10 +156,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import { GlobalOutlined } from '@ant-design/icons-vue'
 import axios from '@/utils/axios'
 
 const router = useRouter()
+const { t, locale } = useI18n()
 const loading = ref(false)
 const userInfo = ref<any>(null)
 
@@ -161,9 +177,15 @@ const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleString('zh-CN')
 }
 
+const handleLanguageChange = ({ key }: { key: string }) => {
+  locale.value = key
+  localStorage.setItem('language', key)
+  message.success(t('common.success'))
+}
+
 const validateConfirmPassword = (_rule: any, value: string) => {
   if (value !== passwordForm.value.new_password) {
-    return Promise.reject('两次输入的密码不一致')
+    return Promise.reject(t('profile.confirmPasswordMismatch'))
   }
   return Promise.resolve()
 }
@@ -176,7 +198,7 @@ const handleChangePassword = async () => {
       new_password: passwordForm.value.new_password
     })
     
-    message.success('密码修改成功，请重新登录')
+    message.success(t('profile.changePasswordSuccess'))
     
     // 清除登录信息
     localStorage.removeItem('auth_token')
@@ -187,7 +209,7 @@ const handleChangePassword = async () => {
       router.push('/login')
     }, 1000)
   } catch (error: any) {
-    message.error(error.response?.data?.detail || '密码修改失败')
+    message.error(error.response?.data?.detail || t('profile.changePasswordFailed'))
   } finally {
     loading.value = false
   }
@@ -196,7 +218,7 @@ const handleChangePassword = async () => {
 const handleLogout = () => {
   localStorage.removeItem('auth_token')
   localStorage.removeItem('user_info')
-  message.success('已退出登录')
+  message.success(t('profile.logoutSuccess'))
   router.push('/login')
 }
 

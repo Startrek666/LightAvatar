@@ -1,26 +1,42 @@
 <template>
   <div class="login-container">
+    <!-- 语言切换按钮 -->
+    <div class="language-switcher">
+      <a-dropdown :trigger="['click']">
+        <a-button type="text" size="large">
+          <GlobalOutlined />
+          {{ locale === 'zh' ? '中文' : 'EN' }}
+        </a-button>
+        <template #overlay>
+          <a-menu @click="handleLanguageChange">
+            <a-menu-item key="zh">简体中文</a-menu-item>
+            <a-menu-item key="en">English</a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
+    </div>
+    
     <a-card class="login-card" :bordered="false">
       <div class="logo-section">
-        <h1>Lemomate Avatar</h1>
-        <p>数字人对话系统</p>
+        <h1>{{ t('login.title') }}</h1>
+        <p>{{ t('login.subtitle') }}</p>
       </div>
 
       <a-tabs v-model:activeKey="activeTab" centered>
-        <a-tab-pane key="login" tab="登录">
+        <a-tab-pane key="login" :tab="t('login.loginTab')">
           <a-form
             :model="loginForm"
             @finish="handleLogin"
             layout="vertical"
           >
             <a-form-item
-              label="用户名"
+              :label="t('login.username')"
               name="username"
-              :rules="[{ required: true, message: '请输入用户名' }]"
+              :rules="[{ required: true, message: t('login.usernameRequired') }]"
             >
               <a-input
                 v-model:value="loginForm.username"
-                placeholder="请输入用户名"
+                :placeholder="t('login.usernamePlaceholder')"
                 size="large"
               >
                 <template #prefix>
@@ -30,13 +46,13 @@
             </a-form-item>
 
             <a-form-item
-              label="密码"
+              :label="t('login.password')"
               name="password"
-              :rules="[{ required: true, message: '请输入密码' }]"
+              :rules="[{ required: true, message: t('login.passwordRequired') }]"
             >
               <a-input-password
                 v-model:value="loginForm.password"
-                placeholder="请输入密码"
+                :placeholder="t('login.passwordPlaceholder')"
                 size="large"
               >
                 <template #prefix>
@@ -53,29 +69,29 @@
                 block
                 :loading="loading"
               >
-                登录
+                {{ t('login.loginButton') }}
               </a-button>
             </a-form-item>
           </a-form>
         </a-tab-pane>
 
-        <a-tab-pane key="register" tab="注册">
+        <a-tab-pane key="register" :tab="t('login.registerTab')">
           <a-form
             :model="registerForm"
             @finish="handleRegister"
             layout="vertical"
           >
             <a-form-item
-              label="用户名"
+              :label="t('login.username')"
               name="username"
               :rules="[
-                { required: true, message: '请输入用户名' },
-                { min: 3, message: '用户名至少3个字符' }
+                { required: true, message: t('login.usernameRequired') },
+                { min: 3, message: t('login.usernameLength') }
               ]"
             >
               <a-input
                 v-model:value="registerForm.username"
-                placeholder="请输入用户名"
+                :placeholder="t('login.usernamePlaceholder')"
                 size="large"
               >
                 <template #prefix>
@@ -85,16 +101,16 @@
             </a-form-item>
 
             <a-form-item
-              label="邮箱"
+              :label="t('login.email')"
               name="email"
               :rules="[
-                { required: true, message: '请输入邮箱' },
-                { type: 'email', message: '请输入有效的邮箱地址' }
+                { required: true, message: t('login.emailRequired') },
+                { type: 'email', message: t('login.emailFormat') }
               ]"
             >
               <a-input
                 v-model:value="registerForm.email"
-                placeholder="请输入邮箱"
+                :placeholder="t('login.emailPlaceholder')"
                 size="large"
               >
                 <template #prefix>
@@ -104,16 +120,16 @@
             </a-form-item>
 
             <a-form-item
-              label="密码"
+              :label="t('login.password')"
               name="password"
               :rules="[
-                { required: true, message: '请输入密码' },
-                { min: 6, message: '密码至少6个字符' }
+                { required: true, message: t('login.passwordRequired') },
+                { min: 6, message: t('login.passwordLength') }
               ]"
             >
               <a-input-password
                 v-model:value="registerForm.password"
-                placeholder="请输入密码"
+                :placeholder="t('login.passwordPlaceholder')"
                 size="large"
               >
                 <template #prefix>
@@ -130,7 +146,7 @@
                 block
                 :loading="loading"
               >
-                注册
+                {{ t('login.registerButton') }}
               </a-button>
             </a-form-item>
           </a-form>
@@ -143,11 +159,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons-vue'
+import { UserOutlined, LockOutlined, MailOutlined, GlobalOutlined } from '@ant-design/icons-vue'
 import axios from '@/utils/axios'
 
 const router = useRouter()
+const { t, locale } = useI18n()
 const activeTab = ref('login')
 const loading = ref(false)
 
@@ -162,6 +180,12 @@ const registerForm = ref({
   password: ''
 })
 
+const handleLanguageChange = ({ key }: { key: string }) => {
+  locale.value = key
+  localStorage.setItem('language', key)
+  message.success(t('common.success'))
+}
+
 const handleLogin = async () => {
   loading.value = true
   try {
@@ -172,7 +196,7 @@ const handleLogin = async () => {
     localStorage.setItem('auth_token', token)
     localStorage.setItem('user_info', JSON.stringify(user))
     
-    message.success('登录成功')
+    message.success(t('login.loginSuccess'))
     
     // 根据角色跳转
     if (user.role === 'admin') {
@@ -181,12 +205,12 @@ const handleLogin = async () => {
       if (user.can_use_avatar) {
         router.push('/chat')
       } else {
-        message.warning('您暂无数字人使用权限，请联系管理员')
+        message.warning(t('profile.permissionDescription'))
         router.push('/profile')
       }
     }
   } catch (error: any) {
-    message.error(error.response?.data?.detail || '登录失败')
+    message.error(error.response?.data?.detail || t('login.loginFailed'))
   } finally {
     loading.value = false
   }
@@ -202,10 +226,10 @@ const handleRegister = async () => {
     localStorage.setItem('auth_token', token)
     localStorage.setItem('user_info', JSON.stringify(user))
     
-    message.success('注册成功')
+    message.success(t('login.registerSuccess'))
     router.push('/profile')
   } catch (error: any) {
-    message.error(error.response?.data?.detail || '注册失败')
+    message.error(error.response?.data?.detail || t('login.registerFailed'))
   } finally {
     loading.value = false
   }
@@ -220,6 +244,26 @@ const handleRegister = async () => {
   justify-content: center;
   background: #F8F6F2;
   padding: 20px;
+  position: relative;
+}
+
+.language-switcher {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+}
+
+.language-switcher .ant-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-weight: 500;
+}
+
+.language-switcher .ant-btn:hover {
+  color: #C9A961;
 }
 
 .login-card {

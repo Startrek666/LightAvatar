@@ -191,9 +191,9 @@
                 size="large" 
                 class="message-input" />
               
-              <!-- 右侧：上传按钮（桌面端）+ 发送按钮（桌面端） -->
+              <!-- 右侧：上传按钮 + 发送按钮（桌面端） -->
               <a-button size="large" 
-                class="upload-button desktop-only"
+                class="upload-button"
                 @click="triggerFileUpload"
                 :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" 
                 :icon="h(PlusOutlined)"
@@ -206,14 +206,6 @@
                 :disabled="!inputText || !isConnected || isProcessing" 
                 :icon="h(SendOutlined)"
                 :title="t('chat.sendMessage')" />
-              
-              <!-- 移动端右侧：上传按钮 -->
-              <a-button size="large" 
-                class="upload-button mobile-only"
-                @click="triggerFileUpload"
-                :disabled="!isConnected || isProcessing || isUploadingDoc || !!uploadedDocInfo" 
-                :icon="h(PlusOutlined)"
-                :title="t('chat.uploadDocHint')" />
             </div>
             
             <!-- 第二行：发送按钮（仅移动端显示） -->
@@ -254,7 +246,7 @@
     </a-modal>
 
     <!-- Settings Modal -->
-    <a-modal v-model:open="settingsVisible" :title="t('settings.title')" width="600px" @ok="saveSettings">
+    <a-modal v-model:open="settingsVisible" :title="t('settings.title')" width="600px" @ok="saveSettings" :ok-text="t('common.ok')" :cancel-text="t('common.cancel')">
       <a-form :model="settings" layout="vertical">
         <a-form-item :label="t('settings.profile')" :help="t('settings.profileHint')">
           <a-button type="primary" block @click="goToProfile">
