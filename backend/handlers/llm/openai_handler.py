@@ -155,15 +155,15 @@ class OpenAIHandler(BaseHandler):
             messages = [{"role": "system", "content": self.system_prompt}]
             
             if conversation_history:
-                max_history = self.config.get("max_history", 10)
-                recent_history = conversation_history[-max_history:]
-                
                 # Gemma 模型特殊处理：每5轮对话重置一次上下文
+                # 注意：必须先判断是否需要重置（基于完整历史），再应用 max_history 截断
                 if 'gemma' in self.model.lower():
-                    # 注意：recent_history 中最后一条是当前用户输入（已经在 session_manager 中添加）
+                    # conversation_history 中最后一条是当前用户输入（已经在 session_manager 中添加）
                     # 所以要排除它来计算之前的对话轮数
-                    history_without_current = recent_history[:-1] if recent_history and recent_history[-1].get("role") == "user" else recent_history
+                    history_without_current = conversation_history[:-1] if conversation_history and conversation_history[-1].get("role") == "user" else conversation_history
                     user_messages = [m for m in history_without_current if m["role"] == "user"]
+                    
+                    logger.info(f"📊 Gemma模型(搜索模式)对话统计: 完整历史={len(conversation_history)}条, 用户消息={len(user_messages)}条")
                     
                     # 判断是否需要重置（第5轮之后，即第6、11、16轮...）
                     if len(user_messages) >= 5 and len(user_messages) % 5 == 0:
@@ -200,16 +200,19 @@ class OpenAIHandler(BaseHandler):
                                 })
                             messages.append({"role": "user", "content": text})
                     else:
-                        # 不到5轮，正常添加历史
-                        # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
+                        # 不到5轮，正常添加历史（Gemma 模型限制为最多8条，即4轮对话）
+                        max_history = 8  # Gemma 模型最多保留 4 轮对话（8条消息）
+                        recent_history = conversation_history[-max_history:]
                         for msg in recent_history:
                             messages.append({
                                 "role": msg["role"],
                                 "content": msg["content"]
                             })
+                        logger.info(f"📝 Gemma模型(搜索模式)正常对话: 使用最近 {len(recent_history)} 条历史记录（最多4轮）")
                 else:
-                    # 非 Gemma 模型，正常处理
-                    # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
+                    # 非 Gemma 模型，正常处理（应用 max_history 限制）
+                    max_history = self.config.get("max_history", 10)
+                    recent_history = conversation_history[-max_history:]
                     for msg in recent_history:
                         messages.append({
                             "role": msg["role"],
@@ -422,15 +425,15 @@ class OpenAIHandler(BaseHandler):
             messages = [{"role": "system", "content": self.system_prompt}]
             
             if conversation_history:
-                max_history = self.config.get("max_history", 10)
-                recent_history = conversation_history[-max_history:]
-                
                 # Gemma 模型特殊处理：每5轮对话重置一次上下文
+                # 注意：必须先判断是否需要重置（基于完整历史），再应用 max_history 截断
                 if 'gemma' in self.model.lower():
-                    # 注意：recent_history 中最后一条是当前用户输入（已经在 session_manager 中添加）
+                    # conversation_history 中最后一条是当前用户输入（已经在 session_manager 中添加）
                     # 所以要排除它来计算之前的对话轮数
-                    history_without_current = recent_history[:-1] if recent_history and recent_history[-1].get("role") == "user" else recent_history
+                    history_without_current = conversation_history[:-1] if conversation_history and conversation_history[-1].get("role") == "user" else conversation_history
                     user_messages = [m for m in history_without_current if m["role"] == "user"]
+                    
+                    logger.info(f"📊 Gemma模型对话统计: 完整历史={len(conversation_history)}条, 用户消息={len(user_messages)}条")
                     
                     # 判断是否需要重置（第5轮之后，即第6、11、16轮...）
                     if len(user_messages) >= 5 and len(user_messages) % 5 == 0:
@@ -467,16 +470,19 @@ class OpenAIHandler(BaseHandler):
                                 })
                             messages.append({"role": "user", "content": text})
                     else:
-                        # 不到5轮，正常添加历史
-                        # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
+                        # 不到5轮，正常添加历史（Gemma 模型限制为最多8条，即4轮对话）
+                        max_history = 8  # Gemma 模型最多保留 4 轮对话（8条消息）
+                        recent_history = conversation_history[-max_history:]
                         for msg in recent_history:
                             messages.append({
                                 "role": msg["role"],
                                 "content": msg["content"]
                             })
+                        logger.info(f"📝 Gemma模型正常对话: 使用最近 {len(recent_history)} 条历史记录（最多4轮）")
                 else:
-                    # 非 Gemma 模型，正常处理
-                    # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
+                    # 非 Gemma 模型，正常处理（应用 max_history 限制）
+                    max_history = self.config.get("max_history", 10)
+                    recent_history = conversation_history[-max_history:]
                     for msg in recent_history:
                         messages.append({
                             "role": msg["role"],
