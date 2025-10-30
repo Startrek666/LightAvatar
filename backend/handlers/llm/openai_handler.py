@@ -93,21 +93,14 @@ class OpenAIHandler(BaseHandler):
                 max_history = self.config.get("max_history", 10)
                 recent_history = conversation_history[-max_history:]
                 
+                # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
                 for msg in recent_history:
                     messages.append({
                         "role": msg["role"],
                         "content": msg["content"]
                     })
-            
-            # Add current message - 检查最后一条消息：如果已经是当前用户输入，就不重复添加
-            # 必须同时检查 role 和 content，确保是用户消息且内容相同
-            if conversation_history:
-                recent_history = conversation_history[-self.config.get("max_history", 10):]
-                if (not recent_history or 
-                    recent_history[-1].get("role") != "user" or 
-                    recent_history[-1].get("content") != text):
-                    messages.append({"role": "user", "content": text})
             else:
+                # 没有历史记录，直接添加新消息
                 messages.append({"role": "user", "content": text})
             
             # Generate response
@@ -167,17 +160,19 @@ class OpenAIHandler(BaseHandler):
                 
                 # Gemma 模型特殊处理：每5轮对话重置一次上下文
                 if 'gemma' in self.model.lower():
-                    # 计算对话轮数（不包括 system 消息）
-                    user_messages = [m for m in recent_history if m["role"] == "user"]
+                    # 注意：recent_history 中最后一条是当前用户输入（已经在 session_manager 中添加）
+                    # 所以要排除它来计算之前的对话轮数
+                    history_without_current = recent_history[:-1] if recent_history and recent_history[-1].get("role") == "user" else recent_history
+                    user_messages = [m for m in history_without_current if m["role"] == "user"]
                     
-                    # 判断是否需要重置（第6轮、第11轮、第16轮...）
+                    # 判断是否需要重置（第5轮之后，即第6、11、16轮...）
                     if len(user_messages) >= 5 and len(user_messages) % 5 == 0:
                         logger.info(f"🔄 Gemma模型(搜索模式)检测到第 {len(user_messages)+1} 轮对话，执行上下文重置")
                         
-                        # 只保留上一轮对话（最后2条消息）
-                        if len(recent_history) >= 2:
-                            last_user_msg = recent_history[-2]  # 上一轮的user消息
-                            last_assistant_msg = recent_history[-1]  # 上一轮的assistant回复
+                        # 从 history_without_current 中取最后2条消息（上一轮对话）
+                        if len(history_without_current) >= 2:
+                            last_user_msg = history_without_current[-2]  # 上一轮的user消息
+                            last_assistant_msg = history_without_current[-1]  # 上一轮的assistant回复
                             
                             # 验证格式正确
                             if last_user_msg["role"] == "user" and last_assistant_msg["role"] == "assistant":
@@ -186,16 +181,19 @@ class OpenAIHandler(BaseHandler):
                                 messages.append({"role": "user", "content": merged_content})
                                 logger.info(f"✅ 重置上下文，只保留上一轮(user:{len(last_user_msg['content'])}字 + assistant:{len(last_assistant_msg['content'])}字) + 新消息({len(text)}字)")
                             else:
-                                # 格式不对，按正常流程处理
-                                for msg in recent_history:
+                                # 格式不对，说明历史记录异常，按正常流程处理（但排除当前输入，因为后面会统一添加）
+                                logger.warning(f"⚠️ 上下文重置失败：历史记录格式不正确 (last_user_msg role={last_user_msg.get('role')}, last_assistant_msg role={last_assistant_msg.get('role')})")
+                                for msg in history_without_current:
                                     messages.append({
                                         "role": msg["role"],
                                         "content": msg["content"]
                                     })
+                                # 添加当前用户输入
                                 messages.append({"role": "user", "content": text})
                         else:
                             # 历史记录不足，按正常流程处理
-                            for msg in recent_history:
+                            logger.warning(f"⚠️ 上下文重置失败：历史记录不足 (len={len(history_without_current)})")
+                            for msg in history_without_current:
                                 messages.append({
                                     "role": msg["role"],
                                     "content": msg["content"]
@@ -203,30 +201,20 @@ class OpenAIHandler(BaseHandler):
                             messages.append({"role": "user", "content": text})
                     else:
                         # 不到5轮，正常添加历史
+                        # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
                         for msg in recent_history:
                             messages.append({
                                 "role": msg["role"],
                                 "content": msg["content"]
                             })
-                        # 检查最后一条消息：如果已经是当前用户输入，就不重复添加
-                        # 必须同时检查 role 和 content，确保是用户消息且内容相同
-                        if (not recent_history or 
-                            recent_history[-1].get("role") != "user" or 
-                            recent_history[-1].get("content") != text):
-                            messages.append({"role": "user", "content": text})
                 else:
                     # 非 Gemma 模型，正常处理
+                    # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
                     for msg in recent_history:
                         messages.append({
                             "role": msg["role"],
                             "content": msg["content"]
                         })
-                    # 检查最后一条消息：如果已经是当前用户输入，就不重复添加
-                    # 必须同时检查 role 和 content，确保是用户消息且内容相同
-                    if (not recent_history or 
-                        recent_history[-1].get("role") != "user" or 
-                        recent_history[-1].get("content") != text):
-                        messages.append({"role": "user", "content": text})
             else:
                 # 没有历史记录，直接添加新消息
                 messages.append({"role": "user", "content": text})
@@ -439,17 +427,19 @@ class OpenAIHandler(BaseHandler):
                 
                 # Gemma 模型特殊处理：每5轮对话重置一次上下文
                 if 'gemma' in self.model.lower():
-                    # 计算对话轮数（不包括 system 消息）
-                    user_messages = [m for m in recent_history if m["role"] == "user"]
+                    # 注意：recent_history 中最后一条是当前用户输入（已经在 session_manager 中添加）
+                    # 所以要排除它来计算之前的对话轮数
+                    history_without_current = recent_history[:-1] if recent_history and recent_history[-1].get("role") == "user" else recent_history
+                    user_messages = [m for m in history_without_current if m["role"] == "user"]
                     
-                    # 判断是否需要重置（第6轮、第11轮、第16轮...）
+                    # 判断是否需要重置（第5轮之后，即第6、11、16轮...）
                     if len(user_messages) >= 5 and len(user_messages) % 5 == 0:
                         logger.info(f"🔄 Gemma模型检测到第 {len(user_messages)+1} 轮对话，执行上下文重置")
                         
-                        # 只保留上一轮对话（最后2条消息）
-                        if len(recent_history) >= 2:
-                            last_user_msg = recent_history[-2]  # 上一轮的user消息
-                            last_assistant_msg = recent_history[-1]  # 上一轮的assistant回复
+                        # 从 history_without_current 中取最后2条消息（上一轮对话）
+                        if len(history_without_current) >= 2:
+                            last_user_msg = history_without_current[-2]  # 上一轮的user消息
+                            last_assistant_msg = history_without_current[-1]  # 上一轮的assistant回复
                             
                             # 验证格式正确
                             if last_user_msg["role"] == "user" and last_assistant_msg["role"] == "assistant":
@@ -458,16 +448,19 @@ class OpenAIHandler(BaseHandler):
                                 messages.append({"role": "user", "content": merged_content})
                                 logger.info(f"✅ 重置上下文，只保留上一轮(user:{len(last_user_msg['content'])}字 + assistant:{len(last_assistant_msg['content'])}字) + 新消息({len(text)}字)")
                             else:
-                                # 格式不对，按正常流程处理
-                                for msg in recent_history:
+                                # 格式不对，说明历史记录异常，按正常流程处理（但排除当前输入，因为后面会统一添加）
+                                logger.warning(f"⚠️ 上下文重置失败：历史记录格式不正确 (last_user_msg role={last_user_msg.get('role')}, last_assistant_msg role={last_assistant_msg.get('role')})")
+                                for msg in history_without_current:
                                     messages.append({
                                         "role": msg["role"],
                                         "content": msg["content"]
                                     })
+                                # 添加当前用户输入
                                 messages.append({"role": "user", "content": text})
                         else:
                             # 历史记录不足，按正常流程处理
-                            for msg in recent_history:
+                            logger.warning(f"⚠️ 上下文重置失败：历史记录不足 (len={len(history_without_current)})")
+                            for msg in history_without_current:
                                 messages.append({
                                     "role": msg["role"],
                                     "content": msg["content"]
@@ -475,30 +468,20 @@ class OpenAIHandler(BaseHandler):
                             messages.append({"role": "user", "content": text})
                     else:
                         # 不到5轮，正常添加历史
+                        # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
                         for msg in recent_history:
                             messages.append({
                                 "role": msg["role"],
                                 "content": msg["content"]
                             })
-                        # 检查最后一条消息：如果已经是当前用户输入，就不重复添加
-                        # 必须同时检查 role 和 content，确保是用户消息且内容相同
-                        if (not recent_history or 
-                            recent_history[-1].get("role") != "user" or 
-                            recent_history[-1].get("content") != text):
-                            messages.append({"role": "user", "content": text})
                 else:
                     # 非 Gemma 模型，正常处理
+                    # 注意：recent_history 已经包含当前用户输入（在 session_manager 中添加），直接全部添加即可
                     for msg in recent_history:
                         messages.append({
                             "role": msg["role"],
                             "content": msg["content"]
                         })
-                    # 检查最后一条消息：如果已经是当前用户输入，就不重复添加
-                    # 必须同时检查 role 和 content，确保是用户消息且内容相同
-                    if (not recent_history or 
-                        recent_history[-1].get("role") != "user" or 
-                        recent_history[-1].get("content") != text):
-                        messages.append({"role": "user", "content": text})
             else:
                 # 没有历史记录，直接添加新消息
                 messages.append({"role": "user", "content": text})
