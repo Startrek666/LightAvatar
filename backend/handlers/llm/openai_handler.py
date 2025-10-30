@@ -99,8 +99,15 @@ class OpenAIHandler(BaseHandler):
                         "content": msg["content"]
                     })
             
-            # Add current message (避免重复添加)
-            if not conversation_history or conversation_history[-1].get("content") != text:
+            # Add current message - 检查最后一条消息：如果已经是当前用户输入，就不重复添加
+            # 必须同时检查 role 和 content，确保是用户消息且内容相同
+            if conversation_history:
+                recent_history = conversation_history[-self.config.get("max_history", 10):]
+                if (not recent_history or 
+                    recent_history[-1].get("role") != "user" or 
+                    recent_history[-1].get("content") != text):
+                    messages.append({"role": "user", "content": text})
+            else:
                 messages.append({"role": "user", "content": text})
             
             # Generate response
@@ -201,22 +208,35 @@ class OpenAIHandler(BaseHandler):
                                 "role": msg["role"],
                                 "content": msg["content"]
                             })
-                        # 避免重复添加最后一条用户消息
-                        if not conversation_history or conversation_history[-1].get("content") != text:
+                        # 检查最后一条消息：如果已经是当前用户输入，就不重复添加
+                        # 必须同时检查 role 和 content，确保是用户消息且内容相同
+                        if (not recent_history or 
+                            recent_history[-1].get("role") != "user" or 
+                            recent_history[-1].get("content") != text):
                             messages.append({"role": "user", "content": text})
                 else:
-                    # 非 Gemma 模型或对话轮数不足，正常处理
+                    # 非 Gemma 模型，正常处理
                     for msg in recent_history:
                         messages.append({
                             "role": msg["role"],
                             "content": msg["content"]
                         })
-                    # 避免重复添加最后一条用户消息
-                    if not conversation_history or conversation_history[-1].get("content") != text:
+                    # 检查最后一条消息：如果已经是当前用户输入，就不重复添加
+                    # 必须同时检查 role 和 content，确保是用户消息且内容相同
+                    if (not recent_history or 
+                        recent_history[-1].get("role") != "user" or 
+                        recent_history[-1].get("content") != text):
                         messages.append({"role": "user", "content": text})
             else:
                 # 没有历史记录，直接添加新消息
                 messages.append({"role": "user", "content": text})
+            
+            # 调试日志：记录最终发送给 LLM 的消息列表（搜索前）
+            logger.info(f"📤 准备发送给 LLM 的消息数量（搜索前）: {len(messages)}")
+            for i, msg in enumerate(messages):
+                role = msg.get('role', 'unknown')
+                content_preview = msg.get('content', '')[:50]
+                logger.debug(f"  消息 {i+1}: role={role}, content={content_preview}...")
             
             # 如果启用搜索且有搜索处理器
             if use_search and search_handler:
@@ -460,22 +480,35 @@ class OpenAIHandler(BaseHandler):
                                 "role": msg["role"],
                                 "content": msg["content"]
                             })
-                        # 避免重复添加最后一条用户消息
-                        if not conversation_history or conversation_history[-1].get("content") != text:
+                        # 检查最后一条消息：如果已经是当前用户输入，就不重复添加
+                        # 必须同时检查 role 和 content，确保是用户消息且内容相同
+                        if (not recent_history or 
+                            recent_history[-1].get("role") != "user" or 
+                            recent_history[-1].get("content") != text):
                             messages.append({"role": "user", "content": text})
                 else:
-                    # 非 Gemma 模型或对话轮数不足，正常处理
+                    # 非 Gemma 模型，正常处理
                     for msg in recent_history:
                         messages.append({
                             "role": msg["role"],
                             "content": msg["content"]
                         })
-                    # 避免重复添加最后一条用户消息
-                    if not conversation_history or conversation_history[-1].get("content") != text:
+                    # 检查最后一条消息：如果已经是当前用户输入，就不重复添加
+                    # 必须同时检查 role 和 content，确保是用户消息且内容相同
+                    if (not recent_history or 
+                        recent_history[-1].get("role") != "user" or 
+                        recent_history[-1].get("content") != text):
                         messages.append({"role": "user", "content": text})
             else:
                 # 没有历史记录，直接添加新消息
                 messages.append({"role": "user", "content": text})
+            
+            # 调试日志：记录最终发送给 LLM 的消息列表
+            logger.info(f"📤 准备发送给 LLM 的消息数量: {len(messages)}")
+            for i, msg in enumerate(messages):
+                role = msg.get('role', 'unknown')
+                content_preview = msg.get('content', '')[:50]
+                logger.debug(f"  消息 {i+1}: role={role}, content={content_preview}...")
             
             # Stream response
             async for chunk in self._stream_response_internal(messages):
