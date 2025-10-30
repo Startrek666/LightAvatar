@@ -203,6 +203,12 @@ class OpenAIHandler(BaseHandler):
                         # 不到5轮，正常添加历史（Gemma 模型限制为最多8条，即4轮对话）
                         max_history = 8  # Gemma 模型最多保留 4 轮对话（8条消息）
                         recent_history = conversation_history[-max_history:]
+                        
+                        # ✅ 确保第一条消息是 user（保持对话配对完整性）
+                        while recent_history and recent_history[0].get("role") != "user":
+                            recent_history = recent_history[1:]
+                            logger.warning(f"⚠️ Gemma模型(搜索模式)：跳过开头的非user消息，确保对话配对完整")
+                        
                         for msg in recent_history:
                             messages.append({
                                 "role": msg["role"],
@@ -473,6 +479,12 @@ class OpenAIHandler(BaseHandler):
                         # 不到5轮，正常添加历史（Gemma 模型限制为最多8条，即4轮对话）
                         max_history = 8  # Gemma 模型最多保留 4 轮对话（8条消息）
                         recent_history = conversation_history[-max_history:]
+                        
+                        # ✅ 确保第一条消息是 user（保持对话配对完整性）
+                        while recent_history and recent_history[0].get("role") != "user":
+                            recent_history = recent_history[1:]
+                            logger.warning(f"⚠️ Gemma模型：跳过开头的非user消息，确保对话配对完整")
+                        
                         for msg in recent_history:
                             messages.append({
                                 "role": msg["role"],

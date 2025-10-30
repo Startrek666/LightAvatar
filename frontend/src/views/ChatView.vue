@@ -186,7 +186,7 @@
               <!-- 中间：输入框 -->
               <a-input v-model:value="inputText" 
                 :placeholder="t('chat.inputPlaceholder')" 
-                @pressEnter="sendTextMessage"
+                @pressEnter.prevent="sendTextMessage"
                 :disabled="!isConnected || isProcessing" 
                 size="large" 
                 class="message-input" />
@@ -519,7 +519,12 @@ const clearUploadedDoc = () => {
   message.info(t('chat.cancelDoc'))
 }
 
-const sendTextMessage = () => {
+const sendTextMessage = (event?: Event) => {
+  // 阻止回车键的默认行为
+  if (event) {
+    event.preventDefault()
+  }
+  
   console.log('📤 [sendTextMessage] 开始发送消息')
   console.log('  - inputText:', inputText.value)
   console.log('  - isConnected:', isConnected.value)
