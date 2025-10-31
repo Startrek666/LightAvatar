@@ -97,7 +97,7 @@ def convert_to_markdown(text: str) -> str:
 def search_searxng(
     query: str, 
     num_results: int,
-    ip_address: str = "http://localhost:8080",
+    ip_address: str = "http://localhost:9080",
     language: str = "zh",
     time_range: str = "day"
 ) -> List[SearchDocument]:

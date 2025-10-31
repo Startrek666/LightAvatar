@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     
     # Momo Advanced Search settings
     MOMO_SEARCH_ENABLED: bool = Field(default=False, description="Enable Momo advanced search (requires SearXNG)")
-    MOMO_SEARCH_SEARXNG_URL: str = Field(default="http://localhost:8080", description="SearXNG instance URL")
+    MOMO_SEARCH_SEARXNG_URL: str = Field(default="http://localhost:9080", description="SearXNG instance URL")
     MOMO_SEARCH_LANGUAGE: str = Field(default="zh", description="Search language (zh/en)")
     MOMO_SEARCH_TIME_RANGE: str = Field(default="day", description="Search time range (day/week/month/year/'')")
     MOMO_SEARCH_MAX_RESULTS: int = Field(default=50, description="Maximum search results from SearXNG")

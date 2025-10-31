@@ -22,7 +22,7 @@ class MomoSearchHandler(BaseHandler):
         """初始化搜索组件"""
         try:
             # SearXNG配置
-            self.searxng_url = self.config.get('searxng_url', 'http://localhost:8080')
+            self.searxng_url = self.config.get('searxng_url', 'http://localhost:9080')
             self.searxng_language = self.config.get('searxng_language', 'zh')
             self.searxng_time_range = self.config.get('searxng_time_range', 'day')
             self.max_search_results = self.config.get('max_search_results', 50)
