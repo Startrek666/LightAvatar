@@ -138,6 +138,9 @@ class OpenAIHandler(BaseHandler):
         conversation_history: List[Dict] = None,
         search_handler = None,
         use_search: bool = False,
+        search_mode: str = "simple",  # "simple" 或 "advanced"
+        momo_search_handler = None,
+        momo_search_quality: str = "speed",  # "speed" 或 "quality"
         progress_callback = None
     ) -> AsyncGenerator[str, None]:
         """
@@ -146,8 +149,11 @@ class OpenAIHandler(BaseHandler):
         Args:
             text: User input text
             conversation_history: Previous conversation
-            search_handler: WebSearchHandler instance
+            search_handler: WebSearchHandler instance (简单搜索)
             use_search: Whether to perform web search
+            search_mode: 搜索模式 ("simple" 或 "advanced")
+            momo_search_handler: MomoSearchHandler instance (高级搜索)
+            momo_search_quality: Momo搜索质量 ("speed" 或 "quality")
             progress_callback: Callback for search progress (step, total, message)
         """
         try:
@@ -235,70 +241,117 @@ class OpenAIHandler(BaseHandler):
                 content_preview = msg.get('content', '')[:50]
                 logger.debug(f"  消息 {i+1}: role={role}, content={content_preview}...")
             
-            # 如果启用搜索且有搜索处理器
-            if use_search and search_handler:
-                logger.info(f"🔍 Performing web search for: {text}")
+            # 如果启用搜索
+            citations_text = ""  # 用于存储引用信息
+            
+            if use_search:
+                # 高级搜索模式 (Momo Search)
+                if search_mode == "advanced" and momo_search_handler:
+                    logger.info(f"🔍 执行Momo高级搜索: {text} (模式: {momo_search_quality})")
+                    
+                    # 执行Momo搜索
+                    from datetime import datetime
+                    cur_date = datetime.today().strftime('%Y-%m-%d')
+                    
+                    relevant_docs, citations = await momo_search_handler.search_with_progress(
+                        query=text,
+                        mode=momo_search_quality,
+                        progress_callback=progress_callback
+                    )
+                    
+                    if relevant_docs:
+                        logger.info(f"\n{'*'*80}")
+                        logger.info(f"📚 构建Momo搜索上下文 (共 {len(relevant_docs)} 个结果)")
+                        logger.info(f"{'*'*80}\n")
+                        
+                        # 构建Momo风格的搜索上下文
+                        context = f"# 以下内容是基于用户发送的消息的搜索结果（今天是{cur_date}）:\n\n"
+                        
+                        for i, doc in enumerate(relevant_docs, 1):
+                            context += f"[网页 {i} 开始]\n"
+                            context += f"标题: {doc.title}\n"
+                            context += f"链接: {doc.url}\n"
+                            content_text = doc.content if doc.content else doc.snippet
+                            context += f"内容: {content_text}\n"
+                            context += f"[网页 {i} 结束]\n\n"
+                        
+                        context += """在回答时，请注意以下几点：
+- 在适当的情况下在句子末尾引用上下文，按照引用编号[citation:X]的格式在答案中对应部分引用上下文
+- 如果一句话源自多个上下文，请列出所有相关的引用编号，例如[citation:3][citation:5]
+- 并非搜索结果的所有内容都与用户的问题密切相关，你需要结合问题，对搜索结果进行甄别、筛选
+- 对于列举类的问题，尽量将答案控制在10个要点以内
+- 如果回答很长，请尽量结构化、分段落总结，控制在5个点以内
+- 你的回答应该综合多个相关网页来回答，不能重复引用一个网页
+- 除非用户要求，否则你回答的语言需要和用户提问的语言保持一致
+
+# 用户消息为：
+{text}"""
+                        
+                        # 保存引用信息，稍后添加到响应中
+                        citations_text = citations
+                        
+                        # 将搜索结果插入到用户消息之前
+                        messages.insert(-1, {
+                            'role': 'system',
+                            'content': context
+                        })
+                        
+                        # 详细记录
+                        logger.info(f"📝 Momo搜索上下文已注入 (长度: {len(context)}字符)")
+                        logger.info(f"📊 相关文档数: {len(relevant_docs)}")
+                    else:
+                        logger.warning(f"⚠️ Momo搜索未返回结果")
                 
-                # 执行搜索
-                search_results = await search_handler.search_with_progress(
-                    query=text,
-                    max_results=3,
-                    progress_callback=progress_callback
-                )
-                
-                if search_results:
-                    logger.info(f"\n{'*'*80}")
-                    logger.info(f"📚 构建搜索上下文 (共 {len(search_results)} 个结果)")
-                    logger.info(f"{'*'*80}\n")
+                # 简单搜索模式 (WebSearchHandler)
+                elif search_mode == "simple" and search_handler:
+                    logger.info(f"🔍 执行简单搜索: {text}")
                     
-                    # 构建搜索上下文
-                    context = "我为你搜索到了以下相关信息：\n\n"
-                    for i, result in enumerate(search_results, 1):
-                        context += f"{i}. **{result['title']}**\n"
-                        context += f"   来源: {result['url']}\n"
-                        if result.get('content'):
-                            # 截取部分内容
-                            content_preview = result['content'][:300]
-                            context += f"   内容: {content_preview}...\n"
-                        else:
-                            context += f"   摘要: {result['snippet']}\n"
-                        context += "\n"
+                    # 执行简单搜索
+                    search_results = await search_handler.search_with_progress(
+                        query=text,
+                        max_results=3,
+                        progress_callback=progress_callback
+                    )
                     
-                    context += "请基于以上搜索结果回答用户的问题。"
-                    
-                    # 将搜索结果插入到用户消息之前
-                    messages.insert(-1, {
-                        'role': 'system',
-                        'content': context
-                    })
-                    
-                    # 详细记录发送给 LLM 的上下文
-                    logger.info(f"📝 发送给 LLM 的完整搜索上下文:")
-                    logger.info(f"{'─'*80}")
-                    logger.info(context)
-                    logger.info(f"{'─'*80}")
-                    
-                    # 统计信息
-                    context_chars = len(context)
-                    estimated_tokens = int(context_chars * 0.6)
-                    logger.info(f"📊 上下文统计:")
-                    logger.info(f"  字符数: {context_chars}")
-                    logger.info(f"  估计token数: ~{estimated_tokens}")
-                    logger.info(f"  搜索结果数: {len(search_results)}")
-                    
-                    # 记录每个结果的详细信息
-                    for i, result in enumerate(search_results, 1):
-                        content_len = len(result.get('content', ''))
-                        snippet_len = len(result.get('snippet', ''))
-                        logger.info(f"  结果{i}: 正文{content_len}字 | 摘要{snippet_len}字 | {result['title'][:40]}...")
-                    
-                    logger.info(f"\n{'*'*80}\n")
-                else:
-                    logger.warning(f"⚠️ 搜索未返回任何结果，将不使用搜索上下文")
+                    if search_results:
+                        logger.info(f"\n{'*'*80}")
+                        logger.info(f"📚 构建搜索上下文 (共 {len(search_results)} 个结果)")
+                        logger.info(f"{'*'*80}\n")
+                        
+                        # 构建搜索上下文
+                        context = "我为你搜索到了以下相关信息：\n\n"
+                        for i, result in enumerate(search_results, 1):
+                            context += f"{i}. **{result['title']}**\n"
+                            context += f"   来源: {result['url']}\n"
+                            if result.get('content'):
+                                # 截取部分内容
+                                content_preview = result['content'][:300]
+                                context += f"   内容: {content_preview}...\n"
+                            else:
+                                context += f"   摘要: {result['snippet']}\n"
+                            context += "\n"
+                        
+                        context += "请基于以上搜索结果回答用户的问题。"
+                        
+                        # 将搜索结果插入到用户消息之前
+                        messages.insert(-1, {
+                            'role': 'system',
+                            'content': context
+                        })
+                        
+                        # 详细记录
+                        logger.info(f"📝 简单搜索上下文已注入")
+                        logger.info(f"📊 搜索结果数: {len(search_results)}")
+                    else:
+                        logger.warning(f"⚠️ 搜索未返回任何结果，将不使用搜索上下文")
             
             # 继续正常的流式响应
             async for chunk in self._stream_response_internal(messages):
                 yield chunk
+            
+            # 如果有引用信息，在响应结束后添加
+            if citations_text:
+                yield f"\n\n**📚 参考来源：**\n{citations_text}"
                 
         except Exception as e:
             logger.error(f"Failed to stream response with search: {e}")

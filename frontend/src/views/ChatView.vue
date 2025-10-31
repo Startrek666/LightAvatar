@@ -47,6 +47,25 @@
               </div>
             </div>
 
+            <!-- 搜索模式选择 (仅在搜索开启时显示) -->
+            <div class="header-action-item" v-if="enableWebSearch">
+              <a-select 
+                v-model:value="searchMode" 
+                style="width: 90px; margin-right: 10px"
+                size="small">
+                <a-select-option value="simple">简单</a-select-option>
+                <a-select-option value="advanced">高级</a-select-option>
+              </a-select>
+              <a-select 
+                v-if="searchMode === 'advanced'"
+                v-model:value="searchQuality" 
+                style="width: 90px"
+                size="small">
+                <a-select-option value="speed">快速</a-select-option>
+                <a-select-option value="quality">深度</a-select-option>
+              </a-select>
+            </div>
+
             <!-- 服务器节点选择 -->
             <div class="header-action-item server-node-selector">
               <a-dropdown :trigger="['click']">
@@ -339,6 +358,8 @@ const isInitializing = ref(false) // 是否正在初始化
 const enableVoiceInput = ref(true)  // 语音输入开关
 const showChatHistory = ref(true)   // 对话记录显示开关
 const enableWebSearch = ref(false)  // 联网搜索开关
+const searchMode = ref('simple')    // 搜索模式: simple/advanced
+const searchQuality = ref('speed')  // 搜索质量: speed/quality (仅advanced模式)
 
 // Server node selection
 const availableNodes = ref<ServerNode[]>(SERVER_NODES)
@@ -581,7 +602,9 @@ const sendTextMessage = (event?: Event) => {
     type: 'text',
     text: messageToSend,
     streaming: true,  // Enable streaming mode
-    use_search: enableWebSearch.value  // 是否启用联网搜索
+    use_search: enableWebSearch.value,  // 是否启用联网搜索
+    search_mode: searchMode.value,  // 搜索模式: simple/advanced
+    search_quality: searchQuality.value  // 搜索质量: speed/quality
   }
   console.log('🚀 [sendTextMessage] 发送数据到服务器:', payload)
   send(payload)

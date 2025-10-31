@@ -227,10 +227,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 # Check if streaming is enabled
                 use_streaming = data.get("streaming", True)
                 use_search = data.get("use_search", False)  # 是否启用联网搜索
+                search_mode = data.get("search_mode", "simple")  # 搜索模式: simple/advanced
+                search_quality = data.get("search_quality", "speed")  # 搜索质量: speed/quality
                 text_content = data.get("text", "")
                 logger.info(f"[WebSocket] Session {session_id}: 收到文本消息")
                 logger.info(f"  - streaming: {use_streaming}")
                 logger.info(f"  - use_search: {use_search}")
+                logger.info(f"  - search_mode: {search_mode}")
+                logger.info(f"  - search_quality: {search_quality}")
                 logger.info(f"  - text length: {len(text_content)}")
                 logger.info(f"  - text preview: {text_content[:100]}")
                 
@@ -294,7 +298,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                         await session.process_text_stream(
                             data.get("text"), 
                             stream_callback,
-                            use_search=use_search
+                            use_search=use_search,
+                            search_mode=search_mode,
+                            search_quality=search_quality
                         )
                         logger.info(f"[WebSocket] Session {session_id}: 流式处理完成")
                     except Exception as e:

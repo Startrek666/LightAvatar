@@ -18,6 +18,7 @@ from backend.handlers.tts.edge_tts_handler import EdgeTTSHandler
 from backend.handlers.avatar.wav2lip_handler import Wav2LipHandler
 from backend.handlers.avatar.lite_avatar_handler import LiteAvatarHandler
 from backend.handlers.search.web_search_handler import WebSearchHandler
+from backend.handlers.search.momo_search_handler import MomoSearchHandler
 from backend.app.config import settings
 from backend.app.ws_manager import WebSocketManager
 from backend.utils.text_utils import clean_markdown_for_tts, has_speakable_content
@@ -39,6 +40,7 @@ class Session:
     tts_handler: Optional[EdgeTTSHandler] = None
     avatar_handler: Optional[Wav2LipHandler] = None
     search_handler: Optional[WebSearchHandler] = None
+    momo_search_handler: Optional[MomoSearchHandler] = None
     
     # Session state
     conversation_history: List[dict] = field(default_factory=list)
@@ -123,7 +125,7 @@ class Session:
             
             # 初始化搜索处理器（如果启用）
             if settings.SEARCH_ENABLED:
-                logger.info(f"Initializing search handler for session {self.session_id}")
+                logger.info(f"Initializing simple search handler for session {self.session_id}")
                 self.search_handler = WebSearchHandler(
                     config={
                         "max_results": settings.SEARCH_MAX_RESULTS,
@@ -132,6 +134,31 @@ class Session:
                     }
                 )
                 await self.search_handler.initialize()
+            
+            # 初始化Momo高级搜索处理器（如果启用）
+            if settings.MOMO_SEARCH_ENABLED:
+                logger.info(f"Initializing Momo advanced search handler for session {self.session_id}")
+                try:
+                    self.momo_search_handler = MomoSearchHandler(
+                        config={
+                            "searxng_url": settings.MOMO_SEARCH_SEARXNG_URL,
+                            "searxng_language": settings.MOMO_SEARCH_LANGUAGE,
+                            "searxng_time_range": settings.MOMO_SEARCH_TIME_RANGE,
+                            "max_search_results": settings.MOMO_SEARCH_MAX_RESULTS,
+                            "embedding_model": settings.MOMO_SEARCH_EMBEDDING_MODEL,
+                            "num_candidates": settings.MOMO_SEARCH_NUM_CANDIDATES,
+                            "sim_threshold": settings.MOMO_SEARCH_SIM_THRESHOLD,
+                            "enable_deep_crawl": settings.MOMO_SEARCH_ENABLE_DEEP_CRAWL,
+                            "crawl_score_threshold": settings.MOMO_SEARCH_CRAWL_SCORE_THRESHOLD,
+                            "max_crawl_docs": settings.MOMO_SEARCH_MAX_CRAWL_DOCS
+                        }
+                    )
+                    await self.momo_search_handler.initialize()
+                    logger.info(f"✅ Momo search handler initialized for session {self.session_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to initialize Momo search handler: {e}")
+                    logger.warning("⚠️ Momo高级搜索将不可用，请检查配置和依赖")
+                    self.momo_search_handler = None
             
             logger.info(f"Session {self.session_id} handlers initialized (ASR: {asr_backend}, Avatar: {avatar_engine})")
         except Exception as e:
@@ -298,7 +325,14 @@ class Session:
             logger.error(f"Error processing text in session {self.session_id}: {e}")
             raise
     
-    async def process_text_stream(self, text: str, callback, use_search: bool = False):
+    async def process_text_stream(
+        self, 
+        text: str, 
+        callback, 
+        use_search: bool = False,
+        search_mode: str = "simple",
+        search_quality: str = "speed"
+    ):
         """
         Process text input with streaming response
         
@@ -307,12 +341,16 @@ class Session:
             callback: Async callback function to send chunks to client
                      Signature: async def callback(chunk_type, data)
             use_search: Whether to perform web search before generating response
+            search_mode: 搜索模式 ("simple" 或 "advanced")
+            search_quality: 搜索质量 ("speed" 或 "quality"，仅用于advanced模式)
         """
         self.update_activity()
         logger.info(f"[Session {self.session_id}] process_text_stream 开始处理")
         logger.info(f"  - 输入文本长度: {len(text)}")
         logger.info(f"  - 输入文本预览: {text[:100]}")
         logger.info(f"  - 联网搜索: {use_search}")
+        logger.info(f"  - 搜索模式: {search_mode}")
+        logger.info(f"  - 搜索质量: {search_quality}")
         
         try:
             # Add user message to history
@@ -492,14 +530,33 @@ class Session:
                 })
             
             # 根据是否启用搜索选择调用方式
-            if use_search and self.search_handler:
-                stream = self.llm_handler.stream_response_with_search(
-                    text, 
-                    self.conversation_history,
-                    search_handler=self.search_handler,
-                    use_search=True,
-                    progress_callback=search_progress_callback
-                )
+            if use_search:
+                # 根据搜索模式选择处理器
+                if search_mode == "advanced" and self.momo_search_handler:
+                    logger.info(f"使用Momo高级搜索 (质量: {search_quality})")
+                    stream = self.llm_handler.stream_response_with_search(
+                        text, 
+                        self.conversation_history,
+                        search_handler=None,
+                        use_search=True,
+                        search_mode="advanced",
+                        momo_search_handler=self.momo_search_handler,
+                        momo_search_quality=search_quality,
+                        progress_callback=search_progress_callback
+                    )
+                elif search_mode == "simple" and self.search_handler:
+                    logger.info(f"使用简单搜索")
+                    stream = self.llm_handler.stream_response_with_search(
+                        text, 
+                        self.conversation_history,
+                        search_handler=self.search_handler,
+                        use_search=True,
+                        search_mode="simple",
+                        progress_callback=search_progress_callback
+                    )
+                else:
+                    logger.warning(f"⚠️ 请求的搜索模式 '{search_mode}' 不可用，回退到普通模式")
+                    stream = self.llm_handler.stream_response(text, self.conversation_history)
             else:
                 stream = self.llm_handler.stream_response(text, self.conversation_history)
             

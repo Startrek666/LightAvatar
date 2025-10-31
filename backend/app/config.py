@@ -141,11 +141,24 @@ class Settings(BaseSettings):
     ENABLE_MONITORING: bool = Field(default=True, description="Enable monitoring")
     METRICS_PORT: int = Field(default=9090, description="Prometheus metrics port")
     
-    # Web Search settings
+    # Web Search settings (Simple Search)
     SEARCH_ENABLED: bool = Field(default=True, description="Enable web search functionality")
     SEARCH_MAX_RESULTS: int = Field(default=5, description="Maximum search results")
     SEARCH_FETCH_CONTENT: bool = Field(default=True, description="Fetch full page content")
     SEARCH_CONTENT_MAX_LENGTH: int = Field(default=2000, description="Maximum content length in characters")
+    
+    # Momo Advanced Search settings
+    MOMO_SEARCH_ENABLED: bool = Field(default=False, description="Enable Momo advanced search (requires SearXNG)")
+    MOMO_SEARCH_SEARXNG_URL: str = Field(default="http://localhost:8080", description="SearXNG instance URL")
+    MOMO_SEARCH_LANGUAGE: str = Field(default="zh", description="Search language (zh/en)")
+    MOMO_SEARCH_TIME_RANGE: str = Field(default="day", description="Search time range (day/week/month/year/'')")
+    MOMO_SEARCH_MAX_RESULTS: int = Field(default=50, description="Maximum search results from SearXNG")
+    MOMO_SEARCH_EMBEDDING_MODEL: str = Field(default="BAAI/bge-small-zh-v1.5", description="Embedding model for vector retrieval")
+    MOMO_SEARCH_NUM_CANDIDATES: int = Field(default=40, description="Number of candidate documents")
+    MOMO_SEARCH_SIM_THRESHOLD: float = Field(default=0.45, description="Similarity threshold (0-1)")
+    MOMO_SEARCH_ENABLE_DEEP_CRAWL: bool = Field(default=True, description="Enable deep web crawling (quality mode)")
+    MOMO_SEARCH_CRAWL_SCORE_THRESHOLD: float = Field(default=0.5, description="Minimum similarity score for crawling")
+    MOMO_SEARCH_MAX_CRAWL_DOCS: int = Field(default=10, description="Maximum documents to crawl")
     
     class Config:
         env_file = ".env"
