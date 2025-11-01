@@ -374,6 +374,10 @@ const idleVideoUrl = ref('')
 // Connection status messages
 const connectionMessage = ref('')
 
+// Video sequence tracking
+const lastReceivedVideoSeq = ref(-1)
+const pendingVideoSeq = ref<number | null>(null)
+
 // 计算属性：只在真正等待且无视频时显示"处理中"
 const showProcessingIndicator = computed(() => {
   return isProcessing.value && !isPlayingSpeechVideo.value && !isPlayingIdleVideo.value
@@ -837,7 +841,12 @@ const handleWebSocketMessage = (data: any) => {
   }
   else if (data.type === 'video_chunk_meta') {
     // Video chunk metadata received, binary data will follow
-    console.log('🎥 视频块元数据:', data.data.size, '字节')
+    const videoSeq = data.data.seq
+    console.log('🎥 视频块元数据:', data.data.size, '字节', videoSeq !== undefined ? `(序号:${videoSeq})` : '')
+    // 保存待接收的序号
+    if (videoSeq !== undefined && videoSeq !== -1) {
+      pendingVideoSeq.value = videoSeq
+    }
   }
   else if (data.type === 'stream_complete') {
     // Streaming complete
@@ -864,6 +873,21 @@ const handleWebSocketMessage = (data: any) => {
 const handleWebSocketBinary = (videoBlob: Blob) => {
   // Add to video queue
   videoQueue.value.push(videoBlob)
+  
+  // 更新已接收的视频序号
+  if (pendingVideoSeq.value !== null) {
+    lastReceivedVideoSeq.value = pendingVideoSeq.value
+    console.log(`✅ 已接收视频序号 ${pendingVideoSeq.value}`)
+    pendingVideoSeq.value = null
+    
+    // 每5个视频发送一次确认（减少消息量）
+    if (lastReceivedVideoSeq.value % 5 === 0) {
+      send({
+        type: 'video_ack',
+        last_seq: lastReceivedVideoSeq.value
+      })
+    }
+  }
   
   // 如果正在重连且收到视频，关闭重连提示
   if (isReconnecting.value) {
@@ -1184,6 +1208,13 @@ const startDialog = async () => {
 // Connection status change handler
 setConnectionChangeHandler((connected: boolean, reconnecting: boolean) => {
   if (connected && reconnecting) {
+    // 重连成功，发送最后收到的视频序号，请求重发未收到的视频
+    console.log(`📡 重连成功，发送同步请求 (最后序号: ${lastReceivedVideoSeq.value})`)
+    send({
+      type: 'reconnect_sync',
+      last_seq: lastReceivedVideoSeq.value
+    })
+    
     // 重连成功
     const hasPendingVideo = isProcessing.value || videoQueue.value.length > 0
     

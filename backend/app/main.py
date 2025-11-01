@@ -264,6 +264,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                                 await websocket_manager.send_json(session_id, {
                                     "type": "video_chunk_meta",
                                     "data": {
+                                        "seq": chunk_data.get("seq", -1),
                                         "text": chunk_data.get("text", ""),
                                         "size": len(video_bytes)
                                     }
@@ -330,10 +331,42 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
             elif message_type == "config":
                 # Update session configuration
                 await session.update_config(data.get("config"))
-                await websocket_manager.send_json(session_id, {
-                    "type": "config_updated",
-                    "status": "success"
-                })
+            
+            elif message_type == "video_ack":
+                # 客户端确认收到视频
+                last_seq = data.get("last_seq", -1)
+                logger.info(f"[WebSocket] Session {session_id}: 客户端确认已收到序号 {last_seq}")
+                session.update_client_received_seq(last_seq)
+            
+            elif message_type == "reconnect_sync":
+                # 重连同步：客户端告知最后收到的视频序号
+                last_seq = data.get("last_seq", -1)
+                logger.info(f"[WebSocket] Session {session_id}: 重连同步，客户端最后序号 {last_seq}")
+                session.update_client_received_seq(last_seq)
+                
+                # 检查是否有未发送的视频需要重发
+                missing_videos = session.get_missing_videos(last_seq)
+                if missing_videos:
+                    logger.info(f"[WebSocket] Session {session_id}: 重发 {len(missing_videos)} 个未收到的视频")
+                    for video_data in missing_videos:
+                        try:
+                            # 发送视频块元数据
+                            await websocket_manager.send_json(session_id, {
+                                "type": "video_chunk_meta",
+                                "data": {
+                                    "seq": video_data['seq'],
+                                    "size": len(video_data['video']),
+                                    "text": video_data.get('text', '')
+                                }
+                            })
+                            # 发送视频二进制数据
+                            await websocket_manager.send_bytes(session_id, video_data['video'])
+                            logger.info(f"[WebSocket] Session {session_id}: 已重发视频序号 {video_data['seq']}")
+                        except Exception as e:
+                            logger.error(f"[WebSocket] Session {session_id}: 重发视频序号 {video_data['seq']} 失败: {e}")
+                            break
+                else:
+                    logger.info(f"[WebSocket] Session {session_id}: 无需重发视频")
                 
             elif message_type == "ping":
                 # Heartbeat

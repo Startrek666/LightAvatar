@@ -49,12 +49,50 @@ class Session:
     is_connected: bool = True  # WebSocket连接状态
     disconnected_at: Optional[datetime] = None  # 断开时间
     
+    # Video缓存和序号
+    video_cache: Dict[int, Dict] = field(default_factory=dict)  # 视频缓存：{seq: {video, audio, text}}
+    next_video_seq: int = 0  # 下一个视频序号
+    client_last_received_seq: int = -1  # 客户端最后接收到的序号
+    
     # Buffers
     audio_buffer: List[bytes] = field(default_factory=list)
     
     def update_activity(self):
         """Update last activity timestamp"""
         self.last_active = datetime.now()
+    
+    def update_client_received_seq(self, seq: int):
+        """更新客户端最后接收到的视频序号"""
+        if seq > self.client_last_received_seq:
+            self.client_last_received_seq = seq
+            # 清理已确认的旧缓存（保留最近10个，减少内存占用）
+            # 10个视频大约 2-5MB，足够应对短暂的网络波动
+            seqs_to_remove = [s for s in self.video_cache.keys() if s < seq - 10]
+            for s in seqs_to_remove:
+                del self.video_cache[s]
+                logger.debug(f"清理视频缓存序号 {s}")
+    
+    def get_missing_videos(self, last_received_seq: int) -> List[Dict]:
+        """获取客户端未收到的视频"""
+        missing = []
+        for seq in sorted(self.video_cache.keys()):
+            if seq > last_received_seq:
+                video_data = self.video_cache[seq].copy()
+                video_data['seq'] = seq
+                missing.append(video_data)
+        return missing
+    
+    def clear_video_cache(self):
+        """清空视频缓存（会话结束或超时时调用）"""
+        cache_count = len(self.video_cache)
+        if cache_count > 0:
+            self.video_cache.clear()
+            logger.info(f"已清空 {cache_count} 个视频缓存")
+    
+    def get_cache_size_mb(self) -> float:
+        """获取视频缓存占用的内存大小（MB）"""
+        total_bytes = sum(len(v.get('video', b'')) for v in self.video_cache.values())
+        return total_bytes / (1024 * 1024)
     
     async def initialize_handlers(self):
         """Initialize all handlers"""
@@ -428,9 +466,19 @@ class Session:
                             del pending_tasks[next_to_send]
                             
                             if result:
+                                # 分配视频序号并缓存
+                                video_seq = self.next_video_seq
+                                self.next_video_seq += 1
+                                # 只缓存视频数据，不包含audio（减少内存占用）
+                                self.video_cache[video_seq] = {
+                                    'video': result['video'],
+                                    'text': result.get('text', '')
+                                }
+                                result['seq'] = video_seq
+                                
                                 # ⚡ 关键修复：检查连接状态，断开时等待重连
                                 if not self.is_connected:
-                                    logger.warning(f"⏸️ 连接断开，暂停发送句子 {next_to_send + 1}，等待重连...")
+                                    logger.warning(f"⏸️ 连接断开，暂停发送句子 {next_to_send + 1} (序号:{video_seq})，等待重连...")
                                     wait_count = 0
                                     MAX_WAIT = 60  # 增加到60秒（12次 × 5秒），给重连更多时间
                                     
@@ -442,7 +490,7 @@ class Session:
                                             break
                                     
                                     if not self.is_connected:
-                                        logger.error(f"❌ 等待 {MAX_WAIT}秒 后仍未重连，丢弃句子 {next_to_send + 1}")
+                                        logger.error(f"❌ 等待 {MAX_WAIT}秒 后仍未重连，缓存句子 {next_to_send + 1} (序号:{video_seq})，等待后续重连重发")
                                         next_to_send += 1
                                         continue
                                 
@@ -473,9 +521,9 @@ class Session:
                                 if next_to_send == 0:
                                     # 计算实际预缓冲的视频数量
                                     actual_buffered = sum(1 for i in range(sentence_index) if i in pending_tasks and pending_tasks[i].done())
-                                    logger.info(f"[实时] 句子 1 开始播放（已预缓冲 {actual_buffered} 个视频）: {len(result['video'])} bytes")
+                                    logger.info(f"[实时] 句子 1 开始播放（已预缓冲 {actual_buffered} 个视频）(序号:{video_seq}): {len(result['video'])} bytes")
                                 else:
-                                    logger.info(f"[实时] 句子 {next_to_send + 1} 已发送: {len(result['video'])} bytes")
+                                    logger.info(f"[实时] 句子 {next_to_send + 1} 已发送 (序号:{video_seq}): {len(result['video'])} bytes")
                             
                             next_to_send += 1
                         except Exception as e:
@@ -985,9 +1033,15 @@ class SessionManager:
         if session_id in self.sessions:
             session = self.sessions[session_id]
             
+            # 清空视频缓存
+            cache_size = session.get_cache_size_mb()
+            if cache_size > 0:
+                logger.info(f"Session {session_id} 视频缓存占用: {cache_size:.2f}MB")
+            session.clear_video_cache()
+            
             # 清理用户映射
             if session.user_id is not None and self.user_sessions.get(session.user_id) == session_id:
-                del self.user_sessions[session.user_id]
+                del self.user_sessions[session_id]
                 logger.debug(f"清理用户 {session.username or session.user_id} 的会话映射")
             
             session.release()
