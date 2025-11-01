@@ -50,16 +50,8 @@
             <!-- 搜索模式选择 (仅在搜索开启时显示) -->
             <div class="header-action-item" v-if="enableWebSearch">
               <a-select 
-                v-model:value="searchMode" 
-                style="width: 90px; margin-right: 10px"
-                size="small">
-                <a-select-option value="simple">简单</a-select-option>
-                <a-select-option value="advanced">高级</a-select-option>
-              </a-select>
-              <a-select 
-                v-if="searchMode === 'advanced'"
                 v-model:value="searchQuality" 
-                style="width: 90px"
+                style="width: 100px"
                 size="small">
                 <a-select-option value="speed">快速</a-select-option>
                 <a-select-option value="quality">深度</a-select-option>
@@ -334,7 +326,7 @@ import {
 // const chatStore = useChatStore()
 const router = useRouter()
 const { t, locale } = useI18n()
-const { connect, disconnect, send, isConnected, shouldReconnect } = useWebSocket()
+const { connect, disconnect, send, isConnected, isReconnecting, shouldReconnect, setConnectionChangeHandler } = useWebSocket()
 const { startRecording: startAudioRecording, stopRecording: stopAudioRecording, isRecording } = useAudioRecorder()
 const { parseDocument, isUploading: isUploadingDoc } = useDocParser()
 
@@ -358,8 +350,7 @@ const isInitializing = ref(false) // 是否正在初始化
 const enableVoiceInput = ref(true)  // 语音输入开关
 const showChatHistory = ref(true)   // 对话记录显示开关
 const enableWebSearch = ref(false)  // 联网搜索开关
-const searchMode = ref('simple')    // 搜索模式: simple/advanced
-const searchQuality = ref('speed')  // 搜索质量: speed/quality (仅advanced模式)
+const searchQuality = ref('speed')  // 搜索模式: speed(快速)/quality(深度)
 
 // Server node selection
 const availableNodes = ref<ServerNode[]>(SERVER_NODES)
@@ -379,6 +370,10 @@ const videoQueue = ref<Blob[]>([])
 const isPlayingSpeechVideo = ref(false)
 const configLoaded = ref(false)
 const idleVideoUrl = ref('')
+
+// Connection status messages
+const connectionMessage = ref('')
+const connectionMessageKey = ref<string | number>('')
 
 // 计算属性：只在真正等待且无视频时显示"处理中"
 const showProcessingIndicator = computed(() => {
@@ -603,8 +598,8 @@ const sendTextMessage = (event?: Event) => {
     text: messageToSend,
     streaming: true,  // Enable streaming mode
     use_search: enableWebSearch.value,  // 是否启用联网搜索
-    search_mode: searchMode.value,  // 搜索模式: simple/advanced
-    search_quality: searchQuality.value  // 搜索质量: speed/quality
+    search_mode: 'advanced',  // 固定使用高级搜索
+    search_quality: searchQuality.value  // 搜索模式: speed(快速)/quality(深度)
   }
   console.log('🚀 [sendTextMessage] 发送数据到服务器:', payload)
   send(payload)
@@ -850,6 +845,7 @@ const handleWebSocketMessage = (data: any) => {
     console.log('✅ [handleWebSocketMessage] 流式传输完成:', data.data.full_text)
     console.log('  - 最终文本长度:', data.data.full_text?.length || 0)
     message.destroy()  // 关闭loading提示
+    message.destroy('reconnecting')  // 关闭重连提示（如果还在显示）
     isProcessing.value = false
     console.log('  - isProcessing 设置为 false')
   }
@@ -869,6 +865,11 @@ const handleWebSocketMessage = (data: any) => {
 const handleWebSocketBinary = (videoBlob: Blob) => {
   // Add to video queue
   videoQueue.value.push(videoBlob)
+  
+  // 如果正在重连且收到视频，关闭重连提示
+  if (isReconnecting.value) {
+    message.destroy('reconnecting')
+  }
 
   // Start playing if not already playing
   if (!isPlayingSpeechVideo.value) {
@@ -1180,6 +1181,44 @@ const startDialog = async () => {
     isInitializing.value = false
   }
 }
+
+// Connection status change handler
+setConnectionChangeHandler((connected: boolean, reconnecting: boolean) => {
+  if (connected && reconnecting) {
+    // 重连成功
+    const hasPendingVideo = isProcessing.value || videoQueue.value.length > 0
+    
+    if (hasPendingVideo) {
+      connectionMessage.value = '正在重新获取数字人视频...'
+      message.success({
+        content: '重连成功，正在重新获取数字人视频...',
+        key: 'reconnect-success',
+        duration: 3
+      })
+    } else {
+      connectionMessage.value = '重连成功'
+      message.success({
+        content: '重连成功',
+        key: 'reconnect-success',
+        duration: 2
+      })
+    }
+    // 关闭重连提示
+    message.destroy('reconnecting')
+  } else if (!connected && reconnecting) {
+    // 断开连接，正在重连
+    connectionMessage.value = '网络波动，与服务器断开连接，正在尝试重连...'
+    message.warning({
+      content: '网络波动，与服务器断开连接，正在尝试重连...',
+      key: 'reconnecting',
+      duration: 0  // 不自动关闭，等待重连成功
+    })
+  } else if (!connected && !reconnecting) {
+    // 断开连接，不重连
+    connectionMessage.value = ''
+    message.destroy('reconnecting')
+  }
+})
 
 // Lifecycle
 onMounted(async () => {

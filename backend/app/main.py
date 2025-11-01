@@ -269,7 +269,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                                     }
                                 })
                                 # Then send binary video data
-                                await websocket.send_bytes(video_bytes)
+                                # 使用 websocket_manager 而不是直接使用 websocket，支持重连后继续发送
+                                await websocket_manager.send_bytes(session_id, video_bytes)
                         
                         elif chunk_type == "user_message":
                             # Confirm user message received

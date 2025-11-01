@@ -5,9 +5,11 @@ export function useWebSocket() {
     const ws = ref<WebSocket | null>(null)
     const isConnected = ref(false)
     const shouldReconnect = ref(true)
+    const isReconnecting = ref(false)  // 是否正在重连
     const messageHandler = ref<((data: any) => void) | null>(null)
     const binaryHandler = ref<((data: Blob) => void) | null>(null)
     const closeHandler = ref<((event: CloseEvent) => void) | null>(null)
+    const onConnectionChange = ref<((connected: boolean, isReconnecting: boolean) => void) | null>(null)
 
     const connect = (url: string, onMessage?: (data: any) => void, onBinary?: (data: Blob) => void, onClose?: (event: CloseEvent) => void) => {
         if (ws.value?.readyState === WebSocket.OPEN) {
@@ -41,7 +43,13 @@ export function useWebSocket() {
 
         ws.value.onopen = () => {
             console.log('WebSocket connected')
+            const wasReconnecting = isReconnecting.value
             isConnected.value = true
+            isReconnecting.value = false
+            // 通知连接状态变化
+            if (onConnectionChange.value) {
+                onConnectionChange.value(true, wasReconnecting)
+            }
         }
 
         ws.value.onmessage = (event) => {
@@ -70,6 +78,7 @@ export function useWebSocket() {
 
         ws.value.onclose = (event: CloseEvent) => {
             console.log('WebSocket disconnected')
+            const wasConnected = isConnected.value
             isConnected.value = false
 
             // Call close handler if provided
@@ -83,16 +92,30 @@ export function useWebSocket() {
                 console.warn('Connection rejected:', event.reason)
                 // Don't attempt to reconnect if rejected due to multiple sessions
                 shouldReconnect.value = false
+                isReconnecting.value = false
+                // 通知连接状态变化
+                if (onConnectionChange.value && wasConnected) {
+                    onConnectionChange.value(false, false)
+                }
                 return
             }
 
             // Attempt to reconnect after 3 seconds if allowed
-            if (shouldReconnect.value) {
+            if (shouldReconnect.value && wasConnected) {
+                isReconnecting.value = true
+                // 通知连接断开，正在重连
+                if (onConnectionChange.value) {
+                    onConnectionChange.value(false, true)
+                }
+                
                 setTimeout(() => {
                     if (!isConnected.value && shouldReconnect.value) {
                         connect(url, messageHandler.value || undefined, binaryHandler.value || undefined, closeHandler.value || undefined)
                     }
                 }, 3000)
+            } else if (onConnectionChange.value && wasConnected) {
+                // 如果不重连，也通知连接断开
+                onConnectionChange.value(false, false)
             }
         }
     }
@@ -117,11 +140,17 @@ export function useWebSocket() {
         disconnect()
     })
 
+    const setConnectionChangeHandler = (handler: (connected: boolean, isReconnecting: boolean) => void) => {
+        onConnectionChange.value = handler
+    }
+
     return {
         connect,
         disconnect,
         send,
         isConnected,
-        shouldReconnect
+        isReconnecting,
+        shouldReconnect,
+        setConnectionChangeHandler
     }
 }

@@ -305,45 +305,45 @@ class OpenAIHandler(BaseHandler):
                 # 简单搜索模式 (WebSearchHandler)
                 elif search_mode == "simple" and search_handler:
                     logger.info(f"🔍 执行简单搜索: {text}")
-                    
+                
                     # 执行简单搜索
-                    search_results = await search_handler.search_with_progress(
-                        query=text,
-                        max_results=3,
-                        progress_callback=progress_callback
-                    )
+                search_results = await search_handler.search_with_progress(
+                    query=text,
+                    max_results=3,
+                    progress_callback=progress_callback
+                )
+                
+                if search_results:
+                    logger.info(f"\n{'*'*80}")
+                    logger.info(f"📚 构建搜索上下文 (共 {len(search_results)} 个结果)")
+                    logger.info(f"{'*'*80}\n")
                     
-                    if search_results:
-                        logger.info(f"\n{'*'*80}")
-                        logger.info(f"📚 构建搜索上下文 (共 {len(search_results)} 个结果)")
-                        logger.info(f"{'*'*80}\n")
-                        
-                        # 构建搜索上下文
-                        context = "我为你搜索到了以下相关信息：\n\n"
-                        for i, result in enumerate(search_results, 1):
-                            context += f"{i}. **{result['title']}**\n"
-                            context += f"   来源: {result['url']}\n"
-                            if result.get('content'):
-                                # 截取部分内容
-                                content_preview = result['content'][:300]
-                                context += f"   内容: {content_preview}...\n"
-                            else:
-                                context += f"   摘要: {result['snippet']}\n"
-                            context += "\n"
-                        
-                        context += "请基于以上搜索结果回答用户的问题。"
-                        
-                        # 将搜索结果插入到用户消息之前
-                        messages.insert(-1, {
-                            'role': 'system',
-                            'content': context
-                        })
-                        
+                    # 构建搜索上下文
+                    context = "我为你搜索到了以下相关信息：\n\n"
+                    for i, result in enumerate(search_results, 1):
+                        context += f"{i}. **{result['title']}**\n"
+                        context += f"   来源: {result['url']}\n"
+                        if result.get('content'):
+                            # 截取部分内容
+                            content_preview = result['content'][:300]
+                            context += f"   内容: {content_preview}...\n"
+                        else:
+                            context += f"   摘要: {result['snippet']}\n"
+                        context += "\n"
+                    
+                    context += "请基于以上搜索结果回答用户的问题。"
+                    
+                    # 将搜索结果插入到用户消息之前
+                    messages.insert(-1, {
+                        'role': 'system',
+                        'content': context
+                    })
+                    
                         # 详细记录
                         logger.info(f"📝 简单搜索上下文已注入")
                         logger.info(f"📊 搜索结果数: {len(search_results)}")
-                    else:
-                        logger.warning(f"⚠️ 搜索未返回任何结果，将不使用搜索上下文")
+                else:
+                    logger.warning(f"⚠️ 搜索未返回任何结果，将不使用搜索上下文")
             
             # 继续正常的流式响应
             async for chunk in self._stream_response_internal(messages):

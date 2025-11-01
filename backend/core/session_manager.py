@@ -432,13 +432,13 @@ class Session:
                                 if not self.is_connected:
                                     logger.warning(f"⏸️ 连接断开，暂停发送句子 {next_to_send + 1}，等待重连...")
                                     wait_count = 0
-                                    MAX_WAIT = 30  # 最多等待30秒（6次 × 10秒）
+                                    MAX_WAIT = 60  # 增加到60秒（12次 × 5秒），给重连更多时间
                                     
                                     while not self.is_connected and wait_count < MAX_WAIT:
-                                        await asyncio.sleep(10)
-                                        wait_count += 10
+                                        await asyncio.sleep(5)  # 改为5秒检查一次，更频繁检查
+                                        wait_count += 5
                                         if self.is_connected:
-                                            logger.info(f"✅ 重连成功，继续发送句子 {next_to_send + 1}")
+                                            logger.info(f"✅ 重连成功，继续发送句子 {next_to_send + 1} (等待了 {wait_count}秒)")
                                             break
                                     
                                     if not self.is_connected:
@@ -446,8 +446,29 @@ class Session:
                                         next_to_send += 1
                                         continue
                                 
-                                # 发送视频
-                                await callback("video_chunk", result)
+                                # 发送视频（使用 try-except 捕获可能的连接错误）
+                                try:
+                                    await callback("video_chunk", result)
+                                except Exception as send_error:
+                                    # 如果发送失败，可能是连接又断开了
+                                    logger.error(f"❌ 发送句子 {next_to_send + 1} 时出错: {send_error}")
+                                    # 检查是否是连接问题
+                                    if "not connected" in str(send_error).lower() or "closed" in str(send_error).lower():
+                                        logger.warning(f"⚠️ 检测到连接问题，句子 {next_to_send + 1} 将等待重连...")
+                                        # 标记为未连接，等待重连
+                                        self.is_connected = False
+                                        # 将结果重新放回队列，等待重连后继续发送
+                                        # 创建一个已完成的任务，直接返回 result
+                                        async def create_completed_task():
+                                            return result
+                                        pending_tasks[next_to_send] = asyncio.create_task(create_completed_task())
+                                        # 暂时跳过这个任务，等待重连后下次循环会重新处理
+                                        continue
+                                    else:
+                                        # 其他错误，丢弃这个任务
+                                        logger.error(f"❌ 无法恢复的错误，丢弃句子 {next_to_send + 1}")
+                                        next_to_send += 1
+                                        continue
                                 self.update_activity()
                                 if next_to_send == 0:
                                     # 计算实际预缓冲的视频数量
@@ -531,31 +552,23 @@ class Session:
             
             # 根据是否启用搜索选择调用方式
             if use_search:
-                # 根据搜索模式选择处理器
+                # 只支持高级搜索（Momo Search）
                 if search_mode == "advanced" and self.momo_search_handler:
-                    logger.info(f"使用Momo高级搜索 (质量: {search_quality})")
+                    logger.info(f"使用高级搜索 (模式: {search_quality})")
                     stream = self.llm_handler.stream_response_with_search(
                         text, 
                         self.conversation_history,
-                        search_handler=None,
+                        search_handler=None,  # 不使用简单搜索
                         use_search=True,
                         search_mode="advanced",
                         momo_search_handler=self.momo_search_handler,
                         momo_search_quality=search_quality,
                         progress_callback=search_progress_callback
                     )
-                elif search_mode == "simple" and self.search_handler:
-                    logger.info(f"使用简单搜索")
-                    stream = self.llm_handler.stream_response_with_search(
-                        text, 
-                        self.conversation_history,
-                        search_handler=self.search_handler,
-                        use_search=True,
-                        search_mode="simple",
-                        progress_callback=search_progress_callback
-                    )
                 else:
-                    logger.warning(f"⚠️ 请求的搜索模式 '{search_mode}' 不可用，回退到普通模式")
+                    # 如果高级搜索不可用，回退到普通模式
+                    if search_mode == "advanced":
+                        logger.warning(f"⚠️ 高级搜索不可用，回退到普通模式")
                     stream = self.llm_handler.stream_response(text, self.conversation_history)
             else:
                 stream = self.llm_handler.stream_response(text, self.conversation_history)

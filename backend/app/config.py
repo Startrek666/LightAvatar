@@ -219,12 +219,12 @@ def update_settings(config_dict: dict):
                 else:
                     # 处理两层嵌套（如 avatar.fps）
                     combined_key = f"{key}_{sub_key}".upper()
-                    # 先尝试组合键（如 SERVER_PORT）
-                    if combined_key not in readonly_attrs and hasattr(settings, combined_key):
-                        setattr(settings, combined_key, sub_value)
-                    # 如果组合键不存在，尝试只用sub_key（如 PORT）
-                    elif sub_key.upper() not in readonly_attrs and hasattr(settings, sub_key.upper()):
-                        setattr(settings, sub_key.upper(), sub_value)
+                # 先尝试组合键（如 SERVER_PORT）
+                if combined_key not in readonly_attrs and hasattr(settings, combined_key):
+                    setattr(settings, combined_key, sub_value)
+                # 如果组合键不存在，尝试只用sub_key（如 PORT）
+                elif sub_key.upper() not in readonly_attrs and hasattr(settings, sub_key.upper()):
+                    setattr(settings, sub_key.upper(), sub_value)
 
 
 # Load configuration from file if exists

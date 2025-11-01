@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted } from 'vue'
+import { computed, ref, nextTick, onMounted, watch } from 'vue'
 import { marked, Renderer } from 'marked'
 import hljs from 'highlight.js'
 
@@ -183,6 +183,31 @@ const renderedHtml = computed(() => {
   }
 })
 
+// 优化参考来源列表的样式
+function optimizeReferencesLayout() {
+  nextTick(() => {
+    if (!markdownContainer.value) return
+    
+    // 查找所有包含"参考来源"的段落
+    const paragraphs = markdownContainer.value.querySelectorAll('p')
+    paragraphs.forEach(p => {
+      const text = p.textContent || ''
+      if (text.includes('参考来源')) {
+        // 找到后面的第一个有序列表
+        let nextElement = p.nextElementSibling
+        while (nextElement) {
+          if (nextElement.tagName === 'OL' || nextElement.tagName === 'UL') {
+            // 添加特殊类名
+            nextElement.classList.add('references-list')
+            break
+          }
+          nextElement = nextElement.nextElementSibling
+        }
+      }
+    })
+  })
+}
+
 // 点击外部关闭 tooltip
 onMounted(() => {
   document.addEventListener('click', (e) => {
@@ -190,6 +215,25 @@ onMounted(() => {
       tooltipVisible.value = false
     }
   })
+  
+  // 监听内容变化，优化参考来源布局
+  const observer = new MutationObserver(() => {
+    optimizeReferencesLayout()
+  })
+  
+  if (markdownContainer.value) {
+    observer.observe(markdownContainer.value, {
+      childList: true,
+      subtree: true
+    })
+    // 初始执行一次
+    optimizeReferencesLayout()
+  }
+})
+
+// 监听 renderedHtml 变化，优化布局
+watch(() => renderedHtml.value, () => {
+  optimizeReferencesLayout()
 })
 </script>
 
@@ -251,11 +295,22 @@ onMounted(() => {
 .markdown-body ol {
   margin-top: 0;
   margin-bottom: 10px;
-  padding-left: 2em;
+  padding-left: 2.5em; /* 从 2em 增加到 2.5em，避免序号超出消息框 */
 }
 
 .markdown-body li {
   margin-bottom: 4px;
+  padding-left: 0.5em; /* 增加列表项内容的左边距 */
+}
+
+/* 参考来源列表的特殊样式 */
+.markdown-body .references-list {
+  padding-left: 3em !important; /* 参考来源列表使用更大的左边距 */
+  margin-left: 0.5em; /* 额外增加左边距 */
+}
+
+.markdown-body .references-list li {
+  padding-left: 0.8em; /* 参考来源列表项增加更多左边距 */
 }
 
 .markdown-body code {
