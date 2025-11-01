@@ -28,8 +28,9 @@ websocket-client==1.8.0  # For Skynet Whisper API
 edge-tts==6.1.18
 
 # Avatar generation (Wav2Lip & LiteAvatar)
-torch==2.1.2  # PyTorch for Wav2Lip (CPU version)
-torchvision==0.16.2  # Required by LiteAvatar
+torch==2.2.0  # PyTorch for Wav2Lip (CPU version) - upgraded for compatibility with sentence-transformers
+torchvision==0.17.0  # Required by LiteAvatar - compatible with torch 2.2.0
+torchaudio==2.2.0  # PyTorch Audio - compatible with torch 2.2.0
 onnx==1.16.2
 onnxruntime==1.19.2
 opencv-python-headless==4.10.0.84
@@ -48,6 +49,7 @@ trafilatura>=1.6.0        # Web content extraction and text processing
 # Momo Advanced Search dependencies
 faiss-cpu>=1.7.4          # FAISS for vector similarity search (CPU version)
 sentence-transformers>=2.2.2  # Sentence embeddings for semantic search
+transformers>=4.35.0      # Required by sentence-transformers (explicit version for compatibility)
 langchain-text-splitters>=0.2.0  # Text splitting utilities
 
 # Authentication

@@ -17,6 +17,8 @@ def clean_markdown_for_tts(text: str) -> str:
     - 列表：- item -> item
     - 链接：[text](url) -> text
     - Emoji表情符号
+    - 引用标记：[citation:X] -> 移除（不读出）
+    - 参考来源部分：完整移除（不读出）
     
     Args:
         text: 原始文本（可能包含Markdown）
@@ -26,6 +28,18 @@ def clean_markdown_for_tts(text: str) -> str:
     """
     if not text:
         return text
+    
+    # 0. 移除"参考来源"部分（包括标题和所有引用列表）
+    # 匹配格式：**📚 参考来源：** 或 参考来源： 及其后面的所有引用列表
+    text = re.sub(
+        r'(?:📚\s*)?参考来源[：:]\s*\n(?:\d+\.\s*\[.*?\]\(.*?\)\n?)+',
+        '',
+        text,
+        flags=re.DOTALL
+    )
+    
+    # 移除引用标记 [citation:X]（不读出）
+    text = re.sub(r'\[citation:\d+\]', '', text)
     
     # 0. 去除emoji表情符号（在其他处理之前）
     # 使用更精确的emoji Unicode范围（避免误删中文字符）

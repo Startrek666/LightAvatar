@@ -1,15 +1,135 @@
 <template>
-  <div class="markdown-body" v-html="renderedHtml"></div>
+  <div class="markdown-body" ref="markdownContainer" @click="handleCitationClick">
+    <div v-html="renderedHtml"></div>
+    
+    <!-- 引用来源列表（隐藏的引用数据） -->
+    <div v-if="citations.length > 0" class="citations-data" style="display: none;">
+      <div v-for="(citation, index) in citations" :key="index" :data-citation-id="index + 1">
+        {{ citation }}
+      </div>
+    </div>
+    
+    <!-- 引用详情浮动框 -->
+    <div 
+      v-if="tooltipVisible && tooltipTitle" 
+      class="citation-popover"
+      :style="popoverStyle"
+      @click.stop>
+      <div class="citation-popover-title" v-html="tooltipTitle"></div>
+      <div class="citation-popover-url">
+        <a :href="tooltipUrl" target="_blank" @click.stop>{{ tooltipUrl }}</a>
+      </div>
+      <div class="citation-popover-close" @click="tooltipVisible = false">×</div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, nextTick, onMounted } from 'vue'
 import { marked, Renderer } from 'marked'
 import hljs from 'highlight.js'
 
 const props = defineProps<{
   content: string
 }>()
+
+const markdownContainer = ref<HTMLElement>()
+const tooltipVisible = ref(false)
+const tooltipTitle = ref('')
+const tooltipUrl = ref('')
+const popoverStyle = ref<{ top: string; left: string }>({ top: '0px', left: '0px' })
+const citations = ref<Array<{ title: string; url: string }>>([])
+
+// 提取引用信息
+function extractCitations(content: string): Array<{ title: string; url: string }> {
+  const citationsList: Array<{ title: string; url: string }> = []
+  
+  // 匹配 "参考来源：" 后面的内容（支持 Markdown 格式）
+  // 匹配格式：**📚 参考来源：** 或 参考来源：
+  const referencesMatch = content.match(/(?:📚\s*)?参考来源[：:]\s*\n((?:\d+\.\s*\[.*?\]\(.*?\)\n?)+)/s)
+  
+  if (referencesMatch) {
+    const referencesText = referencesMatch[1]
+    // 匹配每个引用：[标题](URL)
+    const citationRegex = /(\d+)\.\s*\[(.*?)\]\((.*?)\)/g
+    let match
+    
+    while ((match = citationRegex.exec(referencesText)) !== null) {
+      citationsList.push({
+        title: match[2],
+        url: match[3]
+      })
+    }
+  }
+  
+  return citationsList
+}
+
+// 处理引用标记，转换为可点击的上标
+function processCitations(content: string): string {
+  // 先提取引用信息
+  citations.value = extractCitations(content)
+  
+  // 保留完整的原始内容（包括参考来源部分）
+  // 将 [citation:X] 转换为可点击的上标
+  // 匹配 [citation:1] 或 [citation:1][citation:2] 这样的格式
+  const processedContent = content.replace(/\[citation:(\d+)\]/g, (match, num) => {
+    const citationIndex = parseInt(num) - 1
+    if (citationIndex >= 0 && citationIndex < citations.value.length) {
+      return `<sup class="citation-sup" data-citation="${num}" title="点击查看来源">${num}</sup>`
+    }
+    return match
+  })
+  
+  return processedContent
+}
+
+// 处理引用点击事件
+function handleCitationClick(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  const citationSup = target.closest('.citation-sup')
+  
+  if (citationSup) {
+    const citationId = citationSup.getAttribute('data-citation')
+    if (citationId) {
+      const citationIndex = parseInt(citationId) - 1
+      if (citationIndex >= 0 && citationIndex < citations.value.length) {
+        const citation = citations.value[citationIndex]
+        
+        // 设置引用信息
+        tooltipTitle.value = citation.title
+        tooltipUrl.value = citation.url
+        
+        // 计算 Popover 位置（在上标上方显示）
+        const rect = citationSup.getBoundingClientRect()
+        const containerRect = markdownContainer.value?.getBoundingClientRect()
+        
+        if (containerRect) {
+          // 相对于容器的位置
+          const left = rect.left - containerRect.left + rect.width / 2
+          const top = rect.top - containerRect.top - 10 // 上方10px
+          
+          popoverStyle.value = {
+            left: `${Math.max(10, Math.min(left - 150, containerRect.width - 310))}px`,
+            top: `${Math.max(10, top - 80)}px`
+          }
+        }
+        
+        // 显示 Popover
+        nextTick(() => {
+          tooltipVisible.value = true
+        })
+        
+        event.stopPropagation()
+      }
+    }
+  } else {
+    // 点击其他地方，关闭 Popover
+    if (!target.closest('.citation-popover')) {
+      tooltipVisible.value = false
+    }
+  }
+}
 
 // 配置 marked
 marked.setOptions({
@@ -34,11 +154,23 @@ renderer.code = function(code: string, language: string | undefined) {
 
 const renderedHtml = computed(() => {
   try {
-    return marked.parse(props.content, { renderer })
+    // 先处理引用标记
+    const processedContent = processCitations(props.content)
+    // 然后渲染 Markdown
+    return marked.parse(processedContent, { renderer })
   } catch (error) {
     console.error('Markdown parse error:', error)
     return props.content
   }
+})
+
+// 点击外部关闭 tooltip
+onMounted(() => {
+  document.addEventListener('click', (e) => {
+    if (markdownContainer.value && !markdownContainer.value.contains(e.target as Node)) {
+      tooltipVisible.value = false
+    }
+  })
 })
 </script>
 
@@ -287,5 +419,108 @@ const renderedHtml = computed(() => {
 
 .markdown-body .hljs-strong {
   font-weight: bold;
+}
+
+/* 引用上标样式 */
+.markdown-body .citation-sup {
+  display: inline-block;
+  vertical-align: super;
+  font-size: 0.75em;
+  color: #1890ff;
+  background-color: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin: 0 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.markdown-body .citation-sup:hover {
+  background-color: #bae7ff;
+  border-color: #69c0ff;
+  color: #0050b3;
+  transform: scale(1.1);
+}
+
+.markdown-body .citation-sup:active {
+  transform: scale(0.95);
+}
+
+/* 引用详情浮动框样式 */
+.citation-popover {
+  position: absolute;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 12px 16px;
+  min-width: 280px;
+  max-width: 400px;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.citation-popover-title {
+  font-weight: 600;
+  color: #1890ff;
+  margin-bottom: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  padding-right: 20px;
+}
+
+.citation-popover-url {
+  font-size: 12px;
+  color: #666;
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+
+.citation-popover-url a {
+  color: #1890ff;
+  text-decoration: none;
+}
+
+.citation-popover-url a:hover {
+  text-decoration: underline;
+}
+
+.citation-popover-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 20px;
+  color: #999;
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.2s;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.citation-popover-close:hover {
+  color: #333;
+}
+
+.markdown-body {
+  position: relative;
 }
 </style>
