@@ -857,6 +857,28 @@ const handleWebSocketMessage = (data: any) => {
     isProcessing.value = false
     console.log('  - isProcessing 设置为 false')
   }
+  else if (data.type === 'sync_complete') {
+    // 重连同步完成
+    console.log('✅ [handleWebSocketMessage] 重连同步完成:', data.data)
+    const resentCount = data.data?.resent_count || 0
+    if (resentCount > 0) {
+      console.log(`  - 已重发 ${resentCount} 个视频`)
+      // 如果重发了视频，等待视频播放完成后再解锁输入框
+      // 视频播放完成会在 playNextVideo() 中处理
+    } else {
+      // 没有重发视频，立即解锁输入框
+      console.log('  - 无需重发视频，立即解锁输入框')
+      isProcessing.value = false
+      message.destroy('reconnecting')
+    }
+  }
+  else if (data.type === 'config_updated') {
+    // 配置更新确认
+    console.log('✅ [handleWebSocketMessage] 配置已更新:', data.status)
+    if (data.status === 'error') {
+      message.error(`配置更新失败: ${data.message || '未知错误'}`)
+    }
+  }
   else if (data.type === 'error') {
     // Error occurred
     console.error('❌ [handleWebSocketMessage] 处理失败:', data.data.message)
@@ -906,6 +928,14 @@ const playNextVideo = async () => {
     isPlayingSpeechVideo.value = false
     // 播放完所有视频后，回到待机视频
     playIdleVideo()
+    
+    // ✅ 修复：播放完所有视频后，解锁输入框
+    // 特别是重连重发视频的场景
+    if (isProcessing.value) {
+      console.log('✅ 所有视频播放完成，解锁输入框')
+      isProcessing.value = false
+      message.destroy('reconnecting')
+    }
     return
   }
 

@@ -10,7 +10,14 @@ from loguru import logger
 from sentence_transformers import SentenceTransformer
 
 from backend.handlers.base import BaseHandler
-from .momo_utils import SearchDocument, search_searxng, FaissRetriever, convert_to_markdown
+from .momo_utils import (
+    SearchDocument, 
+    search_searxng, 
+    FaissRetriever, 
+    convert_to_markdown,
+    detect_language,
+    translate_text
+)
 from .momo_crawler import SimpleCrawler
 from .momo_retriever import expand_docs_by_text_split, merge_docs_by_url
 
@@ -152,29 +159,76 @@ class MomoSearchHandler(BaseHandler):
             (相关文档列表, 引用信息)
         """
         try:
-            # 步骤1: SearXNG搜索
+            # 步骤0: 检测语言并决定搜索策略
+            detected_lang = detect_language(query)
+            logger.info(f"🔍 检测到查询语言: {detected_lang} (查询: {query})")
+            
+            all_search_results = []
+            total_steps = 6 if detected_lang == "zh" else 5  # 中文需要额外翻译步骤
+            
+            # 步骤1: 首次搜索（根据检测到的语言）
             if progress_callback:
-                await progress_callback(1, 5, f"🔍 正在搜索: {query}")
+                await progress_callback(1, total_steps, f"🔍 正在搜索: {query}")
             
-            logger.info(f"🔍 开始Momo搜索: {query} (模式: {mode})")
+            logger.info(f"🔍 开始Momo搜索: {query} (模式: {mode}, 语言: {detected_lang})")
             
-            search_results = search_searxng(
+            # 首次搜索：使用检测到的语言
+            first_search_results = search_searxng(
                 query=query,
                 num_results=self.max_search_results,
                 ip_address=self.searxng_url,
-                language=self.searxng_language,
-                time_range=self.searxng_time_range
+                language=detected_lang,
+                time_range=self.searxng_time_range,
+                deduplicate_by_url=True
             )
             
-            if not search_results:
-                logger.warning("⚠️ SearXNG搜索未返回结果")
+            all_search_results.extend(first_search_results)
+            logger.info(f"✅ 首次搜索完成: 获得{len(first_search_results)}个结果")
+            
+            # 步骤2: 如果是中文，翻译并再次搜索
+            if detected_lang == "zh":
+                if progress_callback:
+                    await progress_callback(2, total_steps, "🌐 翻译查询并搜索英文结果")
+                
+                # 翻译查询
+                translated_query = translate_text(query, source="zh", target="en")
+                
+                if translated_query:
+                    logger.info(f"🌐 翻译结果: {query} -> {translated_query}")
+                    
+                    # 使用英文查询再次搜索
+                    english_search_results = search_searxng(
+                        query=translated_query,
+                        num_results=self.max_search_results,
+                        ip_address=self.searxng_url,
+                        language="en",
+                        time_range=self.searxng_time_range,
+                        deduplicate_by_url=True
+                    )
+                    
+                    # 合并结果（自动去重）
+                    seen_urls = {doc.url for doc in all_search_results}
+                    for doc in english_search_results:
+                        if doc.url not in seen_urls:
+                            all_search_results.append(doc)
+                            seen_urls.add(doc.url)
+                    
+                    logger.info(f"✅ 英文搜索完成: 获得{len(english_search_results)}个新结果，总计{len(all_search_results)}个")
+                else:
+                    logger.warning("⚠️ 翻译失败，跳过英文搜索")
+            else:
+                logger.info("ℹ️ 查询为英文，跳过翻译步骤")
+            
+            if not all_search_results:
+                logger.warning("⚠️ 所有搜索均未返回结果")
                 return [], ""
             
-            # 步骤2: 向量检索
+            # 步骤3: 向量检索（合并后的结果）
+            step_num = 3 if detected_lang == "zh" else 2
             if progress_callback:
-                await progress_callback(2, 5, f"📊 分析相关性 ({len(search_results)}个结果)")
+                await progress_callback(step_num, total_steps, f"📊 分析相关性 ({len(all_search_results)}个结果)")
             
-            self.retriever.add_documents(search_results)
+            self.retriever.add_documents(all_search_results)
             relevant_docs = self.retriever.get_relevant_documents(query)
             
             if not relevant_docs:
@@ -183,10 +237,11 @@ class MomoSearchHandler(BaseHandler):
             
             logger.info(f"✅ 找到{len(relevant_docs)}个相关文档")
             
-            # 步骤3: 深度爬取 (仅quality模式)
+            # 步骤4: 深度爬取 (仅quality模式)
+            step_num = 4 if detected_lang == "zh" else 3
             if mode == "quality" and self.enable_deep_crawl:
                 if progress_callback:
-                    await progress_callback(3, 5, f"🕷️ 深度爬取内容 (前{self.max_crawl_docs}个)")
+                    await progress_callback(step_num, total_steps, f"🕷️ 深度爬取内容 (前{self.max_crawl_docs}个)")
                 
                 await self.crawler.crawl_many(
                     relevant_docs,
@@ -194,9 +249,10 @@ class MomoSearchHandler(BaseHandler):
                     max_docs=self.max_crawl_docs
                 )
                 
-                # 步骤4: 文档分块和二次检索
+                # 步骤5: 文档分块和二次检索
+                step_num = 5 if detected_lang == "zh" else 4
                 if progress_callback:
-                    await progress_callback(4, 5, "✂️ 文档分块和二次检索")
+                    await progress_callback(step_num, total_steps, "✂️ 文档分块和二次检索")
                 
                 docs_with_details = expand_docs_by_text_split(relevant_docs)
                 self.retriever.add_documents(docs_with_details)
@@ -205,14 +261,15 @@ class MomoSearchHandler(BaseHandler):
                 
                 logger.info(f"📄 二次检索后: {len(relevant_docs)}个文档")
             
-            # 步骤5: 完成
+            # 最后一步: 完成
+            final_step = total_steps
             if progress_callback:
-                await progress_callback(5, 5, "✅ 搜索完成")
+                await progress_callback(final_step, total_steps, "✅ 搜索完成")
             
             # 生成引用信息
             citations = self.format_citations(relevant_docs)
             
-            logger.info(f"✅ Momo搜索完成: 返回{len(relevant_docs)}个文档")
+            logger.info(f"✅ Momo搜索完成: 返回{len(relevant_docs)}个文档 (语言: {detected_lang})")
             return relevant_docs, citations
             
         except Exception as e:

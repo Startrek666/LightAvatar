@@ -305,14 +305,14 @@ class OpenAIHandler(BaseHandler):
                 # 简单搜索模式 (WebSearchHandler)
                 elif search_mode == "simple" and search_handler:
                     logger.info(f"🔍 执行简单搜索: {text}")
-                
+                    
                     # 执行简单搜索
                     search_results = await search_handler.search_with_progress(
                         query=text,
                         max_results=3,
                         progress_callback=progress_callback
                     )
-                
+                    
                     if search_results:
                         logger.info(f"\n{'*'*80}")
                         logger.info(f"📚 构建搜索上下文 (共 {len(search_results)} 个结果)")

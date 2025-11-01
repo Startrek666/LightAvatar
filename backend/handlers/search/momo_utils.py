@@ -4,13 +4,17 @@ Momo Search Utils - 搜索工具函数
 from dataclasses import dataclass
 import urllib.parse
 from json import JSONDecodeError
-from typing import List
+from typing import List, Optional
 import re
 
 import faiss
 import numpy as np
 import requests
 from loguru import logger
+
+# 翻译API配置
+TRANSLATE_API_URL = "https://api-utils.lemomate.com/translate"
+TRANSLATE_API_KEY = "L5kGzmjwqXbk0ViD@"
 
 
 @dataclass
@@ -37,6 +41,82 @@ def escape_markdown(text: str) -> str:
     """转义Markdown特殊字符"""
     special_chars = r'_\*\[\]\(\)~`>#\+\-=\|\{\}\.\!'
     return re.sub(f'([{special_chars}])', r'\\\1', text)
+
+
+def detect_language(text: str) -> str:
+    """
+    检测文本语言（简单版本）
+    
+    Args:
+        text: 输入文本
+    
+    Returns:
+        "zh" 如果主要是中文，"en" 如果主要是英文
+    """
+    if not text:
+        return "en"
+    
+    # 统计中文字符数量
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+    total_chars = len(re.sub(r'\s+', '', text))  # 去除空格后的总字符数
+    
+    if total_chars == 0:
+        return "en"
+    
+    # 如果中文字符占比超过30%，认为是中文
+    chinese_ratio = chinese_chars / total_chars if total_chars > 0 else 0
+    
+    if chinese_ratio > 0.3:
+        return "zh"
+    else:
+        return "en"
+
+
+def translate_text(query: str, source: str = "zh", target: str = "en") -> Optional[str]:
+    """
+    调用翻译API翻译文本
+    
+    Args:
+        query: 要翻译的文本
+        source: 源语言 (zh/en)
+        target: 目标语言 (zh/en)
+    
+    Returns:
+        翻译后的文本，失败返回None
+    """
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": TRANSLATE_API_KEY
+        }
+        
+        data = {
+            "q": query,
+            "source": source,
+            "target": target
+        }
+        
+        response = requests.post(
+            TRANSLATE_API_URL,
+            headers=headers,
+            json=data,
+            timeout=10
+        )
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        translated_text = result.get("translatedText", "")
+        if translated_text:
+            logger.info(f"✅ 翻译成功: {query} -> {translated_text}")
+            return translated_text
+        else:
+            logger.warning(f"⚠️ 翻译API返回空结果")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ 翻译失败: {e}")
+        return None
 
 
 def convert_to_markdown(text: str) -> str:
@@ -84,7 +164,8 @@ def search_searxng(
     num_results: int,
     ip_address: str = "http://localhost:9080",
     language: str = "zh",
-    time_range: str = ""
+    time_range: str = "",
+    deduplicate_by_url: bool = True
 ) -> List[SearchDocument]:
     """
     使用SearXNG搜索
@@ -122,6 +203,7 @@ def search_searxng(
         base_url = f"http://{base_url}"
     
     res = []
+    seen_urls = set() if deduplicate_by_url else None
     pageno = 1
     
     while len(res) < num_results:
@@ -152,11 +234,18 @@ def search_searxng(
         for result in result_dicts:
             # 提取内容（优先使用content，否则使用snippet）
             content = result.get("content", "") or result.get("snippet", "")
+            result_url = result.get("url", "")
+            
+            # 去重：如果启用了去重且URL已存在，跳过
+            if deduplicate_by_url and seen_urls is not None:
+                if result_url in seen_urls:
+                    continue
+                seen_urls.add(result_url)
             
             if content:
                 doc = SearchDocument(
                     title=result.get("title", ""),
-                    url=result.get("url", ""),
+                    url=result_url,
                     snippet=result.get("snippet", ""),
                     content=content,
                     score=result.get("score", 0.0)
