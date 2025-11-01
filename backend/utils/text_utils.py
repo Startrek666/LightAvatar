@@ -29,17 +29,30 @@ def clean_markdown_for_tts(text: str) -> str:
     if not text:
         return text
     
+    original_text = text  # 保存原文用于调试
+    
     # 0. 移除"参考来源"部分（包括标题和所有引用列表）
-    # 匹配格式：**📚 参考来源：** 或 参考来源： 及其后面的所有引用列表
+    # 匹配格式：**📚 参考来源：**\n1. [标题](URL)\n2. [标题](URL)...
+    # 使用更精确的正则表达式，匹配整个参考来源块
     text = re.sub(
-        r'(?:📚\s*)?参考来源[：:]\s*\n(?:\d+\.\s*\[.*?\]\(.*?\)\n?)+',
+        r'\*\*📚\s*参考来源[：:]\*\*\s*\n(?:\d+\.\s*\[.*?\]\(.*?\)\s*)+',
         '',
         text,
         flags=re.DOTALL
     )
     
+    # 如果文本被修改，说明成功移除了参考来源部分
+    if len(text) != len(original_text):
+        from loguru import logger
+        logger.debug(f"✂️ 已移除参考来源部分 (从 {len(original_text)} 字符减少到 {len(text)} 字符)")
+    
     # 移除引用标记 [citation:X]（不读出）
+    before_citation_remove = text
     text = re.sub(r'\[citation:\d+\]', '', text)
+    
+    if len(text) != len(before_citation_remove):
+        from loguru import logger
+        logger.debug(f"✂️ 已移除引用标记 (从 {len(before_citation_remove)} 字符减少到 {len(text)} 字符)")
     
     # 0. 去除emoji表情符号（在其他处理之前）
     # 使用更精确的emoji Unicode范围（避免误删中文字符）

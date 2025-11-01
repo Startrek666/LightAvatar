@@ -4,7 +4,6 @@ Session management with memory control and lifecycle management
 import asyncio
 import gc
 import time
-import re
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -521,8 +520,7 @@ class Session:
             # 流式接收LLM输出
             chunk_received = 0
             logger.info(f"[Session {self.session_id}] 开始调用 LLM stream_response (use_search={use_search})")
-            skip_reference_section = False
-
+            
             # 搜索进度回调
             async def search_progress_callback(step: int, total: int, message: str):
                 await callback("search_progress", {
@@ -576,19 +574,17 @@ class Session:
                 
                 # Check if we have a complete sentence
                 if self._is_sentence_end(sentence_buffer):
-                    raw_sentence = sentence_buffer.strip()
-                    if raw_sentence:
-                        cleaned_sentence = clean_markdown_for_tts(raw_sentence)
-
-                        if skip_reference_section or self._is_reference_sentence(raw_sentence, cleaned_sentence):
-                            skip_reference_section = True
-                            logger.info(f"[实时] 跳过参考来源内容（TTS）: '{raw_sentence[:30]}...'")
+                    # 立即将句子加入处理队列（清理Markdown格式和emoji）
+                    clean_sentence = sentence_buffer.strip()
+                    if clean_sentence:
+                        # 清理Markdown格式和emoji（去除**、*、😊等符号）
+                        clean_sentence = clean_markdown_for_tts(clean_sentence)
+                        # 清理后再次检查是否为空，并且检查是否包含可发音内容
+                        if clean_sentence.strip() and has_speakable_content(clean_sentence):
+                            await sentence_queue.put(clean_sentence)
+                            logger.info(f"[实时] 句子入队: {clean_sentence[:30]}...")
                         else:
-                            if cleaned_sentence.strip() and has_speakable_content(cleaned_sentence):
-                                await sentence_queue.put(cleaned_sentence)
-                                logger.info(f"[实时] 句子入队: {cleaned_sentence[:30]}...")
-                            else:
-                                logger.info(f"[实时] 跳过空句子或纯标点（清理后无可发音内容）: 原文='{sentence_buffer[:30]}...'")
+                            logger.info(f"[实时] 跳过空句子或纯标点（清理后无可发音内容）: 原文='{sentence_buffer[:30]}...'")
                     sentence_buffer = ""
             
             # Collect any remaining text
@@ -596,15 +592,12 @@ class Session:
             logger.info(f"[实时] 剩余buffer内容: '{sentence_buffer[:100]}...'")
             
             if sentence_buffer.strip():
-                raw_sentence = sentence_buffer.strip()
-                cleaned_sentence = clean_markdown_for_tts(raw_sentence)
-                logger.info(f"[实时] 清理后的剩余文字: '{cleaned_sentence[:100]}...'")
-
-                if skip_reference_section or self._is_reference_sentence(raw_sentence, cleaned_sentence):
-                    logger.info(f"[实时] 跳过剩余参考来源内容（TTS）: '{raw_sentence[:50]}...'")
-                elif cleaned_sentence.strip() and has_speakable_content(cleaned_sentence):
-                    await sentence_queue.put(cleaned_sentence)
-                    logger.info(f"[实时] 剩余文字入队: {cleaned_sentence[:30]}...")
+                clean_sentence = clean_markdown_for_tts(sentence_buffer.strip())
+                logger.info(f"[实时] 清理后的剩余文字: '{clean_sentence[:100]}...'")
+                # 清理后再次检查是否为空，并且检查是否包含可发音内容
+                if clean_sentence.strip() and has_speakable_content(clean_sentence):
+                    await sentence_queue.put(clean_sentence)
+                    logger.info(f"[实时] 剩余文字入队: {clean_sentence[:30]}...")
                 else:
                     logger.info(f"[实时] 跳过空句子或纯标点（清理后无可发音内容）: 原文='{sentence_buffer[:50]}...'")
             
@@ -720,25 +713,6 @@ class Session:
             logger.error(f"Error preloading sentence '{sentence[:30]}...': {e}")
             return None
     
-    def _is_reference_sentence(self, raw_text: str, cleaned_text: str) -> bool:
-        """判断句子是否属于参考来源部分"""
-        stripped_raw = (raw_text or "").strip()
-        stripped_cleaned = (cleaned_text or "").strip()
-
-        if not stripped_raw and not stripped_cleaned:
-            return False
-
-        if "参考来源" in stripped_raw or "参考来源" in stripped_cleaned:
-            return True
-
-        if re.search(r"\[citation:\d+\]", stripped_raw, re.IGNORECASE):
-            return True
-
-        if re.match(r"^\d+[\.．、]\s*\[[^\]]+\]\([^\)]+\)\s*$", stripped_raw):
-            return True
-
-        return False
-
     def _is_sentence_end(self, text: str, min_length: int = 10, max_length: int = 20) -> bool:
         """
         智能判断是否应该分割句子

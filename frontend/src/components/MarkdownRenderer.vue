@@ -1,6 +1,6 @@
 <template>
   <div class="markdown-body" ref="markdownContainer" @click="handleCitationClick">
-    <div class="markdown-content" ref="markdownContent" v-html="renderedHtml"></div>
+    <div v-html="renderedHtml"></div>
     
     <!-- 引用来源列表（隐藏的引用数据） -->
     <div v-if="citations.length > 0" class="citations-data" style="display: none;">
@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted, watch } from 'vue'
+import { computed, ref, nextTick, onMounted } from 'vue'
 import { marked, Renderer } from 'marked'
 import hljs from 'highlight.js'
 
@@ -34,7 +34,6 @@ const props = defineProps<{
 }>()
 
 const markdownContainer = ref<HTMLElement>()
-const markdownContent = ref<HTMLElement>()
 const tooltipVisible = ref(false)
 const tooltipTitle = ref('')
 const tooltipUrl = ref('')
@@ -45,12 +44,15 @@ const citations = ref<Array<{ title: string; url: string }>>([])
 function extractCitations(content: string): Array<{ title: string; url: string }> {
   const citationsList: Array<{ title: string; url: string }> = []
   
-  // 匹配 "参考来源：" 后面的内容（支持 Markdown 格式）
-  // 匹配格式：**📚 参考来源：** 或 参考来源：
-  const referencesMatch = content.match(/(?:📚\s*)?参考来源[：:]\s*\n((?:\d+\.\s*\[.*?\]\(.*?\)\n?)+)/s)
+  // 匹配 "参考来源：" 后面的内容（支持多种 Markdown 格式）
+  // 匹配格式：**📚 参考来源：** 或 📚 参考来源： 或 参考来源：
+  // 使用更宽松的正则表达式，匹配从"参考来源"到文件末尾的所有引用
+  const referencesMatch = content.match(/(?:\*\*)?(?:📚\s*)?参考来源[：:]\s*(?:\*\*)?\s*\n((?:\d+\.\s*\[.*?\]\(.*?\)\s*)+)/s)
   
   if (referencesMatch) {
     const referencesText = referencesMatch[1]
+    console.log('找到参考来源部分:', referencesText) // 调试日志
+    
     // 匹配每个引用：[标题](URL)
     const citationRegex = /(\d+)\.\s*\[(.*?)\]\((.*?)\)/g
     let match
@@ -60,79 +62,40 @@ function extractCitations(content: string): Array<{ title: string; url: string }
         title: match[2],
         url: match[3]
       })
+      console.log(`提取引用 ${match[1]}: ${match[2]}`) // 调试日志
     }
+  } else {
+    console.log('未找到参考来源部分，content:', content) // 调试日志
   }
   
+  console.log('提取到的引用数量:', citationsList.length) // 调试日志
   return citationsList
 }
 
-// 处理引用标记，转换为可点击的上标（字符串层面）
+// 处理引用标记，转换为可点击的上标
 function processCitations(content: string): string {
   // 先提取引用信息
   citations.value = extractCitations(content)
+  
+  console.log('开始处理引用标记，引用数量:', citations.value.length) // 调试日志
   
   // 保留完整的原始内容（包括参考来源部分）
   // 将 [citation:X] 转换为可点击的上标
   // 匹配 [citation:1] 或 [citation:1][citation:2] 这样的格式
   const processedContent = content.replace(/\[citation:(\d+)\]/g, (match, num) => {
     const citationIndex = parseInt(num) - 1
+    console.log(`处理 ${match}, index: ${citationIndex}, 引用总数: ${citations.value.length}`) // 调试日志
+    
     if (citationIndex >= 0 && citationIndex < citations.value.length) {
-      return `<sup class="citation-sup" data-citation="${num}" title="点击查看来源">${num}</sup>`
+      const replacement = `<sup class="citation-sup" data-citation="${num}" title="点击查看来源">${num}</sup>`
+      console.log(`替换为: ${replacement}`) // 调试日志
+      return replacement
     }
+    console.log(`保持原样: ${match}`) // 调试日志
     return match
   })
   
   return processedContent
-}
-
-// 在DOM中将 [citation:X] 替换为上标元素，作为兜底保证
-function transformCitationsInDom() {
-  nextTick(() => {
-    const container = markdownContent.value
-    if (!container) return
-
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-    const nodesToProcess: Text[] = []
-
-    let currentNode = walker.nextNode()
-    while (currentNode) {
-      if (currentNode.nodeType === Node.TEXT_NODE && currentNode.nodeValue && /\[citation:\d+\]/.test(currentNode.nodeValue)) {
-        nodesToProcess.push(currentNode as Text)
-      }
-      currentNode = walker.nextNode()
-    }
-
-    nodesToProcess.forEach(textNode => {
-      const parent = textNode.parentNode
-      if (!parent) return
-
-      const fragments = textNode.nodeValue?.split(/(\[citation:\d+\])/g) || []
-      const fragment = document.createDocumentFragment()
-
-      fragments.forEach(part => {
-        const match = part.match(/\[citation:(\d+)\]/)
-        if (match) {
-          const citationNumber = match[1]
-          const citationIndex = parseInt(citationNumber) - 1
-          const sup = document.createElement('sup')
-          sup.classList.add('citation-sup')
-          sup.dataset.citation = citationNumber
-          sup.title = '点击查看来源'
-          sup.textContent = citationNumber
-
-          if (citationIndex >= 0 && citationIndex < citations.value.length) {
-            fragment.appendChild(sup)
-          } else {
-            fragment.appendChild(document.createTextNode(part))
-          }
-        } else {
-          fragment.appendChild(document.createTextNode(part))
-        }
-      })
-
-      parent.replaceChild(fragment, textNode)
-    })
-  })
 }
 
 // 处理引用点击事件
@@ -183,6 +146,7 @@ function handleCitationClick(event: MouseEvent) {
 }
 
 // 配置 marked
+// 配置 marked 选项
 marked.setOptions({
   breaks: true,
   gfm: true
@@ -205,18 +169,18 @@ renderer.code = function(code: string, language: string | undefined) {
 
 const renderedHtml = computed(() => {
   try {
-    // 先处理引用标记
+    // 先处理引用标记（在 Markdown 解析前插入 HTML）
     const processedContent = processCitations(props.content)
-    // 然后渲染 Markdown
-    return marked.parse(processedContent, { renderer })
+    // 然后渲染 Markdown，明确传递配置
+    return marked.parse(processedContent, { 
+      renderer,
+      breaks: true,
+      gfm: true
+    })
   } catch (error) {
     console.error('Markdown parse error:', error)
     return props.content
   }
-})
-
-watch(() => renderedHtml.value, () => {
-  transformCitationsInDom()
 })
 
 // 点击外部关闭 tooltip
@@ -226,8 +190,6 @@ onMounted(() => {
       tooltipVisible.value = false
     }
   })
-
-  transformCitationsInDom()
 })
 </script>
 
@@ -237,10 +199,6 @@ onMounted(() => {
   font-size: 14px;
   line-height: 1.6;
   word-wrap: break-word;
-}
-
-.markdown-content {
-  position: relative;
 }
 
 .markdown-body h1,
