@@ -373,7 +373,6 @@ const idleVideoUrl = ref('')
 
 // Connection status messages
 const connectionMessage = ref('')
-const connectionMessageKey = ref<string | number>('')
 
 // 计算属性：只在真正等待且无视频时显示"处理中"
 const showProcessingIndicator = computed(() => {
