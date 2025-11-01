@@ -1,6 +1,6 @@
 <template>
   <div class="markdown-body" ref="markdownContainer" @click="handleCitationClick">
-    <div v-html="renderedHtml"></div>
+    <div class="markdown-content" ref="markdownContent" v-html="renderedHtml"></div>
     
     <!-- 引用来源列表（隐藏的引用数据） -->
     <div v-if="citations.length > 0" class="citations-data" style="display: none;">
@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted } from 'vue'
+import { computed, ref, nextTick, onMounted, watch } from 'vue'
 import { marked, Renderer } from 'marked'
 import hljs from 'highlight.js'
 
@@ -34,6 +34,7 @@ const props = defineProps<{
 }>()
 
 const markdownContainer = ref<HTMLElement>()
+const markdownContent = ref<HTMLElement>()
 const tooltipVisible = ref(false)
 const tooltipTitle = ref('')
 const tooltipUrl = ref('')
@@ -65,7 +66,7 @@ function extractCitations(content: string): Array<{ title: string; url: string }
   return citationsList
 }
 
-// 处理引用标记，转换为可点击的上标
+// 处理引用标记，转换为可点击的上标（字符串层面）
 function processCitations(content: string): string {
   // 先提取引用信息
   citations.value = extractCitations(content)
@@ -82,6 +83,56 @@ function processCitations(content: string): string {
   })
   
   return processedContent
+}
+
+// 在DOM中将 [citation:X] 替换为上标元素，作为兜底保证
+function transformCitationsInDom() {
+  nextTick(() => {
+    const container = markdownContent.value
+    if (!container) return
+
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+    const nodesToProcess: Text[] = []
+
+    let currentNode = walker.nextNode()
+    while (currentNode) {
+      if (currentNode.nodeType === Node.TEXT_NODE && currentNode.nodeValue && /\[citation:\d+\]/.test(currentNode.nodeValue)) {
+        nodesToProcess.push(currentNode as Text)
+      }
+      currentNode = walker.nextNode()
+    }
+
+    nodesToProcess.forEach(textNode => {
+      const parent = textNode.parentNode
+      if (!parent) return
+
+      const fragments = textNode.nodeValue?.split(/(\[citation:\d+\])/g) || []
+      const fragment = document.createDocumentFragment()
+
+      fragments.forEach(part => {
+        const match = part.match(/\[citation:(\d+)\]/)
+        if (match) {
+          const citationNumber = match[1]
+          const citationIndex = parseInt(citationNumber) - 1
+          const sup = document.createElement('sup')
+          sup.classList.add('citation-sup')
+          sup.dataset.citation = citationNumber
+          sup.title = '点击查看来源'
+          sup.textContent = citationNumber
+
+          if (citationIndex >= 0 && citationIndex < citations.value.length) {
+            fragment.appendChild(sup)
+          } else {
+            fragment.appendChild(document.createTextNode(part))
+          }
+        } else {
+          fragment.appendChild(document.createTextNode(part))
+        }
+      })
+
+      parent.replaceChild(fragment, textNode)
+    })
+  })
 }
 
 // 处理引用点击事件
@@ -164,6 +215,10 @@ const renderedHtml = computed(() => {
   }
 })
 
+watch(() => renderedHtml.value, () => {
+  transformCitationsInDom()
+})
+
 // 点击外部关闭 tooltip
 onMounted(() => {
   document.addEventListener('click', (e) => {
@@ -171,6 +226,8 @@ onMounted(() => {
       tooltipVisible.value = false
     }
   })
+
+  transformCitationsInDom()
 })
 </script>
 
@@ -180,6 +237,10 @@ onMounted(() => {
   font-size: 14px;
   line-height: 1.6;
   word-wrap: break-word;
+}
+
+.markdown-content {
+  position: relative;
 }
 
 .markdown-body h1,
