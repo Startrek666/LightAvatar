@@ -183,6 +183,22 @@ def update_settings(config_dict: dict):
     # 只读属性列表（通过@property定义的）
     readonly_attrs = {'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL_NAME'}
     
+    def set_nested_value(key_path: str, value):
+        """递归设置嵌套配置值"""
+        # 尝试匹配 MOMO_SEARCH_ENABLED
+        if key_path == "search.advanced.enabled":
+            if hasattr(settings, "MOMO_SEARCH_ENABLED"):
+                setattr(settings, "MOMO_SEARCH_ENABLED", value)
+                return True
+        # 尝试匹配其他 search.advanced.* 配置
+        elif key_path.startswith("search.advanced."):
+            sub_key = key_path.replace("search.advanced.", "").upper()
+            momo_key = f"MOMO_SEARCH_{sub_key}"
+            if hasattr(settings, momo_key):
+                setattr(settings, momo_key, value)
+                return True
+        return False
+    
     for key, value in config_dict.items():
         # 直接匹配顶层键
         upper_key = key.upper()
@@ -191,13 +207,24 @@ def update_settings(config_dict: dict):
         # 处理嵌套配置（如 avatar.fps -> AVATAR_FPS）
         elif isinstance(value, dict):
             for sub_key, sub_value in value.items():
-                combined_key = f"{key}_{sub_key}".upper()
-                # 先尝试组合键（如 SERVER_PORT）
-                if combined_key not in readonly_attrs and hasattr(settings, combined_key):
-                    setattr(settings, combined_key, sub_value)
-                # 如果组合键不存在，尝试只用sub_key（如 PORT）
-                elif sub_key.upper() not in readonly_attrs and hasattr(settings, sub_key.upper()):
-                    setattr(settings, sub_key.upper(), sub_value)
+                # 处理三层嵌套（如 search.advanced.enabled）
+                if isinstance(sub_value, dict):
+                    for sub_sub_key, sub_sub_value in sub_value.items():
+                        nested_path = f"{key}.{sub_key}.{sub_sub_key}"
+                        if not set_nested_value(nested_path, sub_sub_value):
+                            # 尝试组合键（如 SEARCH_ADVANCED_ENABLED）
+                            combined_key = f"{key}_{sub_key}_{sub_sub_key}".upper()
+                            if combined_key not in readonly_attrs and hasattr(settings, combined_key):
+                                setattr(settings, combined_key, sub_sub_value)
+                else:
+                    # 处理两层嵌套（如 avatar.fps）
+                    combined_key = f"{key}_{sub_key}".upper()
+                    # 先尝试组合键（如 SERVER_PORT）
+                    if combined_key not in readonly_attrs and hasattr(settings, combined_key):
+                        setattr(settings, combined_key, sub_value)
+                    # 如果组合键不存在，尝试只用sub_key（如 PORT）
+                    elif sub_key.upper() not in readonly_attrs and hasattr(settings, sub_key.upper()):
+                        setattr(settings, sub_key.upper(), sub_value)
 
 
 # Load configuration from file if exists
