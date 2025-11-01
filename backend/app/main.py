@@ -330,7 +330,21 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 
             elif message_type == "config":
                 # Update session configuration
-                await session.update_config(data.get("config"))
+                try:
+                    await session.update_config(data.get("config"))
+                    # 发送确认响应
+                    await websocket_manager.send_json(session_id, {
+                        "type": "config_updated",
+                        "status": "success"
+                    })
+                    logger.info(f"[WebSocket] Session {session_id}: 配置已更新")
+                except Exception as e:
+                    logger.error(f"[WebSocket] Session {session_id}: 配置更新失败: {e}", exc_info=True)
+                    await websocket_manager.send_json(session_id, {
+                        "type": "config_updated",
+                        "status": "error",
+                        "message": str(e)
+                    })
             
             elif message_type == "video_ack":
                 # 客户端确认收到视频
@@ -367,6 +381,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                             break
                 else:
                     logger.info(f"[WebSocket] Session {session_id}: 无需重发视频")
+                
+                # 发送同步完成响应
+                await websocket_manager.send_json(session_id, {
+                    "type": "sync_complete",
+                    "status": "success",
+                    "resent_count": len(missing_videos)
+                })
                 
             elif message_type == "ping":
                 # Heartbeat

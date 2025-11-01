@@ -1041,7 +1041,7 @@ class SessionManager:
             
             # 清理用户映射
             if session.user_id is not None and self.user_sessions.get(session.user_id) == session_id:
-                del self.user_sessions[session_id]
+                del self.user_sessions[session.user_id]  # ✅ 修复：应该用 user_id 作为 key
                 logger.debug(f"清理用户 {session.username or session.user_id} 的会话映射")
             
             session.release()
