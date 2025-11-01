@@ -339,9 +339,9 @@ class OpenAIHandler(BaseHandler):
                         'content': context
                     })
                     
-                        # 详细记录
-                        logger.info(f"📝 简单搜索上下文已注入")
-                        logger.info(f"📊 搜索结果数: {len(search_results)}")
+                    # 详细记录
+                    logger.info(f"📝 简单搜索上下文已注入")
+                    logger.info(f"📊 搜索结果数: {len(search_results)}")
                 else:
                     logger.warning(f"⚠️ 搜索未返回任何结果，将不使用搜索上下文")
             
