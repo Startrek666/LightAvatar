@@ -48,16 +48,30 @@ class MomoSearchHandler(BaseHandler):
             logger.info(f"  深度爬取: {'开启' if self.enable_deep_crawl else '关闭'}")
             
             # 初始化嵌入模型
+            # CPU不支持float16，使用float32
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            
             try:
-                self.embedding_model = SentenceTransformer(
-                    embedding_model_name,
-                    model_kwargs={"torch_dtype": "float16"}
-                )
-                logger.info(f"✅ 嵌入模型加载成功: {embedding_model_name}")
+                if device == "cuda":
+                    # GPU可以使用float16加速
+                    self.embedding_model = SentenceTransformer(
+                        embedding_model_name,
+                        device=device,
+                        model_kwargs={"torch_dtype": torch.float16}
+                    )
+                else:
+                    # CPU必须使用float32
+                    self.embedding_model = SentenceTransformer(
+                        embedding_model_name,
+                        device=device,
+                        model_kwargs={"torch_dtype": torch.float32}
+                    )
+                logger.info(f"✅ 嵌入模型加载成功: {embedding_model_name} (设备: {device})")
             except Exception as e:
                 logger.error(f"❌ 嵌入模型加载失败: {e}")
-                logger.info("ℹ️ 尝试使用CPU版本...")
-                self.embedding_model = SentenceTransformer(embedding_model_name)
+                logger.info("ℹ️ 尝试使用默认设置...")
+                self.embedding_model = SentenceTransformer(embedding_model_name, device=device)
             
             # 初始化检索器
             self.retriever = FaissRetriever(
