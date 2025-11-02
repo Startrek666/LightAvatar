@@ -298,23 +298,32 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                                 "data": chunk_data
                             })
                     
-                    # Process with streaming
-                    logger.info(f"[WebSocket] Session {session_id}: 开始流式处理文本")
-                    try:
-                        await session.process_text_stream(
-                            data.get("text"), 
-                            stream_callback,
-                            use_search=use_search,
-                            search_mode=search_mode,
-                            search_quality=search_quality
-                        )
-                        logger.info(f"[WebSocket] Session {session_id}: 流式处理完成")
-                    except Exception as e:
-                        logger.error(f"[WebSocket] Session {session_id}: 流式处理失败: {e}", exc_info=True)
-                        await websocket_manager.send_json(session_id, {
-                            "type": "error",
-                            "data": {"message": str(e)}
-                        })
+                    # Process with streaming in background task to keep receiving messages (e.g., interrupt)
+                    logger.info(f"[WebSocket] Session {session_id}: 开始流式处理文本（后台任务）")
+                    
+                    async def process_text_background():
+                        """在后台处理文本，避免阻塞WebSocket接收循环"""
+                        try:
+                            await session.process_text_stream(
+                                data.get("text"), 
+                                stream_callback,
+                                use_search=use_search,
+                                search_mode=search_mode,
+                                search_quality=search_quality
+                            )
+                            logger.info(f"[WebSocket] Session {session_id}: 流式处理完成")
+                        except Exception as e:
+                            logger.error(f"[WebSocket] Session {session_id}: 流式处理失败: {e}", exc_info=True)
+                            try:
+                                await websocket_manager.send_json(session_id, {
+                                    "type": "error",
+                                    "data": {"message": str(e)}
+                                })
+                            except:
+                                pass
+                    
+                    # 启动后台任务，不等待完成
+                    asyncio.create_task(process_text_background())
                 
                 else:
                     # Non-streaming mode (legacy support)
