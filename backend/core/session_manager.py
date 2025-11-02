@@ -50,6 +50,7 @@ class Session:
     is_connected: bool = True  # WebSocket连接状态
     disconnected_at: Optional[datetime] = None  # 断开时间
     current_tasks: List[asyncio.Task] = field(default_factory=list)  # 当前运行的任务列表
+    pending_video_tasks: Dict[int, asyncio.Task] = field(default_factory=dict)  # 正在生成的视频任务（句子索引 -> Task）
     
     # Video缓存和序号
     video_cache: Dict[int, Dict] = field(default_factory=dict)  # 视频缓存：{seq: {video, audio, text}}
@@ -466,6 +467,9 @@ class Session:
                         try:
                             result = await task  # 已完成，立即返回
                             del pending_tasks[next_to_send]
+                            # 从pending_video_tasks中删除已完成的任务
+                            if next_to_send in self.pending_video_tasks:
+                                del self.pending_video_tasks[next_to_send]
                             
                             if result:
                                 # 分配视频序号并缓存
@@ -528,9 +532,19 @@ class Session:
                                     logger.info(f"[实时] 句子 {next_to_send + 1} 已发送 (序号:{video_seq}): {len(result['video'])} bytes")
                             
                             next_to_send += 1
+                        except asyncio.CancelledError:
+                            logger.info(f"🛑 句子 {next_to_send + 1} 的任务被中断取消")
+                            if next_to_send in pending_tasks:
+                                del pending_tasks[next_to_send]
+                            if next_to_send in self.pending_video_tasks:
+                                del self.pending_video_tasks[next_to_send]
+                            next_to_send += 1
                         except Exception as e:
                             logger.error(f"[实时] 发送句子 {next_to_send + 1} 失败: {e}")
-                            del pending_tasks[next_to_send]
+                            if next_to_send in pending_tasks:
+                                del pending_tasks[next_to_send]
+                            if next_to_send in self.pending_video_tasks:
+                                del self.pending_video_tasks[next_to_send]
                             next_to_send += 1
                 
                 pending_sentence = None  # 暂存等待处理的句子
@@ -569,9 +583,8 @@ class Session:
                         if slots_available > 0:
                             task = asyncio.create_task(self._generate_sentence_data(sentence))
                             pending_tasks[sentence_index] = task
-                            # 添加任务到session的当前任务列表，便于中断管理
-                            if hasattr(self, 'current_tasks'):
-                                self.current_tasks.append(task)
+                            # 保存到session的pending_video_tasks，便于中断管理
+                            self.pending_video_tasks[sentence_index] = task
                             logger.info(
                                 f"[实时] 启动句子 {sentence_index + 1} 生成: {sentence[:30]}... "
                                 f"(活跃任务: {len(pending_tasks)}, 已发送: {next_to_send}, 已启动: {next_to_start + 1})"
@@ -717,6 +730,9 @@ class Session:
             # 清理当前任务列表
             if hasattr(self, 'current_tasks'):
                 self.current_tasks.clear()
+            # 清理视频任务列表
+            if hasattr(self, 'pending_video_tasks'):
+                self.pending_video_tasks.clear()
     
     async def _process_sentences_with_preload(self, sentences: list, callback):
         """
@@ -799,6 +815,9 @@ class Session:
                 "audio": audio_bytes,
                 "text": sentence
             }
+        except asyncio.CancelledError:
+            logger.info(f"🛑 句子生成被中断: {sentence[:30]}...")
+            raise  # 重新抛出以便上层处理
         except Exception as e:
             logger.error(f"Error preloading sentence '{sentence[:30]}...': {e}")
             return None
@@ -1154,13 +1173,23 @@ class SessionManager:
                     session.sentence_queue.clear()
                     logger.info(f"🛑 已清空 Session {session_id} 的句子队列")
                 
-                # 中断正在运行的任务
+                # 中断正在生成的视频任务
+                if hasattr(session, 'pending_video_tasks'):
+                    cancelled_count = 0
+                    for idx, task in list(session.pending_video_tasks.items()):
+                        if not task.done():
+                            task.cancel()
+                            cancelled_count += 1
+                    session.pending_video_tasks.clear()
+                    logger.info(f"🛑 已取消 Session {session_id} 的 {cancelled_count} 个视频生成任务")
+                
+                # 中断其他正在运行的任务
                 if hasattr(session, 'current_tasks'):
                     for task in session.current_tasks:
                         if not task.done():
                             task.cancel()
-                            logger.info(f"🛑 已取消 Session {session_id} 的任务")
                     session.current_tasks.clear()
+                    logger.info(f"🛑 已取消 Session {session_id} 的其他任务")
                 
                 # 重置处理状态
                 session.is_processing = False
