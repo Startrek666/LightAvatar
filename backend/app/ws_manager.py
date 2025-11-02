@@ -17,6 +17,16 @@ class WebSocketManager:
         
     async def connect(self, websocket: WebSocket, session_id: str):
         """Accept and register a new WebSocket connection"""
+        # 如果该session已存在连接，先优雅关闭旧连接，避免同一session_id多路并存
+        old = self.active_connections.get(session_id)
+        if old is not None:
+            try:
+                await old.close(code=4002, reason="Duplicate connection: closing previous session")
+            except Exception as e:
+                logger.warning(f"Failed to close previous WebSocket {session_id}: {e}")
+            # 移除旧连接
+            self.disconnect(session_id)
+
         await websocket.accept()
         self.active_connections[session_id] = websocket
         logger.info(f"WebSocket connected: {session_id}")

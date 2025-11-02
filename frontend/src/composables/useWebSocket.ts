@@ -6,6 +6,7 @@ import i18n from '../i18n'
 export function useWebSocket() {
     const ws = ref<WebSocket | null>(null)
     const isConnected = ref(false)
+    const isConnecting = ref(false)
     const shouldReconnect = ref(true)
     const isReconnecting = ref(false)  // 是否正在重连
     const messageHandler = ref<((data: any) => void) | null>(null)
@@ -14,7 +15,11 @@ export function useWebSocket() {
     const onConnectionChange = ref<((connected: boolean, isReconnecting: boolean) => void) | null>(null)
 
     const connect = (url: string, onMessage?: (data: any) => void, onBinary?: (data: Blob) => void, onClose?: (event: CloseEvent) => void) => {
-        if (ws.value?.readyState === WebSocket.OPEN) {
+        // 避免在已连接或正在连接时重复创建连接
+        if (ws.value && (ws.value.readyState === WebSocket.OPEN || ws.value.readyState === WebSocket.CONNECTING)) {
+            return
+        }
+        if (isConnecting.value) {
             return
         }
 
@@ -28,6 +33,7 @@ export function useWebSocket() {
             : getWebSocketUrl(url)
 
         console.log('Connecting to WebSocket:', wsUrl)
+        isConnecting.value = true
         ws.value = new WebSocket(wsUrl)
         ws.value.binaryType = 'blob'  // Set binary type to blob for video
 
@@ -48,6 +54,7 @@ export function useWebSocket() {
             const wasReconnecting = isReconnecting.value
             isConnected.value = true
             isReconnecting.value = false
+            isConnecting.value = false
             // 通知连接状态变化
             if (onConnectionChange.value) {
                 onConnectionChange.value(true, wasReconnecting)
@@ -82,6 +89,7 @@ export function useWebSocket() {
             console.log('WebSocket disconnected')
             const wasConnected = isConnected.value
             isConnected.value = false
+            isConnecting.value = false
 
             // Call close handler if provided
             if (closeHandler.value) {
@@ -119,7 +127,7 @@ export function useWebSocket() {
                 }
                 
                 setTimeout(() => {
-                    if (!isConnected.value && shouldReconnect.value) {
+                    if (!isConnected.value && shouldReconnect.value && !isConnecting.value && (!ws.value || ws.value.readyState !== WebSocket.CONNECTING)) {
                         connect(url, messageHandler.value || undefined, binaryHandler.value || undefined, closeHandler.value || undefined)
                     }
                 }, 3000)
@@ -135,6 +143,7 @@ export function useWebSocket() {
             ws.value.close()
             ws.value = null
             isConnected.value = false
+            isConnecting.value = false
         }
     }
 
