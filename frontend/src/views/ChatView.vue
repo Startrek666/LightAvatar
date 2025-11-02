@@ -147,21 +147,31 @@
           <div class="chat-messages" v-if="showChatHistory">
             <div class="messages-container" ref="messagesContainer">
               <div v-for="(message, index) in messages" :key="index" :class="['message', message.role]">
-                <div class="message-content">
-                  <a-avatar v-if="message.role === 'user'" :icon="h(UserOutlined)" class="message-avatar" />
-                  <a-avatar v-else :icon="h(RobotOutlined)" style="background-color: #1890ff" class="message-avatar" />
-                  <div class="message-text">
-                    <!-- 用户消息显示纯文本 -->
-                    <template v-if="message.role === 'user'">
-                      {{ message.content }}
-                    </template>
-                    <!-- AI消息使用 Markdown 渲染 -->
-                    <template v-else>
-                      <MarkdownRenderer :content="message.content" />
-                    </template>
+                <!-- 搜索进度消息 -->
+                <template v-if="message.role === 'search_progress'">
+                  <div class="search-progress-message">
+                    <span class="search-progress-icon">🔍</span>
+                    <span class="search-progress-text">{{ message.content }}</span>
                   </div>
-                </div>
-                <div class="message-time">{{ formatTime(message.timestamp) }}</div>
+                </template>
+                <!-- 普通消息 -->
+                <template v-else>
+                  <div class="message-content">
+                    <a-avatar v-if="message.role === 'user'" :icon="h(UserOutlined)" class="message-avatar" />
+                    <a-avatar v-else :icon="h(RobotOutlined)" style="background-color: #1890ff" class="message-avatar" />
+                    <div class="message-text">
+                      <!-- 用户消息显示纯文本 -->
+                      <template v-if="message.role === 'user'">
+                        {{ message.content }}
+                      </template>
+                      <!-- AI消息使用 Markdown 渲染 -->
+                      <template v-else>
+                        <MarkdownRenderer :content="message.content" />
+                      </template>
+                    </div>
+                  </div>
+                  <div class="message-time">{{ formatTime(message.timestamp) }}</div>
+                </template>
               </div>
             </div>
           </div>
@@ -236,26 +246,7 @@
       </a-layout-content>
     </a-layout>
 
-    <!-- Search Progress Modal -->
-    <a-modal 
-      v-model:open="searchProgressVisible" 
-      :title="t('search.title')" 
-      :footer="null"
-      :closable="false"
-      :maskClosable="false"
-      width="400px">
-      <div class="search-progress-content">
-        <a-progress 
-          :percent="Math.round((searchProgress.step / searchProgress.total) * 100)" 
-          :status="searchProgress.isCompleted ? 'success' : 'active'"
-        />
-        <div class="search-progress-message">
-          <a-spin v-if="!searchProgress.isCompleted" :spinning="true" />
-          <CheckCircleOutlined v-else style="color: #52c41a; font-size: 16px;" />
-          <span style="margin-left: 12px;">{{ searchProgress.message }}</span>
-        </div>
-      </div>
-    </a-modal>
+    <!-- Search Progress Modal - 已移除，改为在对话面板中显示 -->
 
     <!-- Settings Modal -->
     <a-modal v-model:open="settingsVisible" :title="t('settings.title')" width="600px" @ok="saveSettings" :ok-text="t('common.ok')" :cancel-text="t('common.cancel')">
@@ -309,8 +300,7 @@ import {
   PlusOutlined,
   FileTextOutlined,
   CloseOutlined,
-  GlobalOutlined,
-  CheckCircleOutlined
+  GlobalOutlined
 } from '@ant-design/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
@@ -360,14 +350,7 @@ const availableNodes = ref<ServerNode[]>(SERVER_NODES)
 const currentNode = ref<ServerNode>(getCurrentNode())
 const isAutoNode = computed(() => !localStorage.getItem('selected_server_node'))
 
-// Search progress modal
-const searchProgressVisible = ref(false)
-const searchProgress = ref({
-  step: 0,
-  total: 4,
-  message: '',
-  isCompleted: false
-})
+// Search progress - 现在在对话面板中显示，不再使用弹窗
 
 // Video playback queue for streaming
 const videoQueue = ref<Blob[]>([])
@@ -389,10 +372,13 @@ const showProcessingIndicator = computed(() => {
 
 // Data
 const messages = ref<Array<{
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'search_progress'
   content: string
   timestamp: Date
 }>>([])
+
+// 当前搜索进度消息的索引（用于更新）
+const currentSearchProgressIndex = ref<number | null>(null)
 
 const settings = ref({
   llm: {
@@ -590,6 +576,11 @@ const sendTextMessage = (event?: Event) => {
     timestamp: new Date()
   })
 
+  // 如果启用搜索，重置搜索进度索引
+  if (enableWebSearch.value) {
+    currentSearchProgressIndex.value = null
+  }
+
   // Prepare assistant message for streaming
   const assistantMessage = {
     role: 'assistant' as const,
@@ -772,36 +763,56 @@ const handleWebSocketMessage = (data: any) => {
     scrollToBottom()
   }
   else if (data.type === 'search_progress') {
-    // Search progress update
+    // Search progress update - 在对话面板中显示
     console.log('🔍 [handleWebSocketMessage] 搜索进度:', data.data)
     
     const isCompleted = data.data.step >= data.data.total
+    const progressMessage = isCompleted ? t('search.completed') : data.data.message
     
-    searchProgress.value = {
-      step: data.data.step,
-      total: data.data.total,
-      message: isCompleted ? t('search.completed') : data.data.message,
-      isCompleted: isCompleted
+    // 更新或创建搜索进度消息
+    if (currentSearchProgressIndex.value === null) {
+      // 创建新的搜索进度消息，插入到最后一个用户消息之后
+      let lastUserIndex = messages.value.length - 1
+      while (lastUserIndex >= 0 && messages.value[lastUserIndex].role !== 'user') {
+        lastUserIndex--
+      }
+      
+      if (lastUserIndex >= 0) {
+        // 在用户消息后插入搜索进度消息
+        const insertIndex = lastUserIndex + 1
+        messages.value.splice(insertIndex, 0, {
+          role: 'search_progress',
+          content: progressMessage,
+          timestamp: new Date()
+        })
+        currentSearchProgressIndex.value = insertIndex
+      }
+    } else {
+      // 更新现有的搜索进度消息
+      const index = currentSearchProgressIndex.value
+      if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
+        messages.value[index].content = progressMessage
+      } else {
+        // 如果索引无效，重置
+        currentSearchProgressIndex.value = null
+      }
     }
     
-    // 显示搜索进度对话框
-    if (data.data.step >= 0 && !isCompleted) {
-      // 包括步骤0（关键词提取）在内的所有步骤都显示对话框
-      searchProgressVisible.value = true
-    } else if (isCompleted) {
-      // 搜索完成，显示完成状态后自动关闭对话框
-      searchProgressVisible.value = true
+    // 搜索完成后，延迟移除搜索进度消息
+    if (isCompleted) {
       setTimeout(() => {
-        searchProgressVisible.value = false
-        // 重置进度状态
-        searchProgress.value = {
-          step: 0,
-          total: 4,
-          message: '',
-          isCompleted: false
+        if (currentSearchProgressIndex.value !== null) {
+          const index = currentSearchProgressIndex.value
+          if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
+            messages.value.splice(index, 1)
+          }
+          currentSearchProgressIndex.value = null
         }
-      }, 1500) // 显示完成状态1.5秒后关闭
+      }, 2000) // 2秒后移除
     }
+    
+    // 自动滚动到底部
+    scrollToBottom()
   }
   else if (data.type === 'asr_result') {
     // ✅ ASR语音识别结果
@@ -1696,6 +1707,31 @@ onUnmounted(() => {
 .message.assistant .message-time {
   text-align: left;
   margin-left: 48px;
+}
+
+/* 搜索进度消息样式 */
+.message.search_progress {
+  margin-bottom: 8px;
+  margin-top: -8px;
+  padding-left: 48px;
+}
+
+.search-progress-message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8c8c8c;
+  font-style: italic;
+}
+
+.search-progress-icon {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.search-progress-text {
+  flex: 1;
 }
 
 .input-area {
