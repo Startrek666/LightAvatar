@@ -65,7 +65,13 @@ export default {
     title: 'Web Search',
     searching: 'Searching...',
     fetchingContent: 'Fetching content...',
-    processing: 'Processing...'
+    processing: 'Processing...',
+    extractingKeywords: 'Extracting search keywords',
+    searchingWithKeywords: 'Searching with keywords',
+    analyzingRelevance: 'Analyzing relevance',
+    crawlingContent: 'Deep crawling content',
+    splittingDocuments: 'Splitting documents and re-retrieving',
+    completed: 'Search completed'
   },
   settings: {
     title: 'Settings',

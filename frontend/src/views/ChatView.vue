@@ -247,10 +247,11 @@
       <div class="search-progress-content">
         <a-progress 
           :percent="Math.round((searchProgress.step / searchProgress.total) * 100)" 
-          status="active" 
+          :status="searchProgress.isCompleted ? 'success' : 'active'"
         />
         <div class="search-progress-message">
-          <a-spin :spinning="true" />
+          <a-spin v-if="!searchProgress.isCompleted" :spinning="true" />
+          <CheckCircleOutlined v-else style="color: #52c41a; font-size: 16px;" />
           <span style="margin-left: 12px;">{{ searchProgress.message }}</span>
         </div>
       </div>
@@ -308,7 +309,8 @@ import {
   PlusOutlined,
   FileTextOutlined,
   CloseOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  CheckCircleOutlined
 } from '@ant-design/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
@@ -363,7 +365,8 @@ const searchProgressVisible = ref(false)
 const searchProgress = ref({
   step: 0,
   total: 4,
-  message: ''
+  message: '',
+  isCompleted: false
 })
 
 // Video playback queue for streaming
@@ -771,20 +774,33 @@ const handleWebSocketMessage = (data: any) => {
   else if (data.type === 'search_progress') {
     // Search progress update
     console.log('🔍 [handleWebSocketMessage] 搜索进度:', data.data)
+    
+    const isCompleted = data.data.step >= data.data.total
+    
     searchProgress.value = {
       step: data.data.step,
       total: data.data.total,
-      message: data.data.message
+      message: isCompleted ? t('search.completed') : data.data.message,
+      isCompleted: isCompleted
     }
     
     // 显示搜索进度对话框
-    if (data.data.step > 0 && data.data.step < data.data.total) {
+    if (data.data.step >= 0 && !isCompleted) {
+      // 包括步骤0（关键词提取）在内的所有步骤都显示对话框
       searchProgressVisible.value = true
-    } else if (data.data.step >= data.data.total) {
-      // 搜索完成，关闭对话框
+    } else if (isCompleted) {
+      // 搜索完成，显示完成状态后自动关闭对话框
+      searchProgressVisible.value = true
       setTimeout(() => {
         searchProgressVisible.value = false
-      }, 500)
+        // 重置进度状态
+        searchProgress.value = {
+          step: 0,
+          total: 4,
+          message: '',
+          isCompleted: false
+        }
+      }, 1500) // 显示完成状态1.5秒后关闭
     }
   }
   else if (data.type === 'asr_result') {

@@ -65,7 +65,13 @@ export default {
     title: '联网搜索中',
     searching: '正在搜索...',
     fetchingContent: '正在获取内容...',
-    processing: '正在处理...'
+    processing: '正在处理...',
+    extractingKeywords: '提取搜索关键词',
+    searchingWithKeywords: '使用关键词搜索',
+    analyzingRelevance: '分析相关性',
+    crawlingContent: '深度爬取内容',
+    splittingDocuments: '文档分块和二次检索',
+    completed: '搜索完成'
   },
   settings: {
     title: '设置',
