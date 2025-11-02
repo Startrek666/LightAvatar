@@ -13,10 +13,12 @@ from backend.handlers.base import BaseHandler
 from .momo_utils import (
     SearchDocument, 
     search_searxng, 
+    search_duckduckgo,
     FaissRetriever, 
     convert_to_markdown,
     detect_language,
-    translate_text
+    translate_text,
+    extract_keywords
 )
 from .momo_crawler import SimpleCrawler
 from .momo_retriever import expand_docs_by_text_split, merge_docs_by_url
@@ -47,12 +49,18 @@ class MomoSearchHandler(BaseHandler):
             self.crawl_score_threshold = self.config.get('crawl_score_threshold', 0.5)
             self.max_crawl_docs = self.config.get('max_crawl_docs', 10)
             
+            # 关键词提取配置
+            self.enable_keyword_extraction = self.config.get('enable_keyword_extraction', True)
+            self.zhipu_api_key = self.config.get('zhipu_api_key', '6f29a799833a4a5daf5752973e9d0cc4.uoelH21xYFMkDknh')
+            self.zhipu_model = self.config.get('zhipu_model', 'glm-4.5-flash')
+            
             logger.info("🚀 初始化 Momo Search Handler...")
             logger.info(f"  SearXNG: {self.searxng_url}")
             logger.info(f"  语言: {self.searxng_language}")
             logger.info(f"  时间范围: {self.searxng_time_range}")
             logger.info(f"  嵌入模型: {embedding_model_name}")
             logger.info(f"  深度爬取: {'开启' if self.enable_deep_crawl else '关闭'}")
+            logger.info(f"  关键词提取: {'开启' if self.enable_keyword_extraction else '关闭'}")
             
             # 初始化嵌入模型
             # CPU不支持float16，使用float32
@@ -159,44 +167,110 @@ class MomoSearchHandler(BaseHandler):
             (相关文档列表, 引用信息)
         """
         try:
-            # 步骤0: 检测语言并决定搜索策略
             detected_lang = detect_language(query)
-            logger.info(f"🔍 检测到查询语言: {detected_lang} (查询: {query})")
+            all_search_results = []
+            keywords_dict = None  # 初始化关键词字典
+            
+            # 步骤0: 关键词提取（如果启用）
+            if self.enable_keyword_extraction:
+                if progress_callback:
+                    await progress_callback(0, 7, "🔑 提取搜索关键词")
+                
+                logger.info(f"🔑 开始提取关键词: {query}")
+                keywords_dict = extract_keywords(
+                    query,
+                    api_key=self.zhipu_api_key,
+                    model=self.zhipu_model
+                )
+                
+                # 准备搜索查询列表
+                search_queries = []
+                
+                if keywords_dict:
+                    zh_keys = keywords_dict.get("zh_keys", "").strip()
+                    en_keys = keywords_dict.get("en_keys", "").strip()
+                    
+                    # 如果提取到中文关键词，添加到搜索列表
+                    if zh_keys:
+                        search_queries.append({
+                            "query": zh_keys,
+                            "language": "zh",
+                            "source": "keywords_zh"
+                        })
+                        logger.info(f"✅ 提取到中文关键词: {zh_keys}")
+                    
+                    # 如果提取到英文关键词，添加到搜索列表
+                    if en_keys:
+                        search_queries.append({
+                            "query": en_keys,
+                            "language": "en",
+                            "source": "keywords_en"
+                        })
+                        logger.info(f"✅ 提取到英文关键词: {en_keys}")
+                
+                # 如果关键词提取失败或没有提取到关键词，使用原始查询
+                if not search_queries:
+                    logger.warning("⚠️ 关键词提取失败或为空，使用原始查询")
+                    search_queries.append({
+                        "query": query,
+                        "language": detected_lang,
+                        "source": "original"
+                    })
+            else:
+                # 未启用关键词提取，使用原始查询
+                search_queries = [{
+                    "query": query,
+                    "language": detected_lang,
+                    "source": "original"
+                }]
             
             all_search_results = []
-            total_steps = 6 if detected_lang == "zh" else 5  # 中文需要额外翻译步骤
+            # 动态计算总步骤数：
+            # 0: 关键词提取
+            # 1-N: SearXNG搜索（根据search_queries数量）
+            # N+1-N+2: DuckDuckGo搜索（中文+英文，最多2步）
+            # 最后几步: 向量检索、深度爬取、文档分块、完成
+            base_steps = 5  # 关键词提取(1) + 向量检索(1) + 深度爬取(1) + 文档分块(1) + 完成(1)
+            ddg_steps = 2  # DuckDuckGo 中文 + 英文（最多2步）
+            total_steps = base_steps + len(search_queries) + ddg_steps
             
-            # 步骤1: 首次搜索（根据检测到的语言）
-            if progress_callback:
-                await progress_callback(1, total_steps, f"🔍 正在搜索: {query}")
+            # 步骤1: 使用提取的关键词进行搜索
+            for idx, search_item in enumerate(search_queries):
+                step_num = idx + 1
+                if progress_callback:
+                    await progress_callback(step_num, total_steps, f"🔍 正在搜索: {search_item['query']} ({search_item['source']})")
+                
+                logger.info(f"🔍 开始搜索: {search_item['query']} (语言: {search_item['language']}, 来源: {search_item['source']})")
+                
+                search_results = search_searxng(
+                    query=search_item['query'],
+                    num_results=self.max_search_results,
+                    ip_address=self.searxng_url,
+                    language=search_item['language'],
+                    time_range=self.searxng_time_range,
+                    deduplicate_by_url=True
+                )
+                
+                # 合并结果（自动去重）
+                seen_urls = {doc.url for doc in all_search_results}
+                for doc in search_results:
+                    if doc.url not in seen_urls:
+                        all_search_results.append(doc)
+                        seen_urls.add(doc.url)
+                
+                logger.info(f"✅ {search_item['source']}搜索完成: 获得{len(search_results)}个结果，总计{len(all_search_results)}个")
             
-            logger.info(f"🔍 开始Momo搜索: {query} (模式: {mode}, 语言: {detected_lang})")
-            
-            # 首次搜索：使用检测到的语言
-            first_search_results = search_searxng(
-                query=query,
-                num_results=self.max_search_results,
-                ip_address=self.searxng_url,
-                language=detected_lang,
-                time_range=self.searxng_time_range,
-                deduplicate_by_url=True
-            )
-            
-            all_search_results.extend(first_search_results)
-            logger.info(f"✅ 首次搜索完成: 获得{len(first_search_results)}个结果")
-            
-            # 步骤2: 如果是中文，翻译并再次搜索
-            if detected_lang == "zh":
+            # 如果只提取到中文关键词但没有英文关键词，且原始查询是中文，尝试翻译并搜索
+            if detected_lang == "zh" and keywords_dict and keywords_dict.get("en_keys") and not any(item['source'] == 'keywords_en' for item in search_queries):
                 if progress_callback:
                     await progress_callback(2, total_steps, "🌐 翻译查询并搜索英文结果")
                 
-                # 翻译查询
+                # 翻译原始查询作为补充
                 translated_query = translate_text(query, source="zh", target="en")
                 
                 if translated_query:
                     logger.info(f"🌐 翻译结果: {query} -> {translated_query}")
                     
-                    # 使用英文查询再次搜索
                     english_search_results = search_searxng(
                         query=translated_query,
                         num_results=self.max_search_results,
@@ -213,20 +287,85 @@ class MomoSearchHandler(BaseHandler):
                             all_search_results.append(doc)
                             seen_urls.add(doc.url)
                     
-                    logger.info(f"✅ 英文搜索完成: 获得{len(english_search_results)}个新结果，总计{len(all_search_results)}个")
-                else:
-                    logger.warning("⚠️ 翻译失败，跳过英文搜索")
-            else:
-                logger.info("ℹ️ 查询为英文，跳过翻译步骤")
+                    logger.info(f"✅ 翻译搜索完成: 获得{len(english_search_results)}个新结果，总计{len(all_search_results)}个")
+            
+            # 步骤2: 使用 DuckDuckGo 进行补充搜索（中英文各20条）
+            # 准备 DuckDuckGo 搜索查询
+            ddg_queries = []
+            
+            # 如果有中文关键词，使用中文关键词；否则使用原始查询
+            if keywords_dict and keywords_dict.get("zh_keys"):
+                ddg_queries.append({
+                    "query": keywords_dict.get("zh_keys"),
+                    "language": "zh",
+                    "source": "ddg_zh"
+                })
+            elif detected_lang == "zh":
+                ddg_queries.append({
+                    "query": query,
+                    "language": "zh",
+                    "source": "ddg_zh"
+                })
+            
+            # 如果有英文关键词，使用英文关键词；否则尝试翻译
+            if keywords_dict and keywords_dict.get("en_keys"):
+                ddg_queries.append({
+                    "query": keywords_dict.get("en_keys"),
+                    "language": "en",
+                    "source": "ddg_en"
+                })
+            elif detected_lang == "en":
+                ddg_queries.append({
+                    "query": query,
+                    "language": "en",
+                    "source": "ddg_en"
+                })
+            elif detected_lang == "zh":
+                # 中文查询尝试翻译为英文
+                translated_query = translate_text(query, source="zh", target="en")
+                if translated_query:
+                    ddg_queries.append({
+                        "query": translated_query,
+                        "language": "en",
+                        "source": "ddg_en_translated"
+                    })
+            
+            # 执行 DuckDuckGo 搜索
+            for idx, ddg_item in enumerate(ddg_queries):
+                step_num = len(search_queries) + idx + 1
+                if progress_callback:
+                    await progress_callback(
+                        step_num, 
+                        total_steps, 
+                        f"🦆 DuckDuckGo {ddg_item['language']}搜索"
+                    )
+                
+                logger.info(f"🦆 开始DuckDuckGo搜索: {ddg_item['query']} (语言: {ddg_item['language']})")
+                
+                ddg_results = await search_duckduckgo(
+                    query=ddg_item['query'],
+                    max_results=20,
+                    language=ddg_item['language'],
+                    time_range=self.searxng_time_range if self.searxng_time_range else None
+                )
+                
+                # 合并结果（自动去重）
+                seen_urls = {doc.url for doc in all_search_results}
+                for doc in ddg_results:
+                    if doc.url not in seen_urls:
+                        all_search_results.append(doc)
+                        seen_urls.add(doc.url)
+                
+                logger.info(f"✅ DuckDuckGo {ddg_item['source']}搜索完成: 获得{len(ddg_results)}个结果，总计{len(all_search_results)}个")
             
             if not all_search_results:
                 logger.warning("⚠️ 所有搜索均未返回结果")
                 return [], ""
             
             # 步骤3: 向量检索（合并后的结果）
-            step_num = 3 if detected_lang == "zh" else 2
+            vector_step = len(search_queries) + len(ddg_queries) + 1
             if progress_callback:
-                await progress_callback(step_num, total_steps, f"📊 分析相关性 ({len(all_search_results)}个结果)")
+                await progress_callback(vector_step, total_steps, f"📊 分析相关性 ({len(all_search_results)}个结果)")
             
             self.retriever.add_documents(all_search_results)
             relevant_docs = self.retriever.get_relevant_documents(query)
@@ -238,10 +377,10 @@ class MomoSearchHandler(BaseHandler):
             logger.info(f"✅ 找到{len(relevant_docs)}个相关文档")
             
             # 步骤4: 深度爬取 (仅quality模式)
-            step_num = 4 if detected_lang == "zh" else 3
             if mode == "quality" and self.enable_deep_crawl:
+                crawl_step = vector_step + 1
                 if progress_callback:
-                    await progress_callback(step_num, total_steps, f"🕷️ 深度爬取内容 (前{self.max_crawl_docs}个)")
+                    await progress_callback(crawl_step, total_steps, f"🕷️ 深度爬取内容 (前{self.max_crawl_docs}个)")
                 
                 await self.crawler.crawl_many(
                     relevant_docs,
@@ -250,9 +389,9 @@ class MomoSearchHandler(BaseHandler):
                 )
                 
                 # 步骤5: 文档分块和二次检索
-                step_num = 5 if detected_lang == "zh" else 4
+                split_step = crawl_step + 1
                 if progress_callback:
-                    await progress_callback(step_num, total_steps, "✂️ 文档分块和二次检索")
+                    await progress_callback(split_step, total_steps, "✂️ 文档分块和二次检索")
                 
                 docs_with_details = expand_docs_by_text_split(relevant_docs)
                 self.retriever.add_documents(docs_with_details)
@@ -262,7 +401,7 @@ class MomoSearchHandler(BaseHandler):
                 logger.info(f"📄 二次检索后: {len(relevant_docs)}个文档")
             
             # 最后一步: 完成
-            final_step = total_steps
+            final_step = total_steps - 1
             if progress_callback:
                 await progress_callback(final_step, total_steps, "✅ 搜索完成")
             

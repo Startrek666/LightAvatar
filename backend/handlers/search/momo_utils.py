@@ -6,6 +6,7 @@ import urllib.parse
 from json import JSONDecodeError
 from typing import List, Optional
 import re
+import asyncio
 
 import faiss
 import numpy as np
@@ -15,6 +16,11 @@ from loguru import logger
 # 翻译API配置
 TRANSLATE_API_URL = "https://api-utils.lemomate.com/translate"
 TRANSLATE_API_KEY = "L5kGzmjwqXbk0ViD@"
+
+# 智谱清言关键词提取API配置
+ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+ZHIPU_API_KEY = "6f29a799833a4a5daf5752973e9d0cc4.uoelH21xYFMkDknh"
+ZHIPU_MODEL = "glm-4.5-flash"
 
 
 @dataclass
@@ -70,6 +76,111 @@ def detect_language(text: str) -> str:
         return "zh"
     else:
         return "en"
+
+
+def extract_keywords(
+    query: str,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None
+) -> Optional[dict]:
+    """
+    使用智谱清言模型提取搜索关键词
+    
+    Args:
+        query: 用户查询文本
+        api_key: 智谱清言API密钥，如果为None则使用默认值
+        model: 智谱清言模型名称，如果为None则使用默认值
+    
+    Returns:
+        包含zh_keys和en_keys的字典，失败返回None
+    """
+    try:
+        from datetime import datetime
+        
+        # 使用传入的参数或默认值
+        zhipu_api_key = api_key if api_key is not None else ZHIPU_API_KEY
+        zhipu_model = model if model is not None else ZHIPU_MODEL
+        
+        # 获取当前日期，去掉月份和日期的前导零
+        now = datetime.now()
+        current_date = f"{now.year}年{now.month}月{now.day}日"
+        
+        # 构建Prompt
+        prompt = f"""今天是{current_date}。为了给用户的回答保持准确，你需要使用搜索引擎。使用json格式返回关键词，属性为zh_keys,en_keys。每个属性只需要一行，关键词用空格分隔。仅需返回重要关键词，每行不超过10个。对于英语关键词，除了完整翻译，还可以加上相关缩写。如果语句中包含"最近"，"最新"等词语，根据需要加上年份或者月份，年份和月份不能连在一起。从下面这句话中提取用于搜索引擎的关键词：{query}"""
+        
+        headers = {
+            "Authorization": f"Bearer {zhipu_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": zhipu_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 1,
+            "max_tokens": 65536,
+            "stream": False,
+            "thinking": {"type": "disabled"},
+            "do_sample": True,
+            "top_p": 0.95,
+            "tool_stream": False,
+            "response_format": {"type": "json_object"}
+        }
+        
+        response = requests.post(
+            ZHIPU_API_URL,
+            json=payload,
+            headers=headers,
+            timeout=15
+        )
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        # 解析返回的JSON
+        choices = result.get("choices", [])
+        if not choices:
+            logger.warning("⚠️ 关键词提取API返回空choices")
+            return None
+        
+        message = choices[0].get("message", {})
+        content = message.get("content", "").strip()
+        
+        if not content:
+            logger.warning("⚠️ 关键词提取API返回空内容")
+            return None
+        
+        # 解析JSON字符串（content中包含JSON格式的字符串）
+        import json
+        try:
+            keywords_dict = json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON解析失败: {e}")
+            logger.error(f"原始内容: {content[:200]}")  # 记录前200个字符用于调试
+            return None
+        
+        zh_keys = keywords_dict.get("zh_keys", "").strip()
+        en_keys = keywords_dict.get("en_keys", "").strip()
+        
+        if zh_keys or en_keys:
+            logger.info(f"✅ 关键词提取成功: zh_keys={zh_keys}, en_keys={en_keys}")
+            return {
+                "zh_keys": zh_keys,
+                "en_keys": en_keys
+            }
+        else:
+            logger.warning("⚠️ 关键词提取API返回空关键词")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ 关键词提取失败: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
 
 
 def translate_text(query: str, source: str = "zh", target: str = "en") -> Optional[str]:
@@ -263,6 +374,90 @@ def search_searxng(
     
     logger.info(f"✅ SearXNG搜索完成: 获得{len(res)}个结果")
     return res
+
+
+async def search_duckduckgo(
+    query: str,
+    max_results: int = 20,
+    language: str = "zh",
+    time_range: Optional[str] = None
+) -> List[SearchDocument]:
+    """
+    使用 DuckDuckGo API 直接搜索
+    
+    Args:
+        query: 搜索查询
+        max_results: 最大结果数量
+        language: 搜索语言 (zh/en)
+        time_range: 时间范围 ('d'=天, 'w'=周, 'm'=月, 'y'=年, None=不限)
+    
+    Returns:
+        搜索结果文档列表
+    """
+    try:
+        # 尝试导入 ddgs
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
+        
+        # 准备搜索参数
+        search_params = {
+            "query": query,
+            "max_results": max_results,
+            "safesearch": "moderate"
+        }
+        
+        # 根据语言设置地区参数
+        if language == "zh":
+            search_params["region"] = "cn-zh"
+        else:
+            search_params["region"] = "us-en"
+        
+        # 设置时间范围
+        if time_range:
+            # 将 searxng 的时间范围格式转换为 duckduckgo 格式
+            time_map = {
+                "day": "d",
+                "week": "w",
+                "month": "m",
+                "year": "y"
+            }
+            ddg_time = time_map.get(time_range.lower())
+            if ddg_time:
+                search_params["timelimit"] = ddg_time
+        
+        # 在独立线程中执行搜索（避免阻塞）
+        def _run_search():
+            with DDGS() as ddgs:
+                return list(ddgs.text(**search_params))
+        
+        results = await asyncio.to_thread(_run_search)
+        
+        # 转换为 SearchDocument 格式
+        documents = []
+        for result in results:
+            doc = SearchDocument(
+                title=result.get("title", ""),
+                url=result.get("href", ""),
+                snippet=result.get("body", ""),
+                content=result.get("body", ""),  # DuckDuckGo 返回的是 body
+                score=0.0  # DuckDuckGo 不提供分数
+            )
+            if doc.url and (doc.title or doc.snippet):
+                documents.append(doc)
+        
+        logger.info(f"✅ DuckDuckGo搜索完成: 查询='{query}', 语言={language}, 获得{len(documents)}个结果")
+        return documents
+        
+    except ImportError:
+        logger.warning("⚠️ DuckDuckGo搜索包未安装，跳过DuckDuckGo搜索。请运行: pip install ddgs")
+        return []
+    except Exception as e:
+        logger.error(f"❌ DuckDuckGo搜索失败: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
 
 
 class FaissRetriever:
