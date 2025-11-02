@@ -1425,14 +1425,28 @@ onMounted(async () => {
 })
 
 // Watch for WebSocket connection and send config when ready
+const configSentRef = ref(false) // 记录是否已发送配置，避免重复发送
 watch(isConnected, (connected: boolean) => {
-  if (connected && configLoaded.value) {
-    // Send config to backend when connection is established
-    send({
-      type: 'config',
-      config: settings.value
-    })
-    console.log('Configuration sent to backend')
+  if (connected && configLoaded.value && !configSentRef.value) {
+    // 延迟一点再发送配置，确保连接稳定
+    setTimeout(() => {
+      if (isConnected.value && !configSentRef.value) {
+        try {
+          send({
+            type: 'config',
+            config: settings.value
+          })
+          configSentRef.value = true
+          console.log('Configuration sent to backend')
+        } catch (error) {
+          console.error('Failed to send config:', error)
+          // 发送失败不影响连接，下次重连时会重试
+        }
+      }
+    }, 500)
+  } else if (!connected) {
+    // 连接断开时重置标志，下次重连时可以重新发送
+    configSentRef.value = false
   }
 })
 

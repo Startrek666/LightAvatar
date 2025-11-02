@@ -41,13 +41,7 @@ class WebSocketManager:
             except Exception as e:
                 logger.error(f"Error sending message to {session_id}: {e}")
                 self.disconnect(session_id)
-                
-                # 通知SessionManager连接已断开（避免重复处理）
-                try:
-                    from backend.core.session_manager import session_manager
-                    await session_manager.disconnect_session(session_id)
-                except Exception as disconnect_error:
-                    logger.debug(f"Session manager disconnect notification failed: {disconnect_error}")
+                # 注意：不要在这里调用disconnect_session，因为WebSocket断开会在websocket_endpoint的finally中处理
     
     async def send_json(self, session_id: str, data: dict):
         """Send JSON data to a specific client"""
@@ -62,13 +56,7 @@ class WebSocketManager:
                 else:
                     logger.error(f"Error sending JSON to {session_id}: {e}")
                 self.disconnect(session_id)
-                
-                # 通知SessionManager连接已断开（避免重复处理）
-                try:
-                    from backend.core.session_manager import session_manager
-                    await session_manager.disconnect_session(session_id)
-                except Exception as disconnect_error:
-                    logger.debug(f"Session manager disconnect notification failed: {disconnect_error}")
+                # 注意：不要在这里调用disconnect_session，因为WebSocket断开会在websocket_endpoint的finally中处理
     
     async def send_bytes(self, session_id: str, data: bytes):
         """Send binary data to a specific client"""
@@ -79,13 +67,7 @@ class WebSocketManager:
             except Exception as e:
                 logger.error(f"Error sending bytes to {session_id}: {e}")
                 self.disconnect(session_id)
-                
-                # 通知SessionManager连接已断开（避免重复处理）
-                try:
-                    from backend.core.session_manager import session_manager
-                    await session_manager.disconnect_session(session_id)
-                except Exception as disconnect_error:
-                    logger.debug(f"Session manager disconnect notification failed: {disconnect_error}")
+                # 注意：不要在这里调用disconnect_session，因为WebSocket断开会在websocket_endpoint的finally中处理
     
     async def broadcast_json(self, data: dict, exclude: Set[str] = None):
         """Broadcast JSON data to all connected clients"""

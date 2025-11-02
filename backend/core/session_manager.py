@@ -902,30 +902,48 @@ class Session:
     
     async def update_config(self, config: dict):
         """Update session configuration"""
-        self.config.update(config)
-        
-        # Update handler configurations
-        if "llm" in config:
-            # 如果模型选择改变，需要重新创建LLM handler
-            if "model" in config["llm"]:
-                settings.LLM_MODEL = config["llm"]["model"]
-                logger.info(f"Switching LLM model to: {settings.LLM_MODEL}")
-                
-                # 重新创建LLM handler
-                self.llm_handler = OpenAIHandler(
-                    api_url=settings.LLM_API_URL,
-                    api_key=settings.LLM_API_KEY,
-                    model=settings.LLM_MODEL_NAME
-                )
-                await self.llm_handler.initialize()
-            elif self.llm_handler:
-                self.llm_handler.update_config(config["llm"])
-        
-        if "tts" in config and self.tts_handler:
-            self.tts_handler.update_config(config["tts"])
-        
-        if "avatar" in config and self.avatar_handler:
-            self.avatar_handler.update_config(config["avatar"])
+        try:
+            self.config.update(config)
+            
+            # Update handler configurations
+            if "llm" in config:
+                # 如果模型选择改变，需要重新创建LLM handler
+                if "model" in config["llm"]:
+                    settings.LLM_MODEL = config["llm"]["model"]
+                    logger.info(f"Switching LLM model to: {settings.LLM_MODEL}")
+                    
+                    try:
+                        # 重新创建LLM handler
+                        self.llm_handler = OpenAIHandler(
+                            api_url=settings.LLM_API_URL,
+                            api_key=settings.LLM_API_KEY,
+                            model=settings.LLM_MODEL_NAME
+                        )
+                        await self.llm_handler.initialize()
+                    except Exception as e:
+                        logger.error(f"Failed to reinitialize LLM handler: {e}", exc_info=True)
+                        # 如果重新初始化失败，保留旧的handler，不抛出异常
+                        raise ValueError(f"LLM模型切换失败: {e}")
+                elif self.llm_handler:
+                    try:
+                        self.llm_handler.update_config(config["llm"])
+                    except Exception as e:
+                        logger.warning(f"Failed to update LLM config: {e}")
+            
+            if "tts" in config and self.tts_handler:
+                try:
+                    self.tts_handler.update_config(config["tts"])
+                except Exception as e:
+                    logger.warning(f"Failed to update TTS config: {e}")
+            
+            if "avatar" in config and self.avatar_handler:
+                try:
+                    self.avatar_handler.update_config(config["avatar"])
+                except Exception as e:
+                    logger.warning(f"Failed to update Avatar config: {e}")
+        except Exception as e:
+            logger.error(f"Error updating session config: {e}", exc_info=True)
+            raise
     
     def release(self):
         """Release session resources"""
@@ -1062,13 +1080,6 @@ class SessionManager:
                 session = self.sessions[session_id]
                 session.is_connected = False
                 session.disconnected_at = datetime.now()
-                
-                # 确保WebSocket连接也被清理
-                from backend.app.ws_manager import websocket_manager
-                if websocket_manager.is_connected(session_id):
-                    websocket_manager.disconnect(session_id)
-                    logger.info(f"🔧 同时清理 Session {session_id} 的WebSocket连接")
-                
                 logger.info(f"🔌 Session {session_id} 断开连接，保留Session数据等待重连")
     
     async def interrupt_session(self, session_id: str) -> bool:

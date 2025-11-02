@@ -332,19 +332,26 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 # Update session configuration
                 try:
                     await session.update_config(data.get("config"))
-                    # 发送确认响应
-                    await websocket_manager.send_json(session_id, {
-                        "type": "config_updated",
-                        "status": "success"
-                    })
-                    logger.info(f"[WebSocket] Session {session_id}: 配置已更新")
+                    # 发送确认响应（如果连接还存在）
+                    try:
+                        await websocket_manager.send_json(session_id, {
+                            "type": "config_updated",
+                            "status": "success"
+                        })
+                        logger.info(f"[WebSocket] Session {session_id}: 配置已更新")
+                    except Exception as send_error:
+                        logger.warning(f"[WebSocket] Session {session_id}: 配置确认消息发送失败: {send_error}")
                 except Exception as e:
                     logger.error(f"[WebSocket] Session {session_id}: 配置更新失败: {e}", exc_info=True)
-                    await websocket_manager.send_json(session_id, {
-                        "type": "config_updated",
-                        "status": "error",
-                        "message": str(e)
-                    })
+                    # 尝试发送错误响应（如果连接还存在）
+                    try:
+                        await websocket_manager.send_json(session_id, {
+                            "type": "config_updated",
+                            "status": "error",
+                            "message": str(e)
+                        })
+                    except:
+                        pass  # 如果发送失败，忽略
             
             elif message_type == "video_ack":
                 # 客户端确认收到视频
@@ -393,16 +400,31 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 # Handle interrupt request
                 logger.info(f"[WebSocket] Session {session_id}: 收到中断请求")
                 
-                # Call session manager to interrupt current tasks
-                success = await session_manager.interrupt_session(session_id)
-                
-                # Send interrupt acknowledgment
-                await websocket_manager.send_json(session_id, {
-                    "type": "interrupt_ack",
-                    "success": success
-                })
-                
-                logger.info(f"[WebSocket] Session {session_id}: 中断{'成功' if success else '失败'}")
+                try:
+                    # Call session manager to interrupt current tasks
+                    success = await session_manager.interrupt_session(session_id)
+                    
+                    # Send interrupt acknowledgment (如果连接还存在)
+                    try:
+                        await websocket_manager.send_json(session_id, {
+                            "type": "interrupt_ack",
+                            "success": success
+                        })
+                        logger.info(f"[WebSocket] Session {session_id}: 中断{'成功' if success else '失败'}")
+                    except Exception as send_error:
+                        # 发送确认消息失败，但不影响中断操作
+                        logger.warning(f"[WebSocket] Session {session_id}: 中断确认消息发送失败: {send_error}")
+                except Exception as e:
+                    logger.error(f"[WebSocket] Session {session_id}: 中断处理失败: {e}", exc_info=True)
+                    # 尝试发送错误响应
+                    try:
+                        await websocket_manager.send_json(session_id, {
+                            "type": "interrupt_ack",
+                            "success": False,
+                            "error": str(e)
+                        })
+                    except:
+                        pass  # 如果发送失败，忽略
                 
             elif message_type == "ping":
                 # Heartbeat
