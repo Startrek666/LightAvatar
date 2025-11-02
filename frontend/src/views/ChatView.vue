@@ -362,6 +362,7 @@ const isProcessingProgressQueue = ref(false)
 // Video playback queue for streaming
 const videoQueue = ref<Blob[]>([])
 const isPlayingSpeechVideo = ref(false)
+const streamCompleted = ref(false) // 流式传输是否已完成
 const configLoaded = ref(false)
 const idleVideoUrl = ref('')
 
@@ -609,6 +610,7 @@ const sendTextMessage = (event?: Event) => {
 
   // Send to server with streaming enabled - 发送完整消息（包含文档）
   isProcessing.value = true
+  streamCompleted.value = false // 重置流式传输完成标志
   const payload = {
     type: 'text',
     text: messageToSend,
@@ -980,10 +982,22 @@ const handleWebSocketMessage = (data: any) => {
     // Streaming complete
     console.log('✅ [handleWebSocketMessage] 流式传输完成:', data.data.full_text)
     console.log('  - 最终文本长度:', data.data.full_text?.length || 0)
+    console.log('  - 当前视频队列长度:', videoQueue.value.length)
     message.destroy()  // 关闭loading提示
     message.destroy('reconnecting')  // 关闭重连提示（如果还在显示）
-    isProcessing.value = false
-    console.log('  - isProcessing 设置为 false')
+    
+    // 标记流式传输已完成，但不立即解锁输入框
+    // 需要等待所有视频播放完成
+    streamCompleted.value = true
+    
+    // 检查是否可以立即解锁（队列为空且没有正在播放的视频）
+    if (videoQueue.value.length === 0 && !isPlayingSpeechVideo.value) {
+      console.log('  - 流式传输完成且无待播放视频，解锁输入框')
+      isProcessing.value = false
+      streamCompleted.value = false // 重置标志
+    } else {
+      console.log('  - 流式传输完成，等待视频播放完成后再解锁')
+    }
   }
   else if (data.type === 'sync_complete') {
     // 重连同步完成
@@ -1057,12 +1071,16 @@ const playNextVideo = async () => {
     // 播放完所有视频后，回到待机视频
     playIdleVideo()
     
-    // ✅ 修复：播放完所有视频后，解锁输入框
-    // 特别是重连重发视频的场景
-    if (isProcessing.value) {
+    // ✅ 修复：只有在流式传输已完成且队列为空时才解锁输入框
+    // 避免在视频还在传输时提前解锁
+    if (streamCompleted.value && isProcessing.value) {
       console.log('✅ 所有视频播放完成，解锁输入框')
       isProcessing.value = false
+      streamCompleted.value = false // 重置标志
       message.destroy('reconnecting')
+    } else if (videoQueue.value.length === 0 && !streamCompleted.value) {
+      // 队列为空但流式传输未完成，说明视频还在传输中，不要解锁
+      console.log('⏳ 视频队列为空，但流式传输未完成，等待更多视频...')
     }
     return
   }
