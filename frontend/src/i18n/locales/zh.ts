@@ -158,6 +158,18 @@ export default {
     registerSuccess: '注册成功，请登录',
     loginFailed: '登录失败',
     registerFailed: '注册失败'
+  },
+  auth: {
+    tokenExpired: '登录已过期，请重新登录',
+    tokenInvalid: 'Token无效，自动退出登录',
+    unauthorized: '没有权限访问',
+    noPermission: '没有权限访问',
+    resourceNotFound: '请求的资源不存在',
+    serverError: '服务器错误',
+    requestFailed: '请求失败',
+    networkError: '网络错误，请检查网络连接',
+    requestConfigError: '请求配置错误',
+    sessionRejectedMulti: '您已有一个正在使用的会话，请先退出当前会话再重试'
   }
 }
 

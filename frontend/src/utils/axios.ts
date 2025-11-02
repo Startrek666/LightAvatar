@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { message } from 'ant-design-vue'
+import i18n from '@/i18n'
 
 // 创建axios实例
 const instance = axios.create({
@@ -34,27 +35,27 @@ instance.interceptors.response.use(
       switch (error.response.status) {
         case 401:
           // Token过期或无效
-          message.error('登录已过期，请重新登录')
+          message.error(i18n.global.t('auth.tokenExpired'))
           localStorage.removeItem('auth_token')
           localStorage.removeItem('user_info')
           window.location.href = '/login'
           break
         case 403:
-          message.error('没有权限访问')
+          message.error(i18n.global.t('auth.noPermission'))
           break
         case 404:
-          message.error('请求的资源不存在')
+          message.error(i18n.global.t('auth.resourceNotFound'))
           break
         case 500:
-          message.error('服务器错误')
+          message.error(i18n.global.t('auth.serverError'))
           break
         default:
-          message.error(error.response.data?.detail || '请求失败')
+          message.error(error.response.data?.detail || i18n.global.t('auth.requestFailed'))
       }
     } else if (error.request) {
-      message.error('网络错误，请检查网络连接')
+      message.error(i18n.global.t('auth.networkError'))
     } else {
-      message.error('请求配置错误')
+      message.error(i18n.global.t('auth.requestConfigError'))
     }
     return Promise.reject(error)
   }

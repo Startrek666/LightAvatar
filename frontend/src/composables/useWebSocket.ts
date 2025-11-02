@@ -1,5 +1,7 @@
 import { ref, onUnmounted } from 'vue'
 import { getWebSocketUrl } from '../config/server.config'
+import { isTokenInvalidReason, redirectToLogin } from '../utils/auth'
+import i18n from '../i18n'
 
 export function useWebSocket() {
     const ws = ref<WebSocket | null>(null)
@@ -90,7 +92,15 @@ export function useWebSocket() {
             // Code 1008 is used for policy violations
             if (event.code === 1008) {
                 console.warn('Connection rejected:', event.reason)
-                // Don't attempt to reconnect if rejected due to multiple sessions
+                
+                // 检查是否是token无效导致的拒绝
+                if (isTokenInvalidReason(event.reason || '')) {
+                    // Token无效，清理本地存储并跳转登录页
+                    console.warn(i18n.global.t('auth.tokenInvalid'))
+                    redirectToLogin()
+                }
+                
+                // Don't attempt to reconnect if rejected due to multiple sessions or invalid token
                 shouldReconnect.value = false
                 isReconnecting.value = false
                 // 通知连接状态变化

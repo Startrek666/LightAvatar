@@ -158,6 +158,18 @@ export default {
     registerSuccess: 'Registration successful. Please login',
     loginFailed: 'Login failed',
     registerFailed: 'Registration failed'
+  },
+  auth: {
+    tokenExpired: 'Login expired, please login again',
+    tokenInvalid: 'Token invalid, automatically logging out',
+    unauthorized: 'Unauthorized',
+    noPermission: 'No permission to access',
+    resourceNotFound: 'Resource not found',
+    serverError: 'Server error',
+    requestFailed: 'Request failed',
+    networkError: 'Network error, please check your connection',
+    requestConfigError: 'Request configuration error',
+    sessionRejectedMulti: 'You already have an active session, please exit the current session first'
   }
 }
 

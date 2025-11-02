@@ -313,6 +313,7 @@ import {
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
 import { useDocParser } from '@/composables/useDocParser'
+import { isTokenInvalidReason } from '@/utils/auth'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import { 
   SERVER_NODES, 
@@ -1207,15 +1208,25 @@ const startDialog = async () => {
     console.log('🔌 连接 WebSocket...')
     const sessionId = Date.now().toString()
     
-    // WebSocket close handler to handle rejection due to multiple sessions
+    // WebSocket close handler to handle rejection due to multiple sessions or token invalid
     const handleWebSocketClose = (event: CloseEvent) => {
       if (event.code === 1008) {
-        // Connection rejected due to policy violation (multiple sessions)
-        message.error({
-          content: event.reason || '您已有一个正在使用的会话，请先退出当前会话再重试',
-          duration: 5
-        })
-        isReady.value = false
+        // 检查是否是token无效（useWebSocket已经处理了跳转）
+        if (isTokenInvalidReason(event.reason || '')) {
+          // Token无效，提示（跳转已在useWebSocket中处理）
+          message.error({
+            content: t('auth.tokenExpired'),
+            duration: 3
+          })
+          isReady.value = false
+        } else {
+          // Connection rejected due to policy violation (multiple sessions)
+          message.error({
+            content: event.reason || t('auth.sessionRejectedMulti'),
+            duration: 5
+          })
+          isReady.value = false
+        }
       }
     }
     

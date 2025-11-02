@@ -18,7 +18,7 @@ class AuthService:
     # JWT配置
     SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
     ALGORITHM = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24小时
+    ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7天
 
     def hash_password(self, password: str) -> str:
         """密码哈希"""
