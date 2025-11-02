@@ -534,6 +534,15 @@ class Session:
                 pending_sentence = None  # 暂存等待处理的句子
                 
                 while True:
+                    # 检查是否被中断
+                    if self.is_interrupted:
+                        logger.info(f"[实时] Session {self.session_id} 处理被中断，停止句子队列处理")
+                        # 取消所有待处理任务
+                        for task in pending_tasks.values():
+                            if not task.done():
+                                task.cancel()
+                        break
+                    
                     # 如果有等待的句子，优先处理它
                     if pending_sentence is None:
                         # 从队列获取句子（非阻塞）
@@ -552,37 +561,48 @@ class Session:
                         sentence = pending_sentence
                         pending_sentence = None
                     
-                    # 启动生成任务（如果还有并发槽位）
-                    slots_available = MAX_CONCURRENT - (next_to_start - next_to_send)
-                    if slots_available > 0:
-                        task = asyncio.create_task(self._generate_sentence_data(sentence))
-                        pending_tasks[sentence_index] = task
-                        logger.info(
-                            f"[实时] 启动句子 {sentence_index + 1} 生成: {sentence[:30]}... "
-                            f"(活跃任务: {len(pending_tasks)}, 已发送: {next_to_send}, 已启动: {next_to_start + 1})"
-                        )
-                        next_to_start = sentence_index + 1
-                        sentence_index += 1
+                    # 启动生成任务（如果还有并发槽位且未被中断）
+                    if not self.is_interrupted:
+                        slots_available = MAX_CONCURRENT - (next_to_start - next_to_send)
+                        if slots_available > 0:
+                            task = asyncio.create_task(self._generate_sentence_data(sentence))
+                            pending_tasks[sentence_index] = task
+                            # 添加任务到session的当前任务列表，便于中断管理
+                            if hasattr(self, 'current_tasks'):
+                                self.current_tasks.append(task)
+                            logger.info(
+                                f"[实时] 启动句子 {sentence_index + 1} 生成: {sentence[:30]}... "
+                                f"(活跃任务: {len(pending_tasks)}, 已发送: {next_to_send}, 已启动: {next_to_start + 1})"
+                            )
+                            next_to_start = sentence_index + 1
+                            sentence_index += 1
+                        else:
+                            # 并发已满，暂存这个句子，等待槽位释放
+                            logger.debug(
+                                f"[实时] 并发已满 (MAX={MAX_CONCURRENT})，句子 {sentence_index + 1} 等待槽位 "
+                                f"(活跃: {len(pending_tasks)})"
+                            )
+                            pending_sentence = sentence
+                            # 等待一小段时间，让已完成的任务有机会被发送
+                            await asyncio.sleep(0.05)
                     else:
-                        # 并发已满，暂存这个句子，等待槽位释放
-                        logger.debug(
-                            f"[实时] 并发已满 (MAX={MAX_CONCURRENT})，句子 {sentence_index + 1} 等待槽位 "
-                            f"(活跃: {len(pending_tasks)})"
-                        )
-                        pending_sentence = sentence
-                        # 等待一小段时间，让已完成的任务有机会被发送
-                        await asyncio.sleep(0.05)
+                        # 被中断，停止处理新句子
+                        logger.info(f"[实时] Session {self.session_id} 被中断，停止处理句子: {sentence[:30]}...")
+                        break
                     
                     # 异步发送已完成的任务（不阻塞）
                     await send_completed_tasks()
                 
-                # 处理剩余任务
-                logger.info(f"[实时] LLM输入完成，等待 {len(pending_tasks)} 个待处理任务...")
-                while next_to_send < sentence_index:
-                    await send_completed_tasks()
-                    if next_to_send < sentence_index:
-                        # 还有任务未完成，等待一下
-                        await asyncio.sleep(0.1)
+                # 处理剩余任务（如果未被中断）
+                if not self.is_interrupted:
+                    logger.info(f"[实时] LLM输入完成，等待 {len(pending_tasks)} 个待处理任务...")
+                    while next_to_send < sentence_index and not self.is_interrupted:
+                        await send_completed_tasks()
+                        if next_to_send < sentence_index:
+                            # 还有任务未完成，等待一下
+                            await asyncio.sleep(0.1)
+                else:
+                    logger.info(f"[实时] Session {self.session_id} 被中断，跳过剩余 {len(pending_tasks)} 个任务")
             
             processing_task = asyncio.create_task(process_sentence_queue())
             
@@ -971,8 +991,17 @@ class SessionManager:
                 existing_session_id = self.user_sessions.get(user_id)
                 if existing_session_id and existing_session_id in self.sessions:
                     existing_session = self.sessions[existing_session_id]
-                    # 只有在线的会话才算作冲突
-                    if existing_session.is_connected:
+                    
+                    # 双重检查会话是否真正活跃
+                    # 1. 检查会话的连接状态
+                    # 2. 检查WebSocket管理器中是否真正存在连接
+                    from backend.app.ws_manager import websocket_manager
+                    is_really_connected = (
+                        existing_session.is_connected and 
+                        websocket_manager.is_connected(existing_session_id)
+                    )
+                    
+                    if is_really_connected:
                         logger.warning(
                             f"❌ 用户 {username or user_id} 已有活跃会话 {existing_session_id}，"
                             f"拒绝创建新会话 {session_id}"
@@ -982,8 +1011,15 @@ class SessionManager:
                             f"（会话ID: {existing_session_id[:8]}...）"
                         )
                     else:
-                        # 旧会话已断开，可以清理
-                        logger.info(f"清理用户 {username or user_id} 的旧断开会话 {existing_session_id}")
+                        # 会话状态不一致或已断开，强制清理
+                        if existing_session.is_connected and not websocket_manager.is_connected(existing_session_id):
+                            logger.warning(
+                                f"⚠️ 检测到会话状态不一致: Session {existing_session_id} "
+                                f"显示已连接但WebSocket已断开，强制清理"
+                            )
+                        else:
+                            logger.info(f"清理用户 {username or user_id} 的旧断开会话 {existing_session_id}")
+                        
                         await self._remove_session_internal(existing_session_id)
             
             # Check memory before creating new session
@@ -1026,7 +1062,52 @@ class SessionManager:
                 session = self.sessions[session_id]
                 session.is_connected = False
                 session.disconnected_at = datetime.now()
+                
+                # 确保WebSocket连接也被清理
+                from backend.app.ws_manager import websocket_manager
+                if websocket_manager.is_connected(session_id):
+                    websocket_manager.disconnect(session_id)
+                    logger.info(f"🔧 同时清理 Session {session_id} 的WebSocket连接")
+                
                 logger.info(f"🔌 Session {session_id} 断开连接，保留Session数据等待重连")
+    
+    async def interrupt_session(self, session_id: str) -> bool:
+        """中断Session的当前任务处理"""
+        async with self._lock:
+            if session_id not in self.sessions:
+                logger.warning(f"尝试中断不存在的session: {session_id}")
+                return False
+            
+            session = self.sessions[session_id]
+            logger.info(f"🛑 开始中断 Session {session_id} 的处理任务")
+            
+            try:
+                # 设置中断标志
+                session.is_interrupted = True
+                
+                # 中断流式处理队列
+                if hasattr(session, 'sentence_queue'):
+                    session.sentence_queue.clear()
+                    logger.info(f"🛑 已清空 Session {session_id} 的句子队列")
+                
+                # 中断正在运行的任务
+                if hasattr(session, 'current_tasks'):
+                    for task in session.current_tasks:
+                        if not task.done():
+                            task.cancel()
+                            logger.info(f"🛑 已取消 Session {session_id} 的任务")
+                    session.current_tasks.clear()
+                
+                # 重置处理状态
+                session.is_processing = False
+                session.last_active = datetime.now()
+                
+                logger.info(f"✅ Session {session_id} 中断完成")
+                return True
+                
+            except Exception as e:
+                logger.error(f"❌ Session {session_id} 中断失败: {e}")
+                return False
     
     async def _remove_session_internal(self, session_id: str):
         """内部方法：删除Session（不加锁，由调用者负责加锁）"""

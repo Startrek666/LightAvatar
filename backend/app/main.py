@@ -389,6 +389,21 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                     "resent_count": len(missing_videos)
                 })
                 
+            elif message_type == "interrupt":
+                # Handle interrupt request
+                logger.info(f"[WebSocket] Session {session_id}: 收到中断请求")
+                
+                # Call session manager to interrupt current tasks
+                success = await session_manager.interrupt_session(session_id)
+                
+                # Send interrupt acknowledgment
+                await websocket_manager.send_json(session_id, {
+                    "type": "interrupt_ack",
+                    "success": success
+                })
+                
+                logger.info(f"[WebSocket] Session {session_id}: 中断{'成功' if success else '失败'}")
+                
             elif message_type == "ping":
                 # Heartbeat
                 await websocket_manager.send_json(session_id, {"type": "pong"})
@@ -405,7 +420,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
         except asyncio.CancelledError:
             pass
         
-        # Clean up WebSocket connection
+        # Clean up WebSocket connection first
         websocket_manager.disconnect(session_id)
         
         # 标记Session为断开状态（不删除，支持重连和继续发送未完成的视频）

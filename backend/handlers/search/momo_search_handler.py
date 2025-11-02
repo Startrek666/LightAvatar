@@ -338,10 +338,14 @@ class MomoSearchHandler(BaseHandler):
             for idx, ddg_item in enumerate(ddg_queries):
                 step_num = len(search_queries) + idx + 1
                 if progress_callback:
+                    if ddg_item['language'] == 'zh':
+                        message = "正在进一步深度搜索..."
+                    else:  # en
+                        message = "正在扩充搜索英语资料..."
                     await progress_callback(
                         step_num, 
                         total_steps, 
-                        f"🦆 DuckDuckGo {ddg_item['language']}搜索"
+                        message
                     )
                 
                 logger.info(f"🦆 开始DuckDuckGo搜索: {ddg_item['query']} (语言: {ddg_item['language']})")
@@ -407,6 +411,8 @@ class MomoSearchHandler(BaseHandler):
             # 最后一步: 完成
             if progress_callback:
                 await progress_callback(total_steps, total_steps, "✅ 搜索完成，正在生成内容")
+                # 额外发送文档数量信息
+                await progress_callback(total_steps + 1, total_steps + 1, f"找到{len(relevant_docs)}篇相关文档")
             
             # 生成引用信息
             citations = self.format_citations(relevant_docs)

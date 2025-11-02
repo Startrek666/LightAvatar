@@ -33,6 +33,8 @@ export default {
     inputPlaceholder: 'Type a message or click the mic button...',
     send: 'Send',
     sendMessage: 'Send Message',
+    interrupt: 'Interrupt',
+    interruptedMessage: 'Digital avatar generation interrupted',
     uploadDoc: 'Upload Document',
     uploadDocHint: 'Upload document (PDF/DOCX/PPTX, max 30MB)',
     startRecording: 'Click to start recording',
@@ -72,7 +74,10 @@ export default {
     analyzingRelevance: 'Analyzing relevance',
     crawlingContent: 'Deep crawling content',
     splittingDocuments: 'Splitting documents and re-retrieving',
-    completed: 'Search completed, generating content'
+    deepSearching: 'Performing deeper search...',
+    expandingEnglish: 'Expanding English material search...',
+    completed: 'Search completed, generating content',
+    foundDocuments: 'Found {count} relevant documents'
   },
   settings: {
     title: 'Settings',

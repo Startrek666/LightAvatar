@@ -150,7 +150,6 @@
                 <!-- 搜索进度消息 -->
                 <template v-if="message.role === 'search_progress'">
                   <div class="search-progress-message">
-                    <span class="search-progress-icon">🔍</span>
                     <span class="search-progress-text">{{ message.content }}</span>
                   </div>
                 </template>
@@ -223,10 +222,13 @@
               <a-button type="primary" 
                 size="large" 
                 class="send-button desktop-only"
-                @click="sendTextMessage"
-                :disabled="!inputText || !isConnected || isProcessing" 
-                :icon="h(SendOutlined)"
-                :title="t('chat.sendMessage')" />
+                @click="isProcessing ? interruptGeneration() : sendTextMessage()"
+                :disabled="(!inputText && !isProcessing) || !isConnected" 
+                :icon="h(isProcessing ? StopOutlined : SendOutlined)"
+                :title="isProcessing ? t('chat.interrupt') : t('chat.sendMessage')"
+                :loading="isInterrupting">
+                {{ isProcessing ? t('chat.interrupt') : '' }}
+              </a-button>
             </div>
             
             <!-- 第二行：发送按钮（仅移动端显示） -->
@@ -234,10 +236,11 @@
               size="large" 
               block
               class="send-button mobile-only mobile-send-button"
-              @click="sendTextMessage"
-              :disabled="!inputText || !isConnected || isProcessing" 
-              :icon="h(SendOutlined)">
-              {{ t('chat.sendMessage') }}
+              @click="isProcessing ? interruptGeneration() : sendTextMessage()"
+              :disabled="(!inputText && !isProcessing) || !isConnected" 
+              :icon="h(isProcessing ? StopOutlined : SendOutlined)"
+              :loading="isInterrupting">
+              {{ isProcessing ? t('chat.interrupt') : t('chat.sendMessage') }}
             </a-button>
           </div>
           <!-- 隐藏的文件上传输入框 -->
@@ -330,6 +333,7 @@ const currentVideoIndex = ref(0)  // 0: video1, 1: video2
 const messagesContainer = ref<HTMLElement>()
 const inputText = ref('')
 const isProcessing = ref(false)
+const isInterrupting = ref(false)
 const fileInput = ref<HTMLInputElement>()
 const uploadedDocText = ref('')
 const uploadedDocInfo = ref<{ filename: string; textLength: number } | null>(null)
@@ -619,6 +623,24 @@ const sendTextMessage = (event?: Event) => {
   scrollToBottom()
 }
 
+// 中断数字人生成
+const interruptGeneration = () => {
+  if (!isProcessing.value) {
+    return
+  }
+  
+  console.log('🛑 [interruptGeneration] 用户请求中断生成')
+  isInterrupting.value = true
+  
+  // 发送中断命令到服务器
+  const payload = {
+    type: 'interrupt'
+  }
+  
+  console.log('🚫 [interruptGeneration] 发送中断命令到服务器')
+  send(payload)
+}
+
 // 处理搜索进度队列，确保每步至少显示0.5秒
 const processSearchProgressQueue = async () => {
   if (isProcessingProgressQueue.value) return
@@ -629,8 +651,7 @@ const processSearchProgressQueue = async () => {
     if (!progressItem) continue
     
     const isCompleted = progressItem.step >= progressItem.total
-    const stepInfo = `[${progressItem.step}/${progressItem.total}] `
-    const fullMessage = stepInfo + progressItem.message
+    const fullMessage = progressItem.message
     
     // 更新搜索进度消息
     if (currentSearchProgressIndex.value !== null) {
@@ -680,16 +701,15 @@ const processSearchProgressQueue = async () => {
     
     // 如果搜索完成，处理完成逻辑
     if (isCompleted) {
-      setTimeout(() => {
-        if (currentSearchProgressIndex.value !== null) {
-          const index = currentSearchProgressIndex.value
-          if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
-            messages.value.splice(index, 1)
-            currentSearchProgressIndex.value = null
-          }
-        }
-      }, 2000) // 2秒后移除
-      break // 搜索完成，退出队列处理
+      // 检查是否是文档数量消息（step > total 表示额外的文档数量信息）
+      if (progressItem.step > progressItem.total) {
+        // 这是文档数量信息，保留显示不删除
+        break // 处理完成，退出队列处理
+      } else {
+        // 这是搜索完成消息，等待2秒显示文档数量
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        // 继续处理队列中的文档数量消息
+      }
     } else {
       // 等待0.5秒再处理下一个项目
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -877,6 +897,21 @@ const handleWebSocketMessage = (data: any) => {
     if (!isProcessingProgressQueue.value) {
       processSearchProgressQueue()
     }
+  }
+  else if (data.type === 'interrupt_ack') {
+    // 中断确认
+    console.log('🛑 [handleWebSocketMessage] 收到中断确认')
+    isInterrupting.value = false
+    isProcessing.value = false
+    
+    // 显示中断提示消息
+    const interruptMessage = {
+      role: 'system' as const,
+      content: t('chat.interruptedMessage'),
+      timestamp: new Date()
+    }
+    messages.value.push(interruptMessage)
+    scrollToBottom()
   }
   else if (data.type === 'asr_result') {
     // ✅ ASR语音识别结果
@@ -1784,7 +1819,6 @@ onUnmounted(() => {
 .search-progress-message {
   display: flex;
   align-items: center;
-  gap: 6px;
   font-size: 12px;
   color: #8c8c8c;
   font-style: italic;
@@ -1797,12 +1831,6 @@ onUnmounted(() => {
   transform: translateY(-10px);
   opacity: 0.6;
   transition: all 0.1s ease;
-}
-
-.search-progress-icon {
-  font-size: 14px;
-  opacity: 0.7;
-  transition: opacity 0.3s ease;
 }
 
 .search-progress-text {

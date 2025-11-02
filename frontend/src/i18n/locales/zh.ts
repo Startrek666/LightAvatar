@@ -33,6 +33,8 @@ export default {
     inputPlaceholder: '输入消息或点击录音按钮说话...',
     send: '发送',
     sendMessage: '发送消息',
+    interrupt: '中断',
+    interruptedMessage: '已中断数字人生成',
     uploadDoc: '上传文档',
     uploadDocHint: '上传文档 (PDF/DOCX/PPTX, 最大30MB)',
     startRecording: '点击开始录音',
@@ -72,7 +74,10 @@ export default {
     analyzingRelevance: '分析相关性',
     crawlingContent: '深度爬取内容',
     splittingDocuments: '文档分块和二次检索',
-    completed: '搜索完成，正在生成内容'
+    deepSearching: '正在进一步深度搜索...',
+    expandingEnglish: '正在扩充搜索英语资料...',
+    completed: '搜索完成，正在生成内容',
+    foundDocuments: '找到{count}篇相关文档'
   },
   settings: {
     title: '设置',
