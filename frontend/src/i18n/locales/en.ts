@@ -63,6 +63,7 @@ export default {
   },
   search: {
     title: 'Web Search',
+    preparing: 'Preparing search...',
     searching: 'Searching...',
     fetchingContent: 'Fetching content...',
     processing: 'Processing...',

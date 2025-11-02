@@ -63,6 +63,7 @@ export default {
   },
   search: {
     title: '联网搜索中',
+    preparing: '正在准备搜索...',
     searching: '正在搜索...',
     fetchingContent: '正在获取内容...',
     processing: '正在处理...',

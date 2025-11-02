@@ -576,9 +576,18 @@ const sendTextMessage = (event?: Event) => {
     timestamp: new Date()
   })
 
-  // 如果启用搜索，重置搜索进度索引
+  // 如果启用搜索，立即显示初始搜索进度
   if (enableWebSearch.value) {
     currentSearchProgressIndex.value = null
+    
+    // 立即在用户消息后插入搜索进度消息
+    const searchProgressMessage = {
+      role: 'search_progress' as const,
+      content: t('search.preparing'),  // "正在准备搜索..."
+      timestamp: new Date()
+    }
+    messages.value.push(searchProgressMessage)
+    currentSearchProgressIndex.value = messages.value.length - 1
   }
 
   // Prepare assistant message for streaming
@@ -762,6 +771,11 @@ const handleWebSocketMessage = (data: any) => {
     isProcessing.value = false
     scrollToBottom()
   }
+  else if (data.type === 'user_message_ack') {
+    // 用户消息确认 - 可以用来确认消息已被服务器接收
+    console.log('✅ [handleWebSocketMessage] 用户消息已确认')
+    // 这里可以添加一些UI反馈，比如显示消息已发送的状态
+  }
   else if (data.type === 'search_progress') {
     // Search progress update - 在对话面板中显示
     console.log('🔍 [handleWebSocketMessage] 搜索进度:', data.data)
@@ -769,25 +783,8 @@ const handleWebSocketMessage = (data: any) => {
     const isCompleted = data.data.step >= data.data.total
     const progressMessage = isCompleted ? t('search.completed') : data.data.message
     
-    // 更新或创建搜索进度消息
-    if (currentSearchProgressIndex.value === null) {
-      // 创建新的搜索进度消息，插入到最后一个用户消息之后
-      let lastUserIndex = messages.value.length - 1
-      while (lastUserIndex >= 0 && messages.value[lastUserIndex].role !== 'user') {
-        lastUserIndex--
-      }
-      
-      if (lastUserIndex >= 0) {
-        // 在用户消息后插入搜索进度消息
-        const insertIndex = lastUserIndex + 1
-        messages.value.splice(insertIndex, 0, {
-          role: 'search_progress',
-          content: progressMessage,
-          timestamp: new Date()
-        })
-        currentSearchProgressIndex.value = insertIndex
-      }
-    } else {
+    // 更新现有的搜索进度消息（应该在 sendTextMessage 中已经创建了）
+    if (currentSearchProgressIndex.value !== null) {
       // 更新现有的搜索进度消息
       const index = currentSearchProgressIndex.value
       if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
@@ -805,8 +802,9 @@ const handleWebSocketMessage = (data: any) => {
           const index = currentSearchProgressIndex.value
           if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
             messages.value.splice(index, 1)
+            // 重置索引，因为消息已被移除
+            currentSearchProgressIndex.value = null
           }
-          currentSearchProgressIndex.value = null
         }
       }, 2000) // 2秒后移除
     }
