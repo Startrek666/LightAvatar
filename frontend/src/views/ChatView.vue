@@ -1444,10 +1444,18 @@ onMounted(async () => {
 
 // Watch for WebSocket connection and send config when ready
 const configSentRef = ref(false) // 记录是否已发送配置，避免重复发送
+const configSendTimeoutRef = ref<number | null>(null) // 存储定时器ID，用于清理
 watch(isConnected, (connected: boolean) => {
+  // 清理之前的定时器
+  if (configSendTimeoutRef.value !== null) {
+    clearTimeout(configSendTimeoutRef.value)
+    configSendTimeoutRef.value = null
+  }
+  
   if (connected && configLoaded.value && !configSentRef.value) {
     // 延迟一点再发送配置，确保连接稳定
-    setTimeout(() => {
+    configSendTimeoutRef.value = window.setTimeout(() => {
+      configSendTimeoutRef.value = null
       if (isConnected.value && !configSentRef.value) {
         try {
           send({
@@ -1459,9 +1467,11 @@ watch(isConnected, (connected: boolean) => {
         } catch (error) {
           console.error('Failed to send config:', error)
           // 发送失败不影响连接，下次重连时会重试
+          // 如果发送失败，重置标志，允许重试
+          configSentRef.value = false
         }
       }
-    }, 500)
+    }, 1000) // 增加到1秒，确保连接完全稳定
   } else if (!connected) {
     // 连接断开时重置标志，下次重连时可以重新发送
     configSentRef.value = false

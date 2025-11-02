@@ -181,8 +181,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
     except ValueError as e:
         # 用户已有活跃会话，拒绝连接
         logger.warning(f"❌ 拒绝创建会话: {e}")
+        # 先关闭WebSocket，再清理连接管理器
+        try:
+            await websocket.close(code=1008, reason=str(e))
+        except:
+            pass
         websocket_manager.disconnect(session_id)  # 清理WebSocket连接
-        await websocket.close(code=1008, reason=str(e))
         return
     
     # Start heartbeat task to detect disconnections
