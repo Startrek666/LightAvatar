@@ -1030,13 +1030,44 @@ class SessionManager:
                     
                     if is_really_connected:
                         logger.warning(
-                            f"❌ 用户 {username or user_id} 已有活跃会话 {existing_session_id}，"
-                            f"拒绝创建新会话 {session_id}"
+                            f"⚠️ 用户 {username or user_id} 已有活跃会话 {existing_session_id}，"
+                            f"将强制关闭旧会话，创建新会话 {session_id}"
                         )
-                        raise ValueError(
-                            f"您已有一个正在使用的会话，请先退出当前会话再重试。"
-                            f"（会话ID: {existing_session_id[:8]}...）"
-                        )
+
+                        # 标记旧会话中断并取消正在运行的任务
+                        try:
+                            if hasattr(existing_session, "current_tasks"):
+                                for task in list(existing_session.current_tasks):
+                                    if not task.done():
+                                        task.cancel()
+                                existing_session.current_tasks.clear()
+                            existing_session.is_interrupted = True
+                            existing_session.is_processing = False
+                        except Exception as cancel_error:
+                            logger.error(
+                                f"⚠️ 取消旧会话任务时发生错误 {existing_session_id}: {cancel_error}",
+                                exc_info=True
+                            )
+
+                        # 关闭旧的WebSocket连接
+                        try:
+                            await websocket_manager.close(
+                                existing_session_id,
+                                code=4001,
+                                reason="检测到新的会话连接，旧会话已关闭"
+                            )
+                        except Exception as close_error:
+                            logger.error(
+                                f"⚠️ 关闭旧会话WebSocket失败 {existing_session_id}: {close_error}",
+                                exc_info=True
+                            )
+
+                        # 移除旧会话
+                        await self._remove_session_internal(existing_session_id)
+                        if user_id in self.user_sessions and self.user_sessions[user_id] == existing_session_id:
+                            del self.user_sessions[user_id]
+                            logger.debug(f"已清理用户 {username or user_id} 的会话映射")
+                        logger.info(f"✅ 旧会话 {existing_session_id} 已关闭，继续创建新会话 {session_id}")
                     else:
                         # 会话状态不一致或已断开，强制清理
                         if existing_session.is_connected and not websocket_manager.is_connected(existing_session_id):

@@ -68,6 +68,22 @@ class WebSocketManager:
                 logger.error(f"Error sending bytes to {session_id}: {e}")
                 self.disconnect(session_id)
                 # 注意：不要在这里调用disconnect_session，因为WebSocket断开会在websocket_endpoint的finally中处理
+
+    async def close(self, session_id: str, code: int = 1000, reason: str = ""):
+        """Gracefully close an active WebSocket connection"""
+        websocket = self.active_connections.get(session_id)
+        if not websocket:
+            logger.debug(f"Attempted to close non-existent WebSocket: {session_id}")
+            return
+
+        try:
+            await websocket.close(code=code, reason=reason)
+        except Exception as e:
+            logger.error(
+                f"Error closing WebSocket {session_id} (code={code}, reason='{reason}'): {e}"
+            )
+        finally:
+            self.disconnect(session_id)
     
     async def broadcast_json(self, data: dict, exclude: Set[str] = None):
         """Broadcast JSON data to all connected clients"""
