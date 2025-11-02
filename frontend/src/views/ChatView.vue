@@ -788,11 +788,35 @@ const handleWebSocketMessage = (data: any) => {
       // 更新现有的搜索进度消息
       const index = currentSearchProgressIndex.value
       if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
-        messages.value[index].content = progressMessage
+        // 添加进度步骤信息到消息内容
+        const stepInfo = `[${data.data.step}/${data.data.total}] `
+        messages.value[index].content = stepInfo + progressMessage
+        console.log('🔄 更新搜索进度:', stepInfo + progressMessage)
       } else {
-        // 如果索引无效，重置
+        // 如果索引无效，重置并尝试重新创建
+        console.warn('⚠️ 搜索进度索引无效，重新创建')
         currentSearchProgressIndex.value = null
+        // 重新创建搜索进度消息
+        const stepInfo = `[${data.data.step}/${data.data.total}] `
+        const searchProgressMessage = {
+          role: 'search_progress' as const,
+          content: stepInfo + progressMessage,
+          timestamp: new Date()
+        }
+        messages.value.push(searchProgressMessage)
+        currentSearchProgressIndex.value = messages.value.length - 1
       }
+    } else {
+      // 如果没有现有的搜索进度消息，创建一个新的
+      console.log('📝 创建新的搜索进度消息')
+      const stepInfo = `[${data.data.step}/${data.data.total}] `
+      const searchProgressMessage = {
+        role: 'search_progress' as const,
+        content: stepInfo + progressMessage,
+        timestamp: new Date()
+      }
+      messages.value.push(searchProgressMessage)
+      currentSearchProgressIndex.value = messages.value.length - 1
     }
     
     // 搜索完成后，延迟移除搜索进度消息

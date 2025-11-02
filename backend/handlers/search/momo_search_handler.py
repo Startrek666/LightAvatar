@@ -171,10 +171,17 @@ class MomoSearchHandler(BaseHandler):
             all_search_results = []
             keywords_dict = None  # 初始化关键词字典
             
+            # 预先计算总步骤数，用于一致的进度显示
+            base_steps = 5  # 关键词提取(1) + 向量检索(1) + 深度爬取(1) + 文档分块(1) + 完成(1)
+            ddg_steps = 2  # DuckDuckGo 中文 + 英文（最多2步）
+            # 初始估算搜索查询数量（通常是2个：中文+英文关键词）
+            estimated_search_queries = 2 if self.enable_keyword_extraction else 1
+            total_steps = base_steps + estimated_search_queries + ddg_steps
+            
             # 步骤0: 关键词提取（如果启用）
             if self.enable_keyword_extraction:
                 if progress_callback:
-                    await progress_callback(0, 7, "🔑 提取搜索关键词")
+                    await progress_callback(0, total_steps, "🔑 提取搜索关键词")
                 
                 logger.info(f"🔑 开始提取关键词: {query}")
                 keywords_dict = extract_keywords(
@@ -225,14 +232,11 @@ class MomoSearchHandler(BaseHandler):
                 }]
             
             all_search_results = []
-            # 动态计算总步骤数：
-            # 0: 关键词提取
-            # 1-N: SearXNG搜索（根据search_queries数量）
-            # N+1-N+2: DuckDuckGo搜索（中文+英文，最多2步）
-            # 最后几步: 向量检索、深度爬取、文档分块、完成
-            base_steps = 5  # 关键词提取(1) + 向量检索(1) + 深度爬取(1) + 文档分块(1) + 完成(1)
-            ddg_steps = 2  # DuckDuckGo 中文 + 英文（最多2步）
-            total_steps = base_steps + len(search_queries) + ddg_steps
+            # 重新计算精确的总步骤数（基于实际search_queries数量）
+            actual_total_steps = base_steps + len(search_queries) + ddg_steps
+            if actual_total_steps != total_steps:
+                # 如果实际步数与估算不同，更新total_steps
+                total_steps = actual_total_steps
             
             # 步骤1: 使用提取的关键词进行搜索
             for idx, search_item in enumerate(search_queries):
@@ -401,9 +405,8 @@ class MomoSearchHandler(BaseHandler):
                 logger.info(f"📄 二次检索后: {len(relevant_docs)}个文档")
             
             # 最后一步: 完成
-            final_step = total_steps - 1
             if progress_callback:
-                await progress_callback(final_step, total_steps, "✅ 搜索完成")
+                await progress_callback(total_steps, total_steps, "✅ 搜索完成")
             
             # 生成引用信息
             citations = self.format_citations(relevant_docs)
