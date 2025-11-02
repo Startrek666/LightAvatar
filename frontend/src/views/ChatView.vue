@@ -265,6 +265,7 @@
           <a-select v-model:value="settings.llm.model">
             <a-select-option value="qwen">{{ t('models.qwen') }}</a-select-option>
             <a-select-option value="gemma">{{ t('models.gemma') }}</a-select-option>
+            <a-select-option value="gemma-test">{{ t('models.gemmaTest') }}</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item :label="t('settings.ttsVoice')">

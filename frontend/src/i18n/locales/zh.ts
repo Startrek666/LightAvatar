@@ -97,6 +97,7 @@ export default {
   models: {
     qwen: 'Qwen 2.5B',
     gemma: 'Gemma 3B',
+    gemmaTest: 'Gemini 2.0 (谷歌云测试)',
     llama: 'Llama 3.2 3B'
   },
   voices: {

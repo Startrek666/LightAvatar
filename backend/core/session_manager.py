@@ -121,11 +121,26 @@ class Session:
                 )
             await self.asr_handler.initialize()
             
-            self.llm_handler = OpenAIHandler(
-                api_url=settings.LLM_API_URL,
-                api_key=settings.LLM_API_KEY,
-                model=settings.LLM_MODEL_NAME
-            )
+            # 根据配置选择 LLM Handler
+            model_config = settings.LLM_MODELS.get(settings.LLM_MODEL, {})
+            llm_type = model_config.get("type", "openai")  # 默认为 openai 兼容
+            
+            if llm_type == "google":
+                logger.info(f"Using Google Gemini API for session {self.session_id}")
+                from backend.handlers.llm.google_gemini_handler import GoogleGeminiHandler
+                self.llm_handler = GoogleGeminiHandler(
+                    api_key=model_config.get("api_key", ""),
+                    model=model_config.get("model_name", "gemini-2.0-flash-exp")
+                )
+            else:
+                logger.info(f"Using OpenAI-compatible API for session {self.session_id}")
+                self.llm_handler = OpenAIHandler(
+                    api_url=settings.LLM_API_URL,
+                    api_key=settings.LLM_API_KEY,
+                    model=settings.LLM_MODEL_NAME
+                )
+            
+            # 统一调用 initialize
             await self.llm_handler.initialize()
             
             self.tts_handler = EdgeTTSHandler(
@@ -941,12 +956,26 @@ class Session:
                     logger.info(f"Switching LLM model to: {settings.LLM_MODEL}")
                     
                     try:
-                        # 重新创建LLM handler
-                        self.llm_handler = OpenAIHandler(
-                            api_url=settings.LLM_API_URL,
-                            api_key=settings.LLM_API_KEY,
-                            model=settings.LLM_MODEL_NAME
-                        )
+                        # 根据新模型类型重新创建LLM handler
+                        model_config = settings.LLM_MODELS.get(settings.LLM_MODEL, {})
+                        llm_type = model_config.get("type", "openai")
+                        
+                        if llm_type == "google":
+                            logger.info(f"Switching to Google Gemini API")
+                            from backend.handlers.llm.google_gemini_handler import GoogleGeminiHandler
+                            self.llm_handler = GoogleGeminiHandler(
+                                api_key=model_config.get("api_key", ""),
+                                model=model_config.get("model_name", "gemini-2.0-flash-exp")
+                            )
+                        else:
+                            logger.info(f"Switching to OpenAI-compatible API")
+                            self.llm_handler = OpenAIHandler(
+                                api_url=settings.LLM_API_URL,
+                                api_key=settings.LLM_API_KEY,
+                                model=settings.LLM_MODEL_NAME
+                            )
+                        
+                        # 统一调用 initialize
                         await self.llm_handler.initialize()
                     except Exception as e:
                         logger.error(f"Failed to reinitialize LLM handler: {e}", exc_info=True)
