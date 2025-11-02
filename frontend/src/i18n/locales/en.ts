@@ -72,7 +72,7 @@ export default {
     analyzingRelevance: 'Analyzing relevance',
     crawlingContent: 'Deep crawling content',
     splittingDocuments: 'Splitting documents and re-retrieving',
-    completed: 'Search completed'
+    completed: 'Search completed, generating content'
   },
   settings: {
     title: 'Settings',

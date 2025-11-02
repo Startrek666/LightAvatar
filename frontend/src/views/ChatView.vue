@@ -351,6 +351,8 @@ const currentNode = ref<ServerNode>(getCurrentNode())
 const isAutoNode = computed(() => !localStorage.getItem('selected_server_node'))
 
 // Search progress - 现在在对话面板中显示，不再使用弹窗
+const searchProgressQueue = ref<Array<{step: number, total: number, message: string}>>([])
+const isProcessingProgressQueue = ref(false)
 
 // Video playback queue for streaming
 const videoQueue = ref<Blob[]>([])
@@ -576,9 +578,11 @@ const sendTextMessage = (event?: Event) => {
     timestamp: new Date()
   })
 
-  // 如果启用搜索，立即显示初始搜索进度
+  // 如果启用搜索，立即显示初始搜索进度并清空队列
   if (enableWebSearch.value) {
     currentSearchProgressIndex.value = null
+    searchProgressQueue.value = [] // 清空之前的队列
+    isProcessingProgressQueue.value = false
     
     // 立即在用户消息后插入搜索进度消息
     const searchProgressMessage = {
@@ -613,6 +617,86 @@ const sendTextMessage = (event?: Event) => {
   console.log('✅ [sendTextMessage] 消息已发送')
 
   scrollToBottom()
+}
+
+// 处理搜索进度队列，确保每步至少显示0.5秒
+const processSearchProgressQueue = async () => {
+  if (isProcessingProgressQueue.value) return
+  isProcessingProgressQueue.value = true
+  
+  while (searchProgressQueue.value.length > 0) {
+    const progressItem = searchProgressQueue.value.shift()
+    if (!progressItem) continue
+    
+    const isCompleted = progressItem.step >= progressItem.total
+    const stepInfo = `[${progressItem.step}/${progressItem.total}] `
+    const fullMessage = stepInfo + progressItem.message
+    
+    // 更新搜索进度消息
+    if (currentSearchProgressIndex.value !== null) {
+      const index = currentSearchProgressIndex.value
+      if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
+        // 添加切换动画类
+        const messageElement = document.querySelector(`.message:nth-child(${index + 1}) .search-progress-message`)
+        if (messageElement) {
+          messageElement.classList.add('updating')
+        }
+        
+        // 短暂延迟后更新内容
+        setTimeout(() => {
+          messages.value[index].content = fullMessage
+          console.log('🔄 更新搜索进度:', fullMessage)
+          
+          // 移除动画类
+          if (messageElement) {
+            messageElement.classList.remove('updating')
+          }
+        }, 100)
+      } else {
+        // 如果索引无效，重新创建
+        console.warn('⚠️ 搜索进度索引无效，重新创建')
+        const searchProgressMessage = {
+          role: 'search_progress' as const,
+          content: fullMessage,
+          timestamp: new Date()
+        }
+        messages.value.push(searchProgressMessage)
+        currentSearchProgressIndex.value = messages.value.length - 1
+      }
+    } else {
+      // 创建新的搜索进度消息
+      console.log('📝 创建新的搜索进度消息')
+      const searchProgressMessage = {
+        role: 'search_progress' as const,
+        content: fullMessage,
+        timestamp: new Date()
+      }
+      messages.value.push(searchProgressMessage)
+      currentSearchProgressIndex.value = messages.value.length - 1
+    }
+    
+    // 自动滚动到底部
+    scrollToBottom()
+    
+    // 如果搜索完成，处理完成逻辑
+    if (isCompleted) {
+      setTimeout(() => {
+        if (currentSearchProgressIndex.value !== null) {
+          const index = currentSearchProgressIndex.value
+          if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
+            messages.value.splice(index, 1)
+            currentSearchProgressIndex.value = null
+          }
+        }
+      }, 2000) // 2秒后移除
+      break // 搜索完成，退出队列处理
+    } else {
+      // 等待0.5秒再处理下一个项目
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+  
+  isProcessingProgressQueue.value = false
 }
 
 const startRecording = async () => {
@@ -777,64 +861,22 @@ const handleWebSocketMessage = (data: any) => {
     // 这里可以添加一些UI反馈，比如显示消息已发送的状态
   }
   else if (data.type === 'search_progress') {
-    // Search progress update - 在对话面板中显示
+    // Search progress update - 添加到队列中进行延迟显示
     console.log('🔍 [handleWebSocketMessage] 搜索进度:', data.data)
     
-    const isCompleted = data.data.step >= data.data.total
-    const progressMessage = isCompleted ? t('search.completed') : data.data.message
-    
-    // 更新现有的搜索进度消息（应该在 sendTextMessage 中已经创建了）
-    if (currentSearchProgressIndex.value !== null) {
-      // 更新现有的搜索进度消息
-      const index = currentSearchProgressIndex.value
-      if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
-        // 添加进度步骤信息到消息内容
-        const stepInfo = `[${data.data.step}/${data.data.total}] `
-        messages.value[index].content = stepInfo + progressMessage
-        console.log('🔄 更新搜索进度:', stepInfo + progressMessage)
-      } else {
-        // 如果索引无效，重置并尝试重新创建
-        console.warn('⚠️ 搜索进度索引无效，重新创建')
-        currentSearchProgressIndex.value = null
-        // 重新创建搜索进度消息
-        const stepInfo = `[${data.data.step}/${data.data.total}] `
-        const searchProgressMessage = {
-          role: 'search_progress' as const,
-          content: stepInfo + progressMessage,
-          timestamp: new Date()
-        }
-        messages.value.push(searchProgressMessage)
-        currentSearchProgressIndex.value = messages.value.length - 1
-      }
-    } else {
-      // 如果没有现有的搜索进度消息，创建一个新的
-      console.log('📝 创建新的搜索进度消息')
-      const stepInfo = `[${data.data.step}/${data.data.total}] `
-      const searchProgressMessage = {
-        role: 'search_progress' as const,
-        content: stepInfo + progressMessage,
-        timestamp: new Date()
-      }
-      messages.value.push(searchProgressMessage)
-      currentSearchProgressIndex.value = messages.value.length - 1
+    const progressItem = {
+      step: data.data.step,
+      total: data.data.total,
+      message: data.data.step >= data.data.total ? t('search.completed') : data.data.message
     }
     
-    // 搜索完成后，延迟移除搜索进度消息
-    if (isCompleted) {
-      setTimeout(() => {
-        if (currentSearchProgressIndex.value !== null) {
-          const index = currentSearchProgressIndex.value
-          if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
-            messages.value.splice(index, 1)
-            // 重置索引，因为消息已被移除
-            currentSearchProgressIndex.value = null
-          }
-        }
-      }, 2000) // 2秒后移除
-    }
+    // 添加到队列
+    searchProgressQueue.value.push(progressItem)
     
-    // 自动滚动到底部
-    scrollToBottom()
+    // 如果队列处理器未运行，启动它
+    if (!isProcessingProgressQueue.value) {
+      processSearchProgressQueue()
+    }
   }
   else if (data.type === 'asr_result') {
     // ✅ ASR语音识别结果
@@ -1736,6 +1778,7 @@ onUnmounted(() => {
   margin-bottom: 8px;
   margin-top: -8px;
   padding-left: 48px;
+  transition: all 0.3s ease;
 }
 
 .search-progress-message {
@@ -1745,15 +1788,42 @@ onUnmounted(() => {
   font-size: 12px;
   color: #8c8c8c;
   font-style: italic;
+  transition: all 0.3s ease;
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.search-progress-message.updating {
+  transform: translateY(-10px);
+  opacity: 0.6;
+  transition: all 0.1s ease;
 }
 
 .search-progress-icon {
   font-size: 14px;
   opacity: 0.7;
+  transition: opacity 0.3s ease;
 }
 
 .search-progress-text {
   flex: 1;
+  transition: all 0.3s ease;
+}
+
+/* 搜索进度动画 */
+@keyframes slideInFromTop {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.message.search_progress {
+  animation: slideInFromTop 0.3s ease;
 }
 
 .input-area {

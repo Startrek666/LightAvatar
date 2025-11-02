@@ -406,7 +406,7 @@ class MomoSearchHandler(BaseHandler):
             
             # 最后一步: 完成
             if progress_callback:
-                await progress_callback(total_steps, total_steps, "✅ 搜索完成")
+                await progress_callback(total_steps, total_steps, "✅ 搜索完成，正在生成内容")
             
             # 生成引用信息
             citations = self.format_citations(relevant_docs)

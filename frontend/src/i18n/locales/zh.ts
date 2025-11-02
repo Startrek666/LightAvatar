@@ -72,7 +72,7 @@ export default {
     analyzingRelevance: '分析相关性',
     crawlingContent: '深度爬取内容',
     splittingDocuments: '文档分块和二次检索',
-    completed: '搜索完成'
+    completed: '搜索完成，正在生成内容'
   },
   settings: {
     title: '设置',
