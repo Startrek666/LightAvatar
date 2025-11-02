@@ -46,8 +46,10 @@ class Session:
     conversation_history: List[dict] = field(default_factory=list)
     config: dict = field(default_factory=dict)
     is_processing: bool = False
+    is_interrupted: bool = False  # 中断标志
     is_connected: bool = True  # WebSocket连接状态
     disconnected_at: Optional[datetime] = None  # 断开时间
+    current_tasks: List[asyncio.Task] = field(default_factory=list)  # 当前运行的任务列表
     
     # Video缓存和序号
     video_cache: Dict[int, Dict] = field(default_factory=dict)  # 视频缓存：{seq: {video, audio, text}}
@@ -706,8 +708,15 @@ class Session:
             await callback("stream_complete", {"full_text": full_response})
             
         except Exception as e:
-            logger.error(f"Error in streaming text processing: {e}")
+            logger.error(f"Error in streaming text processing: {e}", exc_info=True)
             await callback("error", {"message": str(e)})
+        finally:
+            # 重置处理状态
+            self.is_processing = False
+            self.is_interrupted = False  # 重置中断标志
+            # 清理当前任务列表
+            if hasattr(self, 'current_tasks'):
+                self.current_tasks.clear()
     
     async def _process_sentences_with_preload(self, sentences: list, callback):
         """
