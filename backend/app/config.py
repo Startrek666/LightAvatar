@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings
 from pydantic import Field
 import yaml
 from dotenv import load_dotenv
+from loguru import logger
 
 # Load environment variables
 load_dotenv()
@@ -185,8 +186,14 @@ def update_settings(config_dict: dict):
     
     def set_nested_value(key_path: str, value):
         """递归设置嵌套配置值"""
+        # 特殊处理 llm.models（完整替换字典）
+        if key_path == "llm.models":
+            if hasattr(settings, "LLM_MODELS"):
+                setattr(settings, "LLM_MODELS", value)
+                logger.info(f"✅ 已加载 LLM 模型配置: {list(value.keys())}")
+                return True
         # 尝试匹配 MOMO_SEARCH_ENABLED
-        if key_path == "search.advanced.enabled":
+        elif key_path == "search.advanced.enabled":
             if hasattr(settings, "MOMO_SEARCH_ENABLED"):
                 setattr(settings, "MOMO_SEARCH_ENABLED", value)
                 return True
@@ -207,6 +214,12 @@ def update_settings(config_dict: dict):
         # 处理嵌套配置（如 avatar.fps -> AVATAR_FPS）
         elif isinstance(value, dict):
             for sub_key, sub_value in value.items():
+                # 特殊处理：llm.models 直接作为字典整体处理
+                nested_path = f"{key}.{sub_key}"
+                if nested_path == "llm.models" and isinstance(sub_value, dict):
+                    set_nested_value(nested_path, sub_value)
+                    continue
+                
                 # 处理三层嵌套（如 search.advanced.enabled）
                 if isinstance(sub_value, dict):
                     for sub_sub_key, sub_sub_value in sub_value.items():
