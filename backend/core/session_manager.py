@@ -1120,13 +1120,20 @@ class SessionManager:
         return self.sessions.get(session_id)
     
     async def disconnect_session(self, session_id: str):
-        """标记Session为断开状态（不删除，支持重连）"""
+        """标记Session为断开状态（如果会话已完成处理，则直接清理）"""
         async with self._lock:
             if session_id in self.sessions:
                 session = self.sessions[session_id]
-                session.is_connected = False
-                session.disconnected_at = datetime.now()
-                logger.info(f"🔌 Session {session_id} 断开连接，保留Session数据等待重连")
+                
+                # 如果会话已完成处理（没有正在进行的任务），直接清理，避免刷新后冲突
+                if not session.is_processing:
+                    logger.info(f"🔌 Session {session_id} 已完成处理，直接清理（而非保留）")
+                    await self._remove_session_internal(session_id)
+                else:
+                    # 如果还在处理中，保留等待重连
+                    session.is_connected = False
+                    session.disconnected_at = datetime.now()
+                    logger.info(f"🔌 Session {session_id} 处理中断开，保留Session数据等待重连")
     
     async def interrupt_session(self, session_id: str) -> bool:
         """中断Session的当前任务处理"""

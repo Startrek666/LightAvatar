@@ -3,7 +3,7 @@ WebSocket connection manager
 """
 import asyncio
 import json
-from typing import Dict, Set, Optional
+from typing import Dict, Set
 from fastapi import WebSocket
 from loguru import logger
 
@@ -17,32 +17,25 @@ class WebSocketManager:
         
     async def connect(self, websocket: WebSocket, session_id: str):
         """Accept and register a new WebSocket connection"""
-        # 如果该session已存在连接，先优雅关闭旧连接，避免同一session_id多路并存
-        old = self.active_connections.get(session_id)
-        if old is not None:
-            try:
-                await old.close(code=4002, reason="Duplicate connection: closing previous session")
-            except Exception as e:
-                logger.warning(f"Failed to close previous WebSocket {session_id}: {e}")
-            # 移除旧连接
-            self.disconnect(session_id)
+        # 如果该session已存在连接，直接覆盖（不尝试关闭，因为可能已关闭导致异常）
+        if session_id in self.active_connections:
+            logger.warning(f"⚠️ Session {session_id} 已有连接，将被新连接覆盖")
+            # 取消该session的旧任务
+            if session_id in self.connection_tasks:
+                task = self.connection_tasks[session_id]
+                if not task.done():
+                    task.cancel()
+                del self.connection_tasks[session_id]
 
         await websocket.accept()
         self.active_connections[session_id] = websocket
         logger.info(f"WebSocket connected: {session_id}")
         
-    def disconnect(self, session_id: str, websocket: Optional[WebSocket] = None):
-        """Remove a WebSocket connection. If websocket provided, only remove when it matches current mapping"""
-        stored = self.active_connections.get(session_id)
-        if stored is None:
-            return
-        if websocket is not None and stored is not websocket:
-            # A newer websocket has replaced the mapping; skip removal
-            logger.debug(f"Skip disconnect for {session_id}: mapping replaced with a new WebSocket")
-            return
-        # Remove mapping
-        del self.active_connections[session_id]
-        logger.info(f"WebSocket disconnected: {session_id}")
+    def disconnect(self, session_id: str):
+        """Remove a WebSocket connection"""
+        if session_id in self.active_connections:
+            del self.active_connections[session_id]
+            logger.info(f"WebSocket disconnected: {session_id}")
             
         # Cancel any running tasks
         if session_id in self.connection_tasks:
@@ -57,7 +50,7 @@ class WebSocketManager:
                 await websocket.send_text(message)
             except Exception as e:
                 logger.error(f"Error sending message to {session_id}: {e}")
-                self.disconnect(session_id, websocket)
+                self.disconnect(session_id)
                 # 注意：不要在这里调用disconnect_session，因为WebSocket断开会在websocket_endpoint的finally中处理
     
     async def send_json(self, session_id: str, data: dict):
@@ -72,7 +65,7 @@ class WebSocketManager:
                     logger.debug(f"WebSocket {session_id} 已关闭，无法发送消息")
                 else:
                     logger.error(f"Error sending JSON to {session_id}: {e}")
-                self.disconnect(session_id, websocket)
+                self.disconnect(session_id)
                 # 注意：不要在这里调用disconnect_session，因为WebSocket断开会在websocket_endpoint的finally中处理
     
     async def send_bytes(self, session_id: str, data: bytes):
@@ -83,7 +76,7 @@ class WebSocketManager:
                 await websocket.send_bytes(data)
             except Exception as e:
                 logger.error(f"Error sending bytes to {session_id}: {e}")
-                self.disconnect(session_id, websocket)
+                self.disconnect(session_id)
                 # 注意：不要在这里调用disconnect_session，因为WebSocket断开会在websocket_endpoint的finally中处理
 
     async def close(self, session_id: str, code: int = 1000, reason: str = ""):
@@ -127,7 +120,7 @@ class WebSocketManager:
         """Check if a session is connected"""
         return session_id in self.active_connections
     
-    async def heartbeat(self, session_id: str, websocket: WebSocket, interval: int = 60):
+    async def heartbeat(self, session_id: str, interval: int = 60):
         """
         Send periodic heartbeat to detect disconnections
         
@@ -163,8 +156,8 @@ class WebSocketManager:
                 # Wait a bit before retry
                 await asyncio.sleep(5)
         
-        # Heartbeat loop ended, disconnect only if mapping still points to this websocket
-        self.disconnect(session_id, websocket)
+        # Heartbeat loop ended, disconnect
+        self.disconnect(session_id)
     
     def start_heartbeat(self, session_id: str, interval: int = 30):
         """Start heartbeat task for a connection"""
