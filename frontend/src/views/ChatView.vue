@@ -303,7 +303,8 @@ import {
   PlusOutlined,
   FileTextOutlined,
   CloseOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  StopOutlined
 } from '@ant-design/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
@@ -378,7 +379,7 @@ const showProcessingIndicator = computed(() => {
 
 // Data
 const messages = ref<Array<{
-  role: 'user' | 'assistant' | 'search_progress'
+  role: 'user' | 'assistant' | 'search_progress' | 'system'
   content: string
   timestamp: Date
 }>>([])
