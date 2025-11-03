@@ -178,26 +178,17 @@ const stepMapping: Record<string, number> = {
 // 检测查询语言（用于动态调整步骤）
 const detectedLanguage = ref<'zh' | 'en'>('zh')
 
+// 基于原始查询文本检测语言
+const detectLanguageFromText = (text: string): 'zh' | 'en' => {
+  if (!text) return 'zh'
+  return /[\u4e00-\u9fa5]/.test(text) ? 'zh' : 'en'
+}
+
 // 更新进度
 const updateProgress = (message: string, step: number, total: number) => {
   console.log('📊 [SearchProgressModal] 更新进度:', { message, step, total })
   
-  // 检测查询语言：如果消息中包含英文搜索且没有中文搜索，说明是英语查询
-  if (message.includes('正在搜索:') || message.includes('keywords_en') || message.includes('original')) {
-    // 如果包含英文关键词搜索且没有中文关键词，可能是英语查询
-    if (message.includes('keywords_en') || (message.includes('original') && !message.includes('keywords_zh'))) {
-      detectedLanguage.value = 'en'
-      // 如果是英语查询，隐藏中文搜索步骤
-      if (steps.value[2]) {
-        steps.value[2].status = 'skipped'  // 跳过
-      }
-      if (steps.value[4]) {
-        steps.value[4].status = 'skipped'  // 跳过扩充中文搜索
-      }
-    } else if (message.includes('keywords_zh')) {
-      detectedLanguage.value = 'zh'
-    }
-  }
+  // 不再基于进度消息推断语言，统一使用原始查询文本的检测结果
   
   // 检测是否是搜索完成
   if (message.includes('搜索完成') || message.includes('找到') || (step >= total && total > 0)) {
@@ -236,11 +227,15 @@ const updateProgress = (message: string, step: number, total: number) => {
   for (const [key, index] of Object.entries(stepMapping)) {
     if (message.includes(key)) {
       if (index === -1) {
-        // 动态判断：'正在搜索:' 需要根据语言和source判断
-        if (message.includes('keywords_zh') || (message.includes('keywords_en') && detectedLanguage.value === 'zh')) {
-          targetStepIndex = 2  // 中文搜索
-        } else if (message.includes('keywords_en') || (message.includes('original') && detectedLanguage.value === 'en')) {
-          targetStepIndex = 3  // 英文搜索
+        // 动态判断：'正在搜索:' 根据 source 与已检测语言映射步骤
+        if (message.includes('(keywords_zh)')) {
+          targetStepIndex = 2
+        } else if (message.includes('(keywords_en)')) {
+          targetStepIndex = 3
+        } else if (message.includes('(original)')) {
+          targetStepIndex = detectedLanguage.value === 'en' ? 3 : 2
+        } else {
+          targetStepIndex = detectedLanguage.value === 'en' ? 3 : 2
         }
       } else {
         targetStepIndex = index
@@ -257,24 +252,17 @@ const updateProgress = (message: string, step: number, total: number) => {
 
   // 更新步骤状态（跳过被标记为skipped的步骤）
   if (targetStepIndex >= 0 && targetStepIndex < steps.value.length) {
-    // 如果当前步骤被跳过，向前查找下一个有效步骤
     while (targetStepIndex < steps.value.length && steps.value[targetStepIndex].status === 'skipped') {
       targetStepIndex++
     }
-    
     if (targetStepIndex >= steps.value.length) {
-      return  // 所有步骤都被跳过
+      return
     }
-    
-    // 完成之前的步骤（跳过skipped的）
     for (let i = 0; i < targetStepIndex; i++) {
       if (steps.value[i].status === 'active' || steps.value[i].status === 'pending') {
         steps.value[i].status = 'completed'
       }
-      // 跳过skipped状态的步骤
     }
-    
-    // 激活当前步骤
     if (steps.value[targetStepIndex].status === 'pending') {
       steps.value[targetStepIndex].status = 'active'
       const cleanMessage = message.replace(/^[🔍🔑📊🕷️✂️✅🤖⚙️]\s*/g, '').trim()
@@ -334,7 +322,14 @@ const reset = () => {
   resultCount.value = 0
   autoCloseCountdown.value = 0
   searchResults.value = []
-  detectedLanguage.value = 'zh'  // 重置为中文
+  
+  // 使用原始查询文本检测语言
+  detectedLanguage.value = detectLanguageFromText(props.searchQuery)
+  if (detectedLanguage.value === 'en') {
+    // 英语查询：隐藏中文相关步骤
+    if (steps.value[2]) steps.value[2].status = 'skipped'
+    if (steps.value[4]) steps.value[4].status = 'skipped'
+  }
   
   // 第一个步骤立即激活
   if (steps.value[0]) {
@@ -346,6 +341,11 @@ const reset = () => {
     countdownTimer = null
   }
 }
+
+// 当搜索词变化时，更新语言判定（不主动改动当前步骤，只用于后续映射）
+watch(() => props.searchQuery, (val) => {
+  detectedLanguage.value = detectLanguageFromText(val)
+})
 
 // 设置搜索结果（供父组件调用）
 const setSearchResults = (results: Array<{ title: string; url: string }>) => {
