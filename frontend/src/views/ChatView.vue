@@ -155,6 +155,15 @@
                 </template>
                 <!-- 普通消息 -->
                 <template v-else>
+                  <!-- AI消息且有搜索过程时显示查看链接 -->
+                  <div v-if="message.role === 'assistant' && message.hasSearchProcess" class="search-process-link">
+                    <a @click="showSearchProgressModal = true" class="view-search-link">
+                      <span class="link-icon">🔍</span>
+                      <span class="link-text">查看搜索过程</span>
+                      <span class="link-arrow">›</span>
+                    </a>
+                  </div>
+                  
                   <div class="message-content">
                     <a-avatar v-if="message.role === 'user'" :icon="h(UserOutlined)" class="message-avatar" />
                     <a-avatar v-else :icon="h(RobotOutlined)" style="background-color: #1890ff" class="message-avatar" />
@@ -396,6 +405,7 @@ const messages = ref<Array<{
   role: 'user' | 'assistant' | 'search_progress' | 'system'
   content: string
   timestamp: Date
+  hasSearchProcess?: boolean  // 标记是否有搜索过程
 }>>([])
 
 // 当前搜索进度消息的索引（用于更新）
@@ -619,7 +629,8 @@ const sendTextMessage = (event?: Event) => {
   const assistantMessage = {
     role: 'assistant' as const,
     content: '',
-    timestamp: new Date()
+    timestamp: new Date(),
+    hasSearchProcess: enableWebSearch.value  // 如果启用了搜索，标记这条消息
   }
   messages.value.push(assistantMessage)
 
@@ -1862,6 +1873,50 @@ onUnmounted(() => {
 .search-progress-text {
   flex: 1;
   transition: all 0.3s ease;
+}
+
+/* 查看搜索过程链接样式 */
+.search-process-link {
+  margin-bottom: 8px;
+  margin-left: 48px;
+}
+
+.view-search-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+  border-radius: 16px;
+  font-size: 12px;
+  color: #666;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.view-search-link:hover {
+  background: linear-gradient(135deg, #e8f4ff 0%, #d6ebff 100%);
+  color: #1890ff;
+  border-color: #1890ff;
+  transform: translateX(2px);
+}
+
+.link-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.link-text {
+  font-weight: 500;
+  line-height: 1;
+}
+
+.link-arrow {
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 600;
 }
 
 /* 搜索进度动画 */

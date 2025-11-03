@@ -35,7 +35,10 @@
 
       <!-- 搜索结果网页标题列表 -->
       <div v-if="searchResults.length > 0" class="search-results">
-        <div class="results-title">搜索到的网页：</div>
+        <div class="results-header">
+          <span class="results-title">搜索到的网页</span>
+          <span class="results-count">{{ searchResults.length }} 个结果</span>
+        </div>
         <div class="results-list-container">
           <div class="results-list">
             <a
@@ -46,9 +49,7 @@
               rel="noopener noreferrer"
               class="result-item"
             >
-              <div class="result-icon">
-                <span class="icon-placeholder">{{ getDomainInitial(result.url) }}</span>
-              </div>
+              <div class="result-number">{{ index + 1 }}</div>
               <div class="result-content">
                 <div class="result-title-text">{{ result.title }}</div>
                 <div class="result-domain">{{ getDomainName(result.url) }}</div>
@@ -303,17 +304,6 @@ const setSearchResults = (results: Array<{ title: string; url: string }>) => {
   searchResults.value = results
 }
 
-// 获取域名首字母（用于图标占位）
-const getDomainInitial = (url: string): string => {
-  if (!url) return '?'
-  try {
-    const domain = new URL(url).hostname.replace('www.', '')
-    return domain.charAt(0).toUpperCase()
-  } catch {
-    return '?'
-  }
-}
-
 // 获取域名名称
 const getDomainName = (url: string): string => {
   if (!url) return ''
@@ -355,6 +345,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   min-height: 500px;
+  max-height: 85vh;
   background: #ffffff;
 }
 
@@ -434,27 +425,42 @@ defineExpose({
 }
 
 .search-results {
-  padding: 16px 32px 20px;
-  background: white;
+  padding: 20px 32px 24px;
+  background: #fafafa;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
 }
 
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
 .results-title {
-  font-size: 13px;
+  font-size: 14px;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.results-count {
+  font-size: 12px;
   color: #8c8c8c;
-  margin-bottom: 12px;
-  font-weight: 500;
+  background: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .results-list-container {
   height: 280px;
   overflow-y: auto;
   overflow-x: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 8px;
-  background: #fafafa;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .results-list {
@@ -465,40 +471,59 @@ defineExpose({
 .result-item {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  transition: all 0.2s;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   text-decoration: none;
   color: inherit;
   background: white;
   cursor: pointer;
+  position: relative;
 }
 
 .result-item:last-child {
   border-bottom: none;
 }
 
-.result-item:hover {
-  background: #f5f5f5;
+.result-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #1890ff;
+  opacity: 0;
+  transition: opacity 0.2s;
 }
 
-.result-icon {
-  width: 32px;
-  height: 32px;
+.result-item:hover {
+  background: #f8f9fa;
+}
+
+.result-item:hover::before {
+  opacity: 1;
+}
+
+.result-number {
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
+  background: #f0f0f0;
+  color: #8c8c8c;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
 }
 
-.icon-placeholder {
-  color: white;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
+.result-item:hover .result-number {
+  background: #e6f7ff;
+  color: #1890ff;
 }
 
 .result-content {
@@ -506,14 +531,14 @@ defineExpose({
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .result-title-text {
-  color: #1a1a1a;
+  color: #262626;
   font-size: 14px;
   font-weight: 500;
-  line-height: 1.5;
+  line-height: 1.6;
   word-break: break-word;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -521,6 +546,7 @@ defineExpose({
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
+  transition: color 0.2s;
 }
 
 .result-item:hover .result-title-text {
@@ -528,19 +554,20 @@ defineExpose({
 }
 
 .result-domain {
-  color: #8c8c8c;
+  color: #999;
   font-size: 12px;
   line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: 'Consolas', 'Monaco', monospace;
 }
 
 .progress-steps {
   flex: 1;
   padding: 32px;
   overflow-y: auto;
-  max-height: 500px;
+  max-height: 400px;
 }
 
 .progress-step {
