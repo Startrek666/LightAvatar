@@ -285,6 +285,14 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 搜索进度弹窗 -->
+    <SearchProgressModal
+      ref="searchProgressModalRef"
+      v-model:visible="showSearchProgressModal"
+      :search-query="currentSearchQuery"
+      @close="showSearchProgressModal = false"
+    />
   </div>
 </template>
 
@@ -312,6 +320,7 @@ import { useAudioRecorder } from '@/composables/useAudioRecorder'
 import { useDocParser } from '@/composables/useDocParser'
 import { isTokenInvalidReason } from '@/utils/auth'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import SearchProgressModal from '@/components/SearchProgressModal.vue'
 import { 
   SERVER_NODES, 
   getCurrentNode, 
@@ -356,9 +365,12 @@ const availableNodes = ref<ServerNode[]>(SERVER_NODES)
 const currentNode = ref<ServerNode>(getCurrentNode())
 const isAutoNode = computed(() => !localStorage.getItem('selected_server_node'))
 
-// Search progress - 现在在对话面板中显示，不再使用弹窗
+// Search progress - 使用弹窗显示
 const searchProgressQueue = ref<Array<{step: number, total: number, message: string}>>([])
 const isProcessingProgressQueue = ref(false)
+const showSearchProgressModal = ref(false)
+const searchProgressModalRef = ref<InstanceType<typeof SearchProgressModal> | null>(null)
+const currentSearchQuery = ref('')
 
 // Video playback queue for streaming
 const videoQueue = ref<Blob[]>([])
@@ -585,20 +597,22 @@ const sendTextMessage = (event?: Event) => {
     timestamp: new Date()
   })
 
-  // 如果启用搜索，立即显示初始搜索进度并清空队列
+  // 如果启用搜索，显示搜索进度弹窗
   if (enableWebSearch.value) {
     currentSearchProgressIndex.value = null
     searchProgressQueue.value = [] // 清空之前的队列
     isProcessingProgressQueue.value = false
+    currentSearchQuery.value = userInput
     
-    // 立即在用户消息后插入搜索进度消息
-    const searchProgressMessage = {
-      role: 'search_progress' as const,
-      content: t('search.preparing'),  // "正在准备搜索..."
-      timestamp: new Date()
-    }
-    messages.value.push(searchProgressMessage)
-    currentSearchProgressIndex.value = messages.value.length - 1
+    // 显示搜索进度弹窗
+    showSearchProgressModal.value = true
+    
+    // 重置弹窗状态
+    nextTick(() => {
+      if (searchProgressModalRef.value) {
+        searchProgressModalRef.value.reset()
+      }
+    })
   }
 
   // Prepare assistant message for streaming
@@ -645,7 +659,7 @@ const interruptGeneration = () => {
   send(payload)
 }
 
-// 处理搜索进度队列，确保每步至少显示0.5秒
+// 处理搜索进度队列，更新弹窗
 const processSearchProgressQueue = async () => {
   if (isProcessingProgressQueue.value) return
   isProcessingProgressQueue.value = true
@@ -657,53 +671,12 @@ const processSearchProgressQueue = async () => {
     const isCompleted = progressItem.step >= progressItem.total
     const fullMessage = progressItem.message
     
-    // 更新搜索进度消息
-    if (currentSearchProgressIndex.value !== null) {
-      const index = currentSearchProgressIndex.value
-      if (index >= 0 && index < messages.value.length && messages.value[index].role === 'search_progress') {
-        // 添加切换动画类
-        const messageElement = document.querySelector(`.message:nth-child(${index + 1}) .search-progress-message`)
-        if (messageElement) {
-          messageElement.classList.add('updating')
-        }
-        
-        // 短暂延迟后更新内容
-        setTimeout(() => {
-          messages.value[index].content = fullMessage
-          console.log('🔄 更新搜索进度:', fullMessage)
-          
-          // 移除动画类
-          if (messageElement) {
-            messageElement.classList.remove('updating')
-          }
-        }, 100)
-      } else {
-        // 如果索引无效，重新创建
-        console.warn('⚠️ 搜索进度索引无效，重新创建')
-        const searchProgressMessage = {
-          role: 'search_progress' as const,
-          content: fullMessage,
-          timestamp: new Date()
-        }
-        messages.value.push(searchProgressMessage)
-        currentSearchProgressIndex.value = messages.value.length - 1
-      }
-    } else {
-      // 创建新的搜索进度消息
-      console.log('📝 创建新的搜索进度消息')
-      const searchProgressMessage = {
-        role: 'search_progress' as const,
-        content: fullMessage,
-        timestamp: new Date()
-      }
-      messages.value.push(searchProgressMessage)
-      currentSearchProgressIndex.value = messages.value.length - 1
+    // 更新搜索进度弹窗
+    if (showSearchProgressModal.value && searchProgressModalRef.value) {
+      searchProgressModalRef.value.updateProgress(fullMessage, progressItem.step, progressItem.total)
     }
     
-    // 自动滚动到底部
-    scrollToBottom()
-    
-    // 如果搜索完成，处理完成逻辑
+    // 如果搜索完成，等待处理完成
     if (isCompleted) {
       // 检查是否是文档数量消息（step > total 表示额外的文档数量信息）
       if (progressItem.step > progressItem.total) {
@@ -715,8 +688,8 @@ const processSearchProgressQueue = async () => {
         // 继续处理队列中的文档数量消息
       }
     } else {
-      // 等待0.5秒再处理下一个项目
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // 等待0.3秒再处理下一个项目（弹窗中不需要太长延迟）
+      await new Promise(resolve => setTimeout(resolve, 300))
     }
   }
   
