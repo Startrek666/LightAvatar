@@ -614,6 +614,11 @@ const sendTextMessage = (event?: Event) => {
     isProcessingProgressQueue.value = false
     currentSearchQuery.value = userInput
     
+    // 标记这是新的搜索，需要重置状态
+    if (searchProgressModalRef.value) {
+      searchProgressModalRef.value.markNewSearch()
+    }
+    
     // 显示搜索进度弹窗
     showSearchProgressModal.value = true
     

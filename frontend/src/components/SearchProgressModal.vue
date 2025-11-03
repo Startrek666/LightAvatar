@@ -315,18 +315,30 @@ const getDomainName = (url: string): string => {
   }
 }
 
-// 监听visible变化，重置状态
+// 监听visible变化，只在首次打开时重置状态（不在重新打开时重置）
+let isFirstOpen = true
 watch(() => props.visible, (newVal) => {
-  if (newVal) {
+  if (newVal && isFirstOpen) {
+    // 只在第一次打开时重置
     reset()
+    isFirstOpen = false
+  } else if (!newVal) {
+    // 关闭时标记，下次打开时需要重置（如果是新的搜索）
+    // 这里不重置 isFirstOpen，让它保持 false，这样重新打开时不会重置状态
   }
 })
+
+// 暴露方法用于外部标记新的搜索开始
+const markNewSearch = () => {
+  isFirstOpen = true
+}
 
 // 暴露方法供父组件调用
 defineExpose({
   updateProgress,
   reset,
-  setSearchResults
+  setSearchResults,
+  markNewSearch
 })
 </script>
 

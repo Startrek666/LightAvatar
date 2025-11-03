@@ -112,7 +112,7 @@ class KeywordExtractionAgent(BaseAgent):
             
             from .momo_utils import extract_keywords
             
-            logger.info(f"🔑 [{self.name}] 开始提取关键词: {query}")
+            logger.info(f"[{self.name}] 开始提取关键词: {query}")
             keywords_dict = extract_keywords(
                 query,
                 api_key=self.zhipu_api_key,
@@ -460,7 +460,7 @@ class SearchOrchestrator:
             # Agent 1: 关键词提取
             keyword_agent = self.agents.get("keyword_extractor")
             if keyword_agent:
-                await self._report_progress(0, "🔑 提取搜索关键词")
+                await self._report_progress(0, "提取搜索关键词")
                 keyword_result = await keyword_agent.process({"query": query})
                 
                 if not keyword_result.get("success"):

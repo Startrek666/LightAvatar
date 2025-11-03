@@ -666,11 +666,11 @@ class Session:
                     if not self.is_connected or self.is_interrupted:
                         logger.debug(f"[搜索结果] Session {self.session_id} 已断开或中断，跳过结果发送")
                         return
-                    # 只发送标题和URL
+                    # 只发送标题和URL，发送所有结果
                     search_results_data = [
                         {"title": doc.title if hasattr(doc, 'title') else 'N/A', 
                          "url": doc.url if hasattr(doc, 'url') else ''}
-                        for doc in results[:10]  # 最多发送10个结果
+                        for doc in results  # 发送所有结果
                     ]
                     await callback("search_results", {
                         "results": search_results_data

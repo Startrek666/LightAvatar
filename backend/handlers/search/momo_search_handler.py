@@ -358,9 +358,9 @@ class MomoSearchHandler(BaseHandler):
             # 步骤0: 关键词提取（如果启用）
             if self.enable_keyword_extraction:
                 if progress_callback:
-                    await progress_callback(0, total_steps, "🔑 提取搜索关键词")
+                    await progress_callback(0, total_steps, "提取搜索关键词")
                 
-                logger.info(f"🔑 开始提取关键词: {query}")
+                logger.info(f"开始提取关键词: {query}")
                 keywords_dict = extract_keywords(
                     query,
                     api_key=self.zhipu_api_key,
