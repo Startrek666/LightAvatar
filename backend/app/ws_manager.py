@@ -93,7 +93,7 @@ class WebSocketManager:
                 f"Error closing WebSocket {session_id} (code={code}, reason='{reason}'): {e}"
             )
         finally:
-            self.disconnect(session_id)
+                self.disconnect(session_id)
     
     async def broadcast_json(self, data: dict, exclude: Set[str] = None):
         """Broadcast JSON data to all connected clients"""

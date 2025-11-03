@@ -116,8 +116,29 @@ class GoogleGeminiHandler(BaseHandler):
             chunk_count = 0
             total_text = ""
             
-            for chunk in response:
-                if chunk.text:
+            # Google Gemini 的 send_message_stream 返回同步迭代器
+            # 需要在异步环境中逐块处理，避免阻塞事件循环
+            import asyncio
+            
+            # 使用 run_in_executor 在线程池中处理同步迭代器
+            loop = asyncio.get_event_loop()
+            
+            def get_next_chunk(iterator, sentinel=object()):
+                """获取迭代器的下一个元素"""
+                try:
+                    return next(iterator, sentinel)
+                except StopIteration:
+                    return sentinel
+            
+            sentinel = object()
+            while True:
+                # 在线程池中获取下一个 chunk
+                chunk = await loop.run_in_executor(None, get_next_chunk, response, sentinel)
+                
+                if chunk is sentinel:
+                    break
+                
+                if hasattr(chunk, 'text') and chunk.text:
                     chunk_count += 1
                     total_text += chunk.text
                     yield chunk.text
@@ -194,21 +215,34 @@ class GoogleGeminiHandler(BaseHandler):
                 today = datetime.now().strftime("%Y-%m-%d")
                 
                 search_context = f"# 以下内容是基于用户发送的消息的搜索结果（今天是{today}）:\n\n"
+                search_context += "# 重要提示：\n"
+                search_context += "# 1. 请用自然、口语化的方式回答问题\n"
+                search_context += "# 2. 可以提及来源网站名称，但不要说出完整的URL地址\n"
                 
                 for idx, doc in enumerate(search_results[:15], 1):  # 限制15个结果
-                    search_context += f"[网页 {idx} 开始]\n\n"
+                    search_context += f"[参考资料 {idx}]\n\n"
                     search_context += f"标题: {doc.title if hasattr(doc, 'title') else 'N/A'}\n\n"
-                    search_context += f"链接: {doc.url if hasattr(doc, 'url') else 'N/A'}\n\n"
+                    
+                    # 链接仅用于后端参考，不在回答中提及
+                    url = doc.url if hasattr(doc, 'url') else ''
+                    if url:
+                        # 提取域名作为来源
+                        from urllib.parse import urlparse
+                        try:
+                            domain = urlparse(url).netloc
+                            search_context += f"来源: {domain}\n\n"
+                        except:
+                            search_context += f"来源: 网络资料\n\n"
                     
                     content = doc.content if hasattr(doc, 'content') else ''
                     if content:
                         # 限制每个文档的内容长度
                         content = content[:1000] if len(content) > 1000 else content
-                        search_context += f"内容摘要:\n{content}\n\n"
+                        search_context += f"内容:\n{content}\n\n"
                     
-                    search_context += f"[网页 {idx} 结束]\n\n"
+                    search_context += f"---\n\n"
                 
-                search_context += "# 请基于以上搜索结果回答用户的问题，确保信息准确且引用来源。\n\n"
+                search_context += "# 请基于以上参考资料，用口语化的方式回答用户的问题。记住：不要读出URL链接！\n\n"
                 
                 logger.info(f"📝 搜索上下文已构建 (长度: {len(search_context)})")
                 

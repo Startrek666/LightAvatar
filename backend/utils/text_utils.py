@@ -15,7 +15,8 @@ def clean_markdown_for_tts(text: str) -> str:
     - 行内代码：`code` -> code
     - 标题：# Title -> Title
     - 列表：- item -> item
-    - 链接：[text](url) -> text
+    - Markdown链接：[text](url) -> text
+    - 纯URL链接：https://example.com -> 移除（不读出）
     - Emoji表情符号
     - 引用标记：[citation:X] -> 移除（不读出）
     - 参考来源部分：完整移除（不读出）
@@ -98,6 +99,18 @@ def clean_markdown_for_tts(text: str) -> str:
     
     # 8. 链接（[text](url)）
     text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+    
+    # 8.5. 纯URL链接（http://、https://、www. 开头的链接）
+    # 匹配各种URL格式：http://、https://、www.、ftp:// 等
+    # 匹配到句末或空格，或者被括号包围的URL
+    url_pattern = r'(?:https?://|www\.|ftp://)[^\s\)\]\}\"\'<>]+'
+    removed_urls = re.findall(url_pattern, text)
+    text = re.sub(url_pattern, '', text)
+    
+    # 记录移除的URL数量（用于调试）
+    if removed_urls:
+        from loguru import logger
+        logger.debug(f"✂️ 已移除 {len(removed_urls)} 个纯URL链接: {removed_urls[:3]}...")
     
     # 9. 图片（![alt](url)）
     text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'\1', text)

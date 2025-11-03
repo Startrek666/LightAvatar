@@ -1125,14 +1125,14 @@ class SessionManager:
                             )
                         else:
                             logger.info(f"清理用户 {username or user_id} 的旧断开会话 {existing_session_id}")
-                        
-                        # 清理旧会话（这会从user_sessions中删除映射）
-                        await self._remove_session_internal(existing_session_id)
-                        
-                        # 确保用户映射已清理，避免重复检查
-                        if user_id in self.user_sessions and self.user_sessions[user_id] == existing_session_id:
-                            del self.user_sessions[user_id]
-                            logger.debug(f"已清理用户 {username or user_id} 的会话映射")
+                            
+                            # 清理旧会话（这会从user_sessions中删除映射）
+                            await self._remove_session_internal(existing_session_id)
+                            
+                            # 确保用户映射已清理，避免重复检查
+                            if user_id in self.user_sessions and self.user_sessions[user_id] == existing_session_id:
+                                del self.user_sessions[user_id]
+                                logger.debug(f"已清理用户 {username or user_id} 的会话映射")
             
             # Check memory before creating new session
             await self.check_memory()
