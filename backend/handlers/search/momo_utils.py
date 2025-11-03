@@ -580,3 +580,80 @@ class FaissRetriever:
             logger.debug(f"  {idx+1}. {doc.title[:50]}... (sim: {doc.score:.3f})")
         
         return relevant_docs
+    
+    def get_relevant_documents_multi_query(self, queries: List[str]) -> List[SearchDocument]:
+        """
+        使用多个查询分别检索，然后合并结果（保留最高相似度分数）
+        
+        Args:
+            queries: 查询文本列表（例如：["中文查询", "English keywords"]）
+        
+        Returns:
+            合并后的相关文档列表（按相似度降序）
+        """
+        if not self.documents:
+            logger.warning("⚠️ 检索器中没有任何文档")
+            return []
+        
+        if not queries:
+            return []
+        
+        # 存储文档URL到最高相似度分数的映射
+        doc_scores = {}  # {url: max_score}
+        doc_map = {}  # {url: SearchDocument}
+        
+        # 对每个查询分别检索
+        for query_idx, query in enumerate(queries):
+            if not query or not query.strip():
+                continue
+                
+            logger.debug(f"[多查询检索] 查询 {query_idx + 1}/{len(queries)}: {query[:50]}...")
+            
+            # 编码查询
+            query_embedding = self.encode_doc(query)
+            
+            # 搜索最相似的文档
+            distances, indices = self.index.search(
+                query_embedding.reshape(1, -1),
+                min(self.num_candidates, len(self.documents))
+            )
+            
+            # 处理每个结果，保留最高分数
+            for idx, sim in enumerate(distances[0]):
+                doc_idx = int(indices[0][idx])
+                if doc_idx >= len(self.documents):
+                    continue
+                
+                doc = self.documents[doc_idx]
+                sim_score = float(sim)
+                
+                # 只考虑超过阈值的文档
+                if sim_score >= self.sim_threshold:
+                    # 保留更高的相似度分数
+                    if doc.url not in doc_scores or sim_score > doc_scores[doc.url]:
+                        doc_scores[doc.url] = sim_score
+                        # 创建文档副本并更新分数
+                        doc_copy = SearchDocument(
+                            title=doc.title,
+                            url=doc.url,
+                            snippet=doc.snippet,
+                            content=doc.content,
+                            score=sim_score
+                        )
+                        doc_map[doc.url] = doc_copy
+        
+        if not doc_map:
+            logger.warning(f"⚠️ 多查询检索未找到相关文档（阈值>={self.sim_threshold}）")
+            return []
+        
+        # 按相似度分数排序
+        relevant_docs = list(doc_map.values())
+        relevant_docs.sort(key=lambda x: x.score, reverse=True)
+        
+        logger.info(f"🎯 多查询检索完成: {len(queries)}个查询, 找到{len(relevant_docs)}个相关文档（阈值>={self.sim_threshold}）")
+        
+        # 记录前几个结果
+        for idx, doc in enumerate(relevant_docs[:5]):
+            logger.debug(f"  {idx+1}. {doc.title[:50]}... (sim: {doc.score:.3f})")
+        
+        return relevant_docs

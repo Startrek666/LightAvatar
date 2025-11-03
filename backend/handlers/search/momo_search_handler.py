@@ -550,10 +550,27 @@ class MomoSearchHandler(BaseHandler):
             # 步骤3: 向量检索（合并后的结果）
             vector_step = len(search_queries) + len(ddg_queries) + 1
             if progress_callback:
-                await progress_callback(vector_step, total_steps, f"📊 分析相关性 ({len(all_search_results)}个结果)")
+                await progress_callback(vector_step, total_steps, f"分析相关性 ({len(all_search_results)}个结果)")
+            
+            # 构建检索查询列表：分开查询中英文，提高匹配精度
+            retrieval_queries = [query]  # 总是包含原始查询
+            if self.enable_keyword_extraction and keywords_dict:
+                en_keys = keywords_dict.get("en_keys", "").strip()
+                if en_keys:
+                    # 如果有英文关键词，分别查询以提高英文文档匹配度
+                    retrieval_queries.append(en_keys)
+                    logger.info(f"[向量检索-Pipeline] 使用分开查询: 中文='{query[:50]}...', 英文='{en_keys[:50]}...'")
+                else:
+                    logger.info(f"[向量检索-Pipeline] 使用原始查询: {query[:100]}")
+            else:
+                logger.info(f"[向量检索-Pipeline] 使用原始查询: {query[:100]}")
             
             self.retriever.add_documents(all_search_results)
-            relevant_docs = self.retriever.get_relevant_documents(query)
+            # 使用多查询检索
+            if len(retrieval_queries) > 1:
+                relevant_docs = self.retriever.get_relevant_documents_multi_query(retrieval_queries)
+            else:
+                relevant_docs = self.retriever.get_relevant_documents(retrieval_queries[0])
             
             if not relevant_docs:
                 logger.warning("⚠️ 未找到相关文档")
@@ -580,7 +597,11 @@ class MomoSearchHandler(BaseHandler):
                 
                 docs_with_details = expand_docs_by_text_split(relevant_docs)
                 self.retriever.add_documents(docs_with_details)
-                relevant_docs_detailed = self.retriever.get_relevant_documents(query)
+                # 二次检索也使用多查询（retrieval_queries已在上方定义）
+                if len(retrieval_queries) > 1:
+                    relevant_docs_detailed = self.retriever.get_relevant_documents_multi_query(retrieval_queries)
+                else:
+                    relevant_docs_detailed = self.retriever.get_relevant_documents(retrieval_queries[0])
                 relevant_docs = merge_docs_by_url(relevant_docs_detailed)
                 
                 logger.info(f"📄 二次检索后: {len(relevant_docs)}个文档")

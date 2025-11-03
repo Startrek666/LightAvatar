@@ -265,18 +265,28 @@ class RetrievalAgent(BaseAgent):
         
         try:
             query = input_data.get("query", "")
+            queries = input_data.get("queries", [])  # 支持多查询
             documents = input_data.get("documents", [])
             
-            if not query or not documents:
+            # 兼容性：如果没有queries，使用query
+            if not queries and query:
+                queries = [query]
+            
+            if not queries or not documents:
                 raise ValueError("查询或文档为空")
             
-            logger.info(f"📊 [{self.name}] 开始分析相关性: {len(documents)}个文档")
+            logger.info(f"[{self.name}] 开始分析相关性: {len(documents)}个文档, {len(queries)}个查询")
             
             # 添加文档到检索器
             self.retriever.add_documents(documents)
             
-            # 检索相关文档
-            relevant_docs = self.retriever.get_relevant_documents(query)
+            # 检索相关文档（支持多查询）
+            if len(queries) > 1:
+                # 多个查询：分开检索并合并结果
+                relevant_docs = self.retriever.get_relevant_documents_multi_query(queries)
+            else:
+                # 单个查询：使用原有方法
+                relevant_docs = self.retriever.get_relevant_documents(queries[0])
             
             if not relevant_docs:
                 logger.warning(f"⚠️ [{self.name}] 未找到相关文档")
@@ -402,8 +412,15 @@ class DocumentProcessorAgent(BaseAgent):
             # 添加到检索器
             self.retriever.add_documents(docs_with_details)
             
-            # 二次检索
-            relevant_docs_detailed = self.retriever.get_relevant_documents(query)
+            # 二次检索（支持多查询，如果context中有）
+            retrieval_queries = [query]  # 默认使用原始查询
+            if context and context.get("retrieval_queries"):
+                retrieval_queries = context.get("retrieval_queries")
+            
+            if len(retrieval_queries) > 1:
+                relevant_docs_detailed = self.retriever.get_relevant_documents_multi_query(retrieval_queries)
+            else:
+                relevant_docs_detailed = self.retriever.get_relevant_documents(retrieval_queries[0])
             
             # 合并文档
             relevant_docs = merge_docs_by_url(relevant_docs_detailed)
@@ -575,11 +592,20 @@ class SearchOrchestrator:
                 vector_step = current_step
                 await self._report_progress(
                     vector_step,
-                    f"📊 分析相关性 ({len(all_documents)}个结果)"
+                    f"分析相关性 ({len(all_documents)}个结果)"
                 )
                 
+                # 构建检索查询列表：分开查询中英文，提高匹配精度
+                retrieval_queries = [query]  # 总是包含原始查询
+                if keywords.get("en"):
+                    # 如果有英文关键词，分别查询以提高英文文档匹配度
+                    retrieval_queries.append(keywords["en"])
+                    logger.info(f"[向量检索] 使用分开查询: 中文='{query[:50]}...', 英文='{keywords['en'][:50]}...'")
+                else:
+                    logger.info(f"[向量检索] 使用原始查询: {query[:100]}")
+                
                 retrieval_result = await retrieval_agent.process({
-                    "query": query,
+                    "queries": retrieval_queries,  # 传递查询列表
                     "documents": all_documents
                 })
                 relevant_docs = retrieval_result.get("results", [])
@@ -608,9 +634,16 @@ class SearchOrchestrator:
                         split_step = crawl_step + 1
                         await self._report_progress(split_step, "✂️ 文档分块和二次检索")
                         
+                        # 构建检索查询列表用于二次检索
+                        retrieval_queries_for_processor = [query]
+                        if keywords.get("en"):
+                            retrieval_queries_for_processor.append(keywords["en"])
+                        
                         processor_result = await processor_agent.process({
                             "query": query,
                             "documents": relevant_docs
+                        }, context={
+                            "retrieval_queries": retrieval_queries_for_processor
                         })
                         relevant_docs = processor_result.get("results", relevant_docs)
             
