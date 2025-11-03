@@ -206,7 +206,9 @@ class Session:
                             "sim_threshold": settings.MOMO_SEARCH_SIM_THRESHOLD,
                             "enable_deep_crawl": settings.MOMO_SEARCH_ENABLE_DEEP_CRAWL,
                             "crawl_score_threshold": settings.MOMO_SEARCH_CRAWL_SCORE_THRESHOLD,
-                            "max_crawl_docs": settings.MOMO_SEARCH_MAX_CRAWL_DOCS
+                            "max_crawl_docs": settings.MOMO_SEARCH_MAX_CRAWL_DOCS,
+                            "use_multi_agent": settings.MOMO_SEARCH_USE_MULTI_AGENT,
+                            "enable_keyword_extraction": True  # 关键词提取默认启用
                         }
                     )
                     await self.momo_search_handler.initialize()

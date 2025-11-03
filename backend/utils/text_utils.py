@@ -80,12 +80,22 @@ def clean_markdown_for_tts(text: str) -> str:
     text = re.sub(r'`([^`]+)`', r'\1', text)
     
     # 3. 加粗和斜体（**text** 或 __text__）
+    # 先移除成对的加粗标记（保留文本内容）
     text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
     text = re.sub(r'__([^_]+)__', r'\1', text)
+    
+    # 移除所有剩余的 ** 和 __（防止有未匹配或单独的标记）
+    text = re.sub(r'\*\*+', '', text)  # 移除连续的星号（**、***等）
+    text = re.sub(r'__+', '', text)    # 移除连续的下划线（__、___等）
     
     # 4. 斜体（*text* 或 _text_）
     text = re.sub(r'\*([^*]+)\*', r'\1', text)
     text = re.sub(r'_([^_]+)_', r'\1', text)
+    
+    # 移除所有剩余的单独的 * 和 _（防止有未匹配的标记）
+    # 注意：这里要小心，不要移除中文书名号中的下划线
+    text = re.sub(r'(?<!\*)\*(?!\*)', '', text)  # 移除单独的星号
+    text = re.sub(r'(?<!_)_(?!_)', '', text)    # 移除单独的下划线
     
     # 5. 删除线（~~text~~）
     text = re.sub(r'~~([^~]+)~~', r'\1', text)

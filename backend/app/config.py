@@ -160,6 +160,7 @@ class Settings(BaseSettings):
     MOMO_SEARCH_ENABLE_DEEP_CRAWL: bool = Field(default=True, description="Enable deep web crawling (quality mode)")
     MOMO_SEARCH_CRAWL_SCORE_THRESHOLD: float = Field(default=0.5, description="Minimum similarity score for crawling")
     MOMO_SEARCH_MAX_CRAWL_DOCS: int = Field(default=10, description="Maximum documents to crawl")
+    MOMO_SEARCH_USE_MULTI_AGENT: bool = Field(default=True, description="Use multi-agent collaboration mode")
     
     class Config:
         env_file = ".env"

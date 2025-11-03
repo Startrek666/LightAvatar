@@ -22,6 +22,14 @@ from .momo_utils import (
 )
 from .momo_crawler import SimpleCrawler
 from .momo_retriever import expand_docs_by_text_split, merge_docs_by_url
+from .momo_agents import (
+    KeywordExtractionAgent,
+    SearchAgent,
+    RetrievalAgent,
+    CrawlerAgent,
+    DocumentProcessorAgent,
+    SearchOrchestrator
+)
 
 
 class MomoSearchHandler(BaseHandler):
@@ -101,6 +109,16 @@ class MomoSearchHandler(BaseHandler):
                 max_concurrent=5
             )
             
+            # 初始化多Agent系统
+            self.use_multi_agent = self.config.get('use_multi_agent', True)  # 默认启用多Agent
+            
+            if self.use_multi_agent:
+                logger.info("🤖 初始化多Agent系统...")
+                self._initialize_agents()
+                logger.info("✅ 多Agent系统初始化完成")
+            else:
+                logger.info("⚠️ 使用传统管道模式（未启用多Agent）")
+            
             logger.info("✅ Momo Search Handler 初始化完成")
             
         except Exception as e:
@@ -130,6 +148,46 @@ class MomoSearchHandler(BaseHandler):
             for i, doc in enumerate(sources)
         ])
         return sources_str
+    
+    def _initialize_agents(self):
+        """初始化所有Agent"""
+        self.agents = {}
+        
+        # 关键词提取Agent
+        if self.enable_keyword_extraction:
+            self.agents["keyword_extractor"] = KeywordExtractionAgent(
+                zhipu_api_key=self.zhipu_api_key,
+                zhipu_model=self.zhipu_model
+            )
+        
+        # 搜索Agent
+        self.agents["searcher"] = SearchAgent(
+            searxng_url=self.searxng_url,
+            searxng_language=self.searxng_language,
+            searxng_time_range=self.searxng_time_range,
+            max_results=self.max_search_results
+        )
+        
+        # 检索Agent
+        self.agents["retriever"] = RetrievalAgent(
+            retriever=self.retriever,
+            sim_threshold=self.sim_threshold
+        )
+        
+        # 爬取Agent（仅quality模式需要）
+        if self.enable_deep_crawl:
+            self.agents["crawler"] = CrawlerAgent(
+                crawler=self.crawler,
+                score_threshold=self.crawl_score_threshold,
+                max_docs=self.max_crawl_docs
+            )
+            
+            # 文档处理Agent
+            self.agents["document_processor"] = DocumentProcessorAgent(
+                retriever=self.retriever
+            )
+        
+        logger.info(f"✅ 已初始化 {len(self.agents)} 个Agent: {list(self.agents.keys())}")
     
     def format_citations(self, docs: List[SearchDocument]) -> str:
         """
@@ -166,6 +224,49 @@ class MomoSearchHandler(BaseHandler):
         Returns:
             (相关文档列表, 引用信息)
         """
+        # 如果启用多Agent模式，使用Agent协作
+        if self.use_multi_agent and hasattr(self, 'agents'):
+            return await self._search_with_agents(query, mode, progress_callback)
+        
+        # 否则使用传统管道模式
+        return await self._search_with_pipeline(query, mode, progress_callback)
+    
+    async def _search_with_agents(
+        self,
+        query: str,
+        mode: str = "speed",
+        progress_callback: Optional[callable] = None
+    ) -> tuple[List[SearchDocument], str]:
+        """使用多Agent协作执行搜索"""
+        try:
+            detected_lang = detect_language(query)
+            
+            # 创建协调器
+            orchestrator = SearchOrchestrator(
+                agents=self.agents,
+                progress_callback=progress_callback
+            )
+            
+            # 执行多Agent协作搜索
+            relevant_docs, citations = await orchestrator.execute(
+                query=query,
+                mode=mode,
+                detected_lang=detected_lang
+            )
+            
+            return relevant_docs, citations
+            
+        except Exception as e:
+            logger.error(f"❌ 多Agent搜索失败: {e}", exc_info=True)
+            return [], ""
+    
+    async def _search_with_pipeline(
+        self,
+        query: str,
+        mode: str = "speed",
+        progress_callback: Optional[callable] = None
+    ) -> tuple[List[SearchDocument], str]:
+        """使用传统管道模式执行搜索（原有实现）"""
         try:
             detected_lang = detect_language(query)
             all_search_results = []
