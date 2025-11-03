@@ -80,18 +80,15 @@ class GoogleGeminiHandler(BaseHandler):
     
     async def stream_response(
         self, 
-        messages: List[Dict[str, str]],
-        temperature: float = 0.7,
-        max_tokens: int = 2000,
-        **kwargs
+        text: str,
+        conversation_history: List[Dict] = None
     ) -> AsyncGenerator[str, None]:
         """
-        流式生成响应
+        流式生成响应（与 OpenAIHandler 接口一致）
         
         Args:
-            messages: 消息列表 [{"role": "user/assistant/system", "content": "..."}]
-            temperature: 温度参数 (未使用，保持接口一致)
-            max_tokens: 最大token数 (未使用，保持接口一致)
+            text: 当前用户输入文本
+            conversation_history: 对话历史记录 [{"role": "user/assistant", "content": "..."}]
             
         Yields:
             str: 响应文本块
@@ -100,34 +97,19 @@ class GoogleGeminiHandler(BaseHandler):
             self.create_chat()
         
         # Google Gemini API 通过 chat 管理历史，只需发送最新的用户消息
-        # 系统提示词在首次消息时发送
-        user_message = None
-        system_prompt = None
-        
-        # 提取系统提示和最新用户消息
-        for msg in messages:
-            if msg["role"] == "system":
-                system_prompt = msg["content"]
-            elif msg["role"] == "user":
-                user_message = msg["content"]
+        user_message = text
         
         if not user_message:
-            logger.warning("⚠️ 没有找到用户消息")
+            logger.warning("⚠️ 用户消息为空")
             return
         
-        # 如果有系统提示词且是第一条消息，需要合并到用户消息中
-        # (Google Gemini 不直接支持 system role，需要在用户消息中包含)
-        history = self.get_history()
-        if system_prompt and len(history) == 0:
-            # 首次对话，将系统提示词添加到用户消息前
-            user_message = f"{system_prompt}\n\n{user_message}"
-            logger.info(f"📝 首次对话，合并系统提示词 (长度: {len(system_prompt)})")
-        
         try:
+            history = self.get_history()
             logger.info(f"🚀 开始流式生成 Gemini 响应")
             logger.info(f"  - 模型: {self.model}")
             logger.info(f"  - 消息长度: {len(user_message)}")
             logger.info(f"  - 历史消息数: {len(history)}")
+            logger.info(f"  - 当前对话历史数: {len(conversation_history) if conversation_history else 0}")
             
             response = self.chat.send_message_stream(user_message)
             
@@ -152,55 +134,55 @@ class GoogleGeminiHandler(BaseHandler):
     
     async def stream_response_with_search(
         self,
-        messages: List[Dict[str, str]],
-        search_handler,
-        search_mode: str = "simple",
-        search_quality: str = "speed",
-        temperature: float = 0.7,
-        max_tokens: int = 2000,
-        search_progress_callback=None,
+        text: str,
+        conversation_history: List[Dict] = None,
+        search_handler=None,
+        use_search: bool = True,
+        search_mode: str = "advanced",
+        momo_search_handler=None,
+        momo_search_quality: str = "speed",
+        progress_callback=None,
         **kwargs
     ) -> AsyncGenerator[str, None]:
         """
-        带搜索功能的流式生成响应
+        带搜索功能的流式生成响应（与 OpenAIHandler 接口一致）
         
         Args:
-            messages: 消息列表
-            search_handler: 搜索处理器
+            text: 当前用户输入
+            conversation_history: 对话历史
+            search_handler: 简单搜索处理器（未使用）
+            use_search: 是否使用搜索
             search_mode: 搜索模式 (simple/advanced)
-            search_quality: 搜索质量 (speed/quality)
-            temperature: 温度参数
-            max_tokens: 最大token数
-            search_progress_callback: 搜索进度回调
+            momo_search_handler: 高级搜索处理器
+            momo_search_quality: 搜索质量 (speed/quality)
+            progress_callback: 搜索进度回调
             
         Yields:
             str: 响应文本块
         """
-        # 提取用户查询
-        user_query = None
-        for msg in reversed(messages):
-            if msg["role"] == "user":
-                user_query = msg["content"]
-                break
+        user_query = text
         
         if not user_query:
-            logger.warning("⚠️ 没有找到用户查询")
-            async for chunk in self.stream_response(messages, temperature, max_tokens):
+            logger.warning("⚠️ 用户查询为空")
+            async for chunk in self.stream_response(text, conversation_history):
                 yield chunk
             return
         
-        # 执行搜索
-        logger.info(f"🔍 开始搜索 (模式: {search_mode}, 质量: {search_quality})")
+        # 执行搜索（仅支持高级搜索）
+        logger.info(f"🔍 开始 Momo 高级搜索 (质量: {momo_search_quality})")
+        
+        if not momo_search_handler:
+            logger.warning("⚠️ Momo 搜索处理器未提供，跳过搜索")
+            async for chunk in self.stream_response(text, conversation_history):
+                yield chunk
+            return
         
         try:
-            if search_mode == "advanced":
-                search_results = await search_handler.search_with_progress(
-                    user_query,
-                    mode=search_quality,
-                    progress_callback=search_progress_callback
-                )
-            else:
-                search_results = await search_handler.search(user_query)
+            search_results = await momo_search_handler.search_with_progress(
+                user_query,
+                mode=momo_search_quality,
+                progress_callback=progress_callback
+            )
             
             if search_results and len(search_results) > 0:
                 logger.info(f"✅ 搜索完成，获得 {len(search_results)} 个结果")
@@ -228,37 +210,23 @@ class GoogleGeminiHandler(BaseHandler):
                 
                 logger.info(f"📝 搜索上下文已构建 (长度: {len(search_context)})")
                 
-                # 将搜索结果注入到消息中
-                enhanced_messages = []
-                for msg in messages:
-                    if msg["role"] == "system":
-                        enhanced_messages.append(msg)
+                # 将搜索上下文合并到用户消息中
+                enhanced_text = f"{search_context}\n\n用户问题: {user_query}"
                 
-                # 添加搜索上下文作为系统消息
-                enhanced_messages.append({
-                    "role": "system",
-                    "content": search_context
-                })
-                
-                # 添加用户消息
-                for msg in messages:
-                    if msg["role"] == "user":
-                        enhanced_messages.append(msg)
-                
-                logger.info(f"📤 准备发送增强消息 (共 {len(enhanced_messages)} 条)")
+                logger.info(f"📤 准备发送增强消息 (总长度: {len(enhanced_text)})")
                 
                 # 使用增强后的消息进行生成
-                async for chunk in self.stream_response(enhanced_messages, temperature, max_tokens):
+                async for chunk in self.stream_response(enhanced_text, conversation_history):
                     yield chunk
             else:
                 logger.warning("⚠️ 搜索未返回结果，使用原始消息")
-                async for chunk in self.stream_response(messages, temperature, max_tokens):
+                async for chunk in self.stream_response(text, conversation_history):
                     yield chunk
                     
         except Exception as e:
             logger.error(f"❌ 搜索失败: {e}", exc_info=True)
             logger.info("⚠️ 搜索失败，使用原始消息")
-            async for chunk in self.stream_response(messages, temperature, max_tokens):
+            async for chunk in self.stream_response(text, conversation_history):
                 yield chunk
     
     def update_config(self, config: dict):
