@@ -216,7 +216,7 @@ class GoogleGeminiHandler(BaseHandler):
                 
                 search_context = f"# 以下内容是基于用户发送的消息的搜索结果（今天是{today}）:\n\n"
                 search_context += "# 重要提示：\n"
-                search_context += "# 1. 请用自然、口语化的方式回答问题\n"
+                search_context += "# 1. 请用自然、严谨的方式回答问题\n"
                 search_context += "# 2. 可以提及来源网站名称，但不要说出完整的URL地址\n"
                 
                 for idx, doc in enumerate(search_results[:15], 1):  # 限制15个结果
@@ -242,7 +242,7 @@ class GoogleGeminiHandler(BaseHandler):
                     
                     search_context += f"---\n\n"
                 
-                search_context += "# 请基于以上参考资料，用口语化的方式回答用户的问题。记住：不要读出URL链接！\n\n"
+                search_context += "# 请基于以上参考资料，用自然严谨的方式回答用户的问题。记住：不要读出URL链接！\n\n"
                 
                 logger.info(f"📝 搜索上下文已构建 (长度: {len(search_context)})")
                 

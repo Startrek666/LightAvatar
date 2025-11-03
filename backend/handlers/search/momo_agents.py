@@ -143,12 +143,13 @@ class KeywordExtractionAgent(BaseAgent):
             
             self.result = result
             self.set_status(AgentStatus.COMPLETED)
+            logger.info(f"✅ [{self.name}] Agent已完成")
             return result
             
         except Exception as e:
             self.error = str(e)
             self.set_status(AgentStatus.FAILED)
-            logger.error(f"❌ [{self.name}] 处理失败: {e}")
+            logger.error(f"❌ [{self.name}] Agent处理失败: {e}")
             return {
                 "success": False,
                 "error": str(e)
@@ -233,6 +234,7 @@ class SearchAgent(BaseAgent):
             
             self.result = result
             self.set_status(AgentStatus.COMPLETED)
+            logger.info(f"✅ [{self.name}] Agent已完成: 总计获得 {len(all_results)} 个搜索结果")
             return result
             
         except Exception as e:
@@ -294,6 +296,7 @@ class RetrievalAgent(BaseAgent):
             
             self.result = result
             self.set_status(AgentStatus.COMPLETED)
+            logger.info(f"✅ [{self.name}] Agent已完成: 找到 {len(relevant_docs)} 个相关文档")
             return result
             
         except Exception as e:
@@ -354,6 +357,7 @@ class CrawlerAgent(BaseAgent):
             
             self.result = result
             self.set_status(AgentStatus.COMPLETED)
+            logger.info(f"✅ [{self.name}] Agent已完成: 爬取了 {len(documents)} 个文档")
             return result
             
         except Exception as e:
@@ -414,6 +418,7 @@ class DocumentProcessorAgent(BaseAgent):
             
             self.result = result
             self.set_status(AgentStatus.COMPLETED)
+            logger.info(f"✅ [{self.name}] Agent已完成: 处理了 {len(relevant_docs)} 个文档")
             return result
             
         except Exception as e:

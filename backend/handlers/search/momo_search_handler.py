@@ -5,7 +5,7 @@ Momo Search Handler - 高级联网搜索处理器
 from typing import List, Dict, Optional, AsyncGenerator
 from datetime import datetime
 import asyncio
-
+import threading
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
@@ -34,6 +34,86 @@ from .momo_agents import (
 
 class MomoSearchHandler(BaseHandler):
     """Momo 高级搜索处理器"""
+    
+    # 类级别的共享资源（所有实例共享）
+    _shared_embedding_models: Dict[str, SentenceTransformer] = {}  # {model_name: model_instance}
+    _model_lock = threading.Lock()  # 保护模型初始化的锁
+    _model_ref_count: Dict[str, int] = {}  # 模型引用计数
+    
+    @classmethod
+    def _get_shared_embedding_model(cls, model_name: str, device: str, torch_dtype) -> SentenceTransformer:
+        """
+        获取共享的embedding模型（线程安全）
+        
+        多个Session共享同一个模型实例，减少内存占用
+        只有在模型不存在时才创建新实例
+        
+        Args:
+            model_name: 模型名称
+            device: 设备 (cuda/cpu)
+            torch_dtype: torch数据类型
+            
+        Returns:
+            SentenceTransformer实例
+        """
+        # 生成缓存键（包含设备信息，因为不同设备需要不同实例）
+        cache_key = f"{model_name}_{device}_{str(torch_dtype)}"
+        
+        # 双重检查锁定模式
+        if cache_key not in cls._shared_embedding_models:
+            with cls._model_lock:
+                # 再次检查（避免并发创建）
+                if cache_key not in cls._shared_embedding_models:
+                    logger.info(f"🔧 首次加载共享embedding模型: {cache_key}")
+                    try:
+                        if device == "cuda":
+                            model = SentenceTransformer(
+                                model_name,
+                                device=device,
+                                model_kwargs={"torch_dtype": torch_dtype}
+                            )
+                        else:
+                            model = SentenceTransformer(
+                                model_name,
+                                device=device,
+                                model_kwargs={"torch_dtype": torch_dtype}
+                            )
+                        cls._shared_embedding_models[cache_key] = model
+                        cls._model_ref_count[cache_key] = 0
+                        logger.info(f"✅ 共享embedding模型加载成功: {cache_key}")
+                    except Exception as e:
+                        logger.error(f"❌ 共享embedding模型加载失败: {e}")
+                        logger.info("ℹ️ 尝试使用默认设置...")
+                        model = SentenceTransformer(model_name, device=device)
+                        cls._shared_embedding_models[cache_key] = model
+                        cls._model_ref_count[cache_key] = 0
+                else:
+                    logger.debug(f"♻️ 使用已存在的共享embedding模型: {cache_key}")
+        
+        # 增加引用计数
+        cls._model_ref_count[cache_key] = cls._model_ref_count.get(cache_key, 0) + 1
+        logger.debug(f"📊 模型引用计数: {cache_key} = {cls._model_ref_count[cache_key]}")
+        
+        return cls._shared_embedding_models[cache_key]
+    
+    @classmethod
+    def _release_embedding_model(cls, model_name: str, device: str, torch_dtype):
+        """
+        释放模型引用（当Session销毁时调用）
+        
+        注意：当前实现不会真正卸载模型，因为可能有其他Session在使用
+        未来可以实现真正的卸载逻辑（当引用计数为0时）
+        
+        Args:
+            model_name: 模型名称
+            device: 设备
+            torch_dtype: torch数据类型
+        """
+        cache_key = f"{model_name}_{device}_{str(torch_dtype)}"
+        if cache_key in cls._model_ref_count:
+            cls._model_ref_count[cache_key] = max(0, cls._model_ref_count[cache_key] - 1)
+            logger.debug(f"📊 模型引用计数减少: {cache_key} = {cls._model_ref_count[cache_key]}")
+            # TODO: 当引用计数为0时，可以考虑卸载模型释放内存
     
     async def _setup(self):
         """初始化搜索组件"""
@@ -70,31 +150,23 @@ class MomoSearchHandler(BaseHandler):
             logger.info(f"  深度爬取: {'开启' if self.enable_deep_crawl else '关闭'}")
             logger.info(f"  关键词提取: {'开启' if self.enable_keyword_extraction else '关闭'}")
             
-            # 初始化嵌入模型
+            # 初始化嵌入模型（使用共享模型优化内存）
             # CPU不支持float16，使用float32
             import torch
             device = "cuda" if torch.cuda.is_available() else "cpu"
+            torch_dtype = torch.float16 if device == "cuda" else torch.float32
             
-            try:
-                if device == "cuda":
-                    # GPU可以使用float16加速
-                    self.embedding_model = SentenceTransformer(
-                        embedding_model_name,
-                        device=device,
-                        model_kwargs={"torch_dtype": torch.float16}
-                    )
-                else:
-                    # CPU必须使用float32
-                    self.embedding_model = SentenceTransformer(
-                        embedding_model_name,
-                        device=device,
-                        model_kwargs={"torch_dtype": torch.float32}
-                    )
-                logger.info(f"✅ 嵌入模型加载成功: {embedding_model_name} (设备: {device})")
-            except Exception as e:
-                logger.error(f"❌ 嵌入模型加载失败: {e}")
-                logger.info("ℹ️ 尝试使用默认设置...")
-                self.embedding_model = SentenceTransformer(embedding_model_name, device=device)
+            # 使用共享模型实例（多个Session共享同一个模型，减少内存占用）
+            self.embedding_model = self._get_shared_embedding_model(
+                embedding_model_name,
+                device=device,
+                torch_dtype=torch_dtype
+            )
+            # 保存模型信息用于清理时释放引用
+            self._embedding_model_name = embedding_model_name
+            self._embedding_device = device
+            self._embedding_torch_dtype = torch_dtype
+            logger.info(f"✅ 使用共享embedding模型: {embedding_model_name} (设备: {device})")
             
             # 初始化检索器
             self.retriever = FaissRetriever(
@@ -239,6 +311,9 @@ class MomoSearchHandler(BaseHandler):
     ) -> tuple[List[SearchDocument], str]:
         """使用多Agent协作执行搜索"""
         try:
+            logger.info(f"🤖 [多Agent模式] 开始执行搜索: 查询='{query}', 模式={mode}")
+            logger.info(f"🤖 [多Agent模式] 已启用 {len(self.agents)} 个Agent: {list(self.agents.keys())}")
+            
             detected_lang = detect_language(query)
             
             # 创建协调器
@@ -254,6 +329,7 @@ class MomoSearchHandler(BaseHandler):
                 detected_lang=detected_lang
             )
             
+            logger.info(f"✅ [多Agent模式] 搜索完成: 返回 {len(relevant_docs)} 个文档")
             return relevant_docs, citations
             
         except Exception as e:
@@ -559,6 +635,14 @@ class MomoSearchHandler(BaseHandler):
     
     async def cleanup(self):
         """清理资源"""
+        # 释放embedding模型引用
+        if hasattr(self, '_embedding_model_name'):
+            self._release_embedding_model(
+                self._embedding_model_name,
+                self._embedding_device,
+                self._embedding_torch_dtype
+            )
+        
         if hasattr(self, 'crawler'):
             await self.crawler.close()
         logger.info("🧹 Momo Search Handler 资源已清理")
@@ -566,7 +650,5 @@ class MomoSearchHandler(BaseHandler):
     def __del__(self):
         """析构函数"""
         # 注意：在异步环境中，析构函数中的异步调用可能不会执行
+        # 但在Python退出时仍可能被调用，用于释放资源
         pass
-
-
-
