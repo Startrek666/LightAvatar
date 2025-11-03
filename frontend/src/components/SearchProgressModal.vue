@@ -4,7 +4,7 @@
     @update:open="handleModalUpdate"
     :title="null"
     :footer="null"
-    :closable="true"
+    :closable="false"
     :maskClosable="false"
     :keyboard="true"
     width="800px"
@@ -344,8 +344,8 @@ defineExpose({
 .search-progress-container {
   display: flex;
   flex-direction: column;
-  min-height: 500px;
-  max-height: 85vh;
+  min-height: 600px;
+  max-height: 90vh;
   background: #ffffff;
 }
 
@@ -455,7 +455,7 @@ defineExpose({
 }
 
 .results-list-container {
-  height: 280px;
+  height: 350px;
   overflow-y: auto;
   overflow-x: hidden;
   border-radius: 12px;
@@ -486,24 +486,8 @@ defineExpose({
   border-bottom: none;
 }
 
-.result-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: #1890ff;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
 .result-item:hover {
   background: #f8f9fa;
-}
-
-.result-item:hover::before {
-  opacity: 1;
 }
 
 .result-number {
@@ -567,7 +551,7 @@ defineExpose({
   flex: 1;
   padding: 32px;
   overflow-y: auto;
-  max-height: 400px;
+  max-height: 500px;
 }
 
 .progress-step {

@@ -157,7 +157,7 @@
                 <template v-else>
                   <!-- AI消息且有搜索过程时显示查看链接 -->
                   <div v-if="message.role === 'assistant' && message.hasSearchProcess" class="search-process-link">
-                    <a @click="showSearchProgressModal = true" class="view-search-link">
+                    <a @click="reopenSearchModal" class="view-search-link">
                       <span class="link-icon">🔍</span>
                       <span class="link-text">查看搜索过程</span>
                       <span class="link-arrow">›</span>
@@ -650,6 +650,12 @@ const sendTextMessage = (event?: Event) => {
   console.log('✅ [sendTextMessage] 消息已发送')
 
   scrollToBottom()
+}
+
+// 重新打开搜索弹窗（不重置状态）
+const reopenSearchModal = () => {
+  showSearchProgressModal.value = true
+  // 不调用 reset()，保持之前的搜索状态
 }
 
 // 中断数字人生成
