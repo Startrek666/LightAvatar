@@ -16,11 +16,11 @@
       <div class="progress-header">
         <div class="header-title">
           <span class="title-icon">🔍</span>
-          <span class="title-text">多Agent搜索进行中</span>
+          <span class="title-text">{{ t('search.modal.title') }}</span>
         </div>
         <div class="header-actions">
           <span v-if="autoCloseCountdown > 0" class="countdown-text">
-            {{ autoCloseCountdown }}秒后自动关闭
+            {{ t('search.modal.autoClose', { seconds: autoCloseCountdown }) }}
           </span>
           <button class="close-button" @click="handleClose">
             <span>×</span>
@@ -36,8 +36,8 @@
       <!-- 搜索结果网页标题列表 -->
       <div v-if="searchResults.length > 0" class="search-results">
         <div class="results-header">
-          <span class="results-title">搜索到的网页</span>
-          <span class="results-count">{{ searchResults.length }} 个结果</span>
+          <span class="results-title">{{ t('search.modal.searchResults') }}</span>
+          <span class="results-count">{{ searchResults.length }} {{ t('search.modal.resultsCount') }}</span>
         </div>
         <div class="results-list-container">
           <div class="results-list">
@@ -105,7 +105,7 @@
       <div v-if="searchCompleted && resultCount > 0" class="progress-footer">
         <div class="result-summary">
           <span class="result-icon">✅</span>
-          <span class="result-text">搜索完成，获得 {{ resultCount }} 个结果</span>
+          <span class="result-text">{{ t('search.modal.completedWithResults', { count: resultCount }) }}</span>
         </div>
       </div>
     </div>
@@ -114,6 +114,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t, locale } = useI18n()
 
 interface Step {
   title: string
@@ -138,16 +141,33 @@ const internalVisible = computed({
   set: (value) => emit('update:visible', value)
 })
 
-// 步骤定义
+// 步骤标题键值类型
+type StepTitleKey = 'started' | 'extractingKeywords' | 'chineseSearch' | 'englishSearch' | 'expandChinese' | 'supplementEnglish' | 'analyzing' | 'completed'
+
+// 获取步骤标题（响应式，会根据语言自动更新）
+const getStepTitle = (stepKey: StepTitleKey): string => {
+  return t(`search.modal.steps.${stepKey}`)
+}
+
+// 检测查询语言（用于动态调整步骤）
+const detectedLanguage = ref<'zh' | 'en'>('zh')
+
+// 基于原始查询文本检测语言
+const detectLanguageFromText = (text: string): 'zh' | 'en' => {
+  if (!text) return 'zh'
+  return /[\u4e00-\u9fa5]/.test(text) ? 'zh' : 'en'
+}
+
+// 步骤定义（初始状态，会在 reset() 时更新为国际化文本）
 const steps = ref<Step[]>([
-  { title: '多Agent搜索工作已启动', status: 'pending' },
-  { title: '提取关键词', status: 'pending' },
-  { title: '初步进行中文搜索', status: 'pending' },
-  { title: '初步进行英文搜索', status: 'pending' },
-  { title: '扩充中文搜索', status: 'pending' },
-  { title: '补充英语资料', status: 'pending' },
-  { title: '正在分析信息', status: 'pending' },
-  { title: '搜索完成', status: 'pending' }
+  { title: getStepTitle('started'), status: 'pending' },
+  { title: getStepTitle('extractingKeywords'), status: 'pending' },
+  { title: getStepTitle('chineseSearch'), status: 'pending' },
+  { title: getStepTitle('englishSearch'), status: 'pending' },
+  { title: getStepTitle('expandChinese'), status: 'pending' },
+  { title: getStepTitle('supplementEnglish'), status: 'pending' },
+  { title: getStepTitle('analyzing'), status: 'pending' },
+  { title: getStepTitle('completed'), status: 'pending' }
 ])
 
 const searchCompleted = ref(false)
@@ -173,15 +193,6 @@ const stepMapping: Record<string, number> = {
   '正在分析信息': 7,
   '搜索完成': 7,
   '找到': 7
-}
-
-// 检测查询语言（用于动态调整步骤）
-const detectedLanguage = ref<'zh' | 'en'>('zh')
-
-// 基于原始查询文本检测语言
-const detectLanguageFromText = (text: string): 'zh' | 'en' => {
-  if (!text) return 'zh'
-  return /[\u4e00-\u9fa5]/.test(text) ? 'zh' : 'en'
 }
 
 // 更新进度
@@ -265,6 +276,11 @@ const updateProgress = (message: string, step: number, total: number) => {
     }
     if (steps.value[targetStepIndex].status === 'pending') {
       steps.value[targetStepIndex].status = 'active'
+      // 更新步骤标题以确保使用最新语言（响应语言切换）
+      const stepKeys: StepTitleKey[] = ['started', 'extractingKeywords', 'chineseSearch', 'englishSearch', 'expandChinese', 'supplementEnglish', 'analyzing', 'completed']
+      if (targetStepIndex < stepKeys.length) {
+        steps.value[targetStepIndex].title = getStepTitle(stepKeys[targetStepIndex])
+      }
       const cleanMessage = message.replace(/^[🔍🔑📊🕷️✂️✅🤖⚙️]\s*/g, '').trim()
       if (cleanMessage && !cleanMessage.includes('搜索完成')) {
         steps.value[targetStepIndex].subtitle = cleanMessage
@@ -307,16 +323,16 @@ const handleClose = () => {
 
 // 重置状态
 const reset = () => {
-  // 重置所有步骤状态
+  // 重置所有步骤状态（使用函数获取标题，确保响应语言变化）
   steps.value = [
-    { title: '多Agent搜索工作已启动', status: 'pending' },
-    { title: '提取关键词', status: 'pending' },
-    { title: '初步进行中文搜索', status: 'pending' },
-    { title: '初步进行英文搜索', status: 'pending' },
-    { title: '扩充中文搜索', status: 'pending' },
-    { title: '补充英语资料', status: 'pending' },
-    { title: '正在分析信息', status: 'pending' },
-    { title: '搜索完成', status: 'pending' }
+    { title: getStepTitle('started'), status: 'pending' },
+    { title: getStepTitle('extractingKeywords'), status: 'pending' },
+    { title: getStepTitle('chineseSearch'), status: 'pending' },
+    { title: getStepTitle('englishSearch'), status: 'pending' },
+    { title: getStepTitle('expandChinese'), status: 'pending' },
+    { title: getStepTitle('supplementEnglish'), status: 'pending' },
+    { title: getStepTitle('analyzing'), status: 'pending' },
+    { title: getStepTitle('completed'), status: 'pending' }
   ]
   searchCompleted.value = false
   resultCount.value = 0
@@ -345,6 +361,26 @@ const reset = () => {
 // 当搜索词变化时，更新语言判定（不主动改动当前步骤，只用于后续映射）
 watch(() => props.searchQuery, (val) => {
   detectedLanguage.value = detectLanguageFromText(val)
+})
+
+// 监听语言切换，更新步骤标题
+watch(() => locale.value, () => {
+  // 更新所有步骤的标题（保持状态不变）
+  if (steps.value.length >= 8) {
+    steps.value[0].title = getStepTitle('started')
+    steps.value[1].title = getStepTitle('extractingKeywords')
+    steps.value[2].title = getStepTitle('chineseSearch')
+    steps.value[3].title = getStepTitle('englishSearch')
+    steps.value[4].title = getStepTitle('expandChinese')
+    steps.value[5].title = getStepTitle('supplementEnglish')
+    steps.value[6].title = getStepTitle('analyzing')
+    // 如果是完成状态且有关键词，保持原有的完成文本（包含结果数量）
+    if (steps.value[7].status === 'completed' && resultCount.value > 0) {
+      steps.value[7].title = t('search.modal.completedWithResults', { count: resultCount.value })
+    } else {
+      steps.value[7].title = getStepTitle('completed')
+    }
+  }
 })
 
 // 设置搜索结果（供父组件调用）

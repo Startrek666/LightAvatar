@@ -77,7 +77,25 @@ export default {
     deepSearching: 'Performing deeper search...',
     expandingEnglish: 'Expanding English material search...',
     completed: 'Search completed, generating content',
-    foundDocuments: 'Found {count} relevant documents'
+    foundDocuments: 'Found {count} relevant documents',
+    modal: {
+      title: 'Multi-Agent Search in Progress',
+      autoClose: '{seconds} seconds to auto close',
+      searchResults: 'Search Results',
+      resultsCount: 'results',
+      steps: {
+        started: 'Multi-Agent search started',
+        extractingKeywords: 'Extracting keywords',
+        chineseSearch: 'Initial Chinese search',
+        englishSearch: 'Initial English search',
+        expandChinese: 'Expanding Chinese search',
+        supplementEnglish: 'Supplementing English materials',
+        analyzing: 'Analyzing information',
+        completed: 'Search completed'
+      },
+      completedWithResults: 'Search completed, found {count} results'
+    },
+    viewProcess: 'View Search Process'
   },
   settings: {
     title: 'Settings',

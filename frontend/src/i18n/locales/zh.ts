@@ -77,7 +77,25 @@ export default {
     deepSearching: '正在进一步深度搜索...',
     expandingEnglish: '正在扩充搜索英语资料...',
     completed: '搜索完成，正在生成内容',
-    foundDocuments: '找到{count}篇相关文档'
+    foundDocuments: '找到{count}篇相关文档',
+    modal: {
+      title: '多Agent搜索进行中',
+      autoClose: '{seconds}秒后自动关闭',
+      searchResults: '搜索到的网页',
+      resultsCount: '个结果',
+      steps: {
+        started: '多Agent搜索工作已启动',
+        extractingKeywords: '提取关键词',
+        chineseSearch: '初步进行中文搜索',
+        englishSearch: '初步进行英文搜索',
+        expandChinese: '扩充中文搜索',
+        supplementEnglish: '补充英语资料',
+        analyzing: '正在分析信息',
+        completed: '搜索完成'
+      },
+      completedWithResults: '搜索完成，获得 {count} 个结果'
+    },
+    viewProcess: '查看搜索过程'
   },
   settings: {
     title: '设置',

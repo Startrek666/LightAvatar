@@ -159,7 +159,7 @@
                   <div v-if="message.role === 'assistant' && message.hasSearchProcess" class="search-process-link">
                     <a @click="reopenSearchModal" class="view-search-link">
                       <span class="link-icon">🔍</span>
-                      <span class="link-text">查看搜索过程</span>
+                      <span class="link-text">{{ t('search.viewProcess') }}</span>
                       <span class="link-arrow">›</span>
                     </a>
                   </div>
