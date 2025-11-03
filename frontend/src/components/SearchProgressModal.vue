@@ -280,7 +280,7 @@ defineExpose({
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .search-progress-modal {
   :deep(.ant-modal-content) {
     border-radius: 16px;
@@ -393,119 +393,119 @@ defineExpose({
   margin-bottom: 24px;
   opacity: 0.5;
   transition: all 0.3s ease;
+}
 
-  &.step-completed {
-    opacity: 1;
-  }
+.progress-step.step-completed {
+  opacity: 1;
+}
 
-  &.step-active {
-    opacity: 1;
-    animation: fadeIn 0.5s ease;
-  }
+.progress-step.step-active {
+  opacity: 1;
+  animation: fadeIn 0.5s ease;
+}
 
-  &.step-pending {
-    opacity: 0.4;
-  }
+.progress-step.step-pending {
+  opacity: 0.4;
+}
 
-  .step-timeline {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 24px;
-    flex-shrink: 0;
+.step-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 24px;
+  flex-shrink: 0;
+}
 
-    .timeline-line {
-      position: absolute;
-      top: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 2px;
-      height: calc(100% + 8px);
-      background: #e8e8e8;
-      z-index: 0;
-    }
+.timeline-line {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: calc(100% + 8px);
+  background: #e8e8e8;
+  z-index: 0;
+}
 
-    .timeline-dot {
-      position: relative;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background: white;
-      border: 2px solid #e8e8e8;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1;
-      transition: all 0.3s ease;
+.timeline-dot {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  border: 2px solid #e8e8e8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  transition: all 0.3s ease;
+}
 
-      .check-icon {
-        width: 16px;
-        height: 16px;
-        color: #52c41a;
-        animation: checkmark 0.4s ease;
+.check-icon {
+  width: 16px;
+  height: 16px;
+  color: #52c41a;
+  animation: checkmark 0.4s ease;
+}
 
-        .check-path {
-          stroke-dasharray: 20;
-          stroke-dashoffset: 20;
-          animation: drawCheck 0.4s ease forwards;
-        }
-      }
+.check-path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: drawCheck 0.4s ease forwards;
+}
 
-      .loading-spinner {
-        width: 12px;
-        height: 12px;
-        border: 2px solid #e8e8e8;
-        border-top-color: #1890ff;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-      }
+.loading-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #e8e8e8;
+  border-top-color: #1890ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
 
-      .pending-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #e8e8e8;
-      }
-    }
-  }
+.pending-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e8e8e8;
+}
 
-  &.step-completed .timeline-dot {
-    border-color: #52c41a;
-    background: #f6ffed;
-  }
+.progress-step.step-completed .timeline-dot {
+  border-color: #52c41a;
+  background: #f6ffed;
+}
 
-  &.step-active .timeline-dot {
-    border-color: #1890ff;
-    background: #e6f7ff;
-  }
+.progress-step.step-active .timeline-dot {
+  border-color: #1890ff;
+  background: #e6f7ff;
+}
 
-  .step-content {
-    flex: 1;
-    padding-top: 2px;
+.step-content {
+  flex: 1;
+  padding-top: 2px;
+}
 
-    .step-title {
-      font-size: 15px;
-      font-weight: 500;
-      color: #1a1a1a;
-      margin-bottom: 4px;
-      transition: color 0.3s ease;
-    }
+.step-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #1a1a1a;
+  margin-bottom: 4px;
+  transition: color 0.3s ease;
+}
 
-    .step-subtitle {
-      font-size: 13px;
-      color: #8c8c8c;
-      margin-top: 4px;
-    }
-  }
+.step-subtitle {
+  font-size: 13px;
+  color: #8c8c8c;
+  margin-top: 4px;
+}
 
-  &.step-completed .step-content .step-title {
-    color: #52c41a;
-  }
+.progress-step.step-completed .step-content .step-title {
+  color: #52c41a;
+}
 
-  &.step-active .step-content .step-title {
-    color: #1890ff;
-  }
+.progress-step.step-active .step-content .step-title {
+  color: #1890ff;
 }
 
 .progress-footer {
