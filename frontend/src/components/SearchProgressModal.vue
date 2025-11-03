@@ -63,6 +63,7 @@
       <div class="progress-steps">
         <div
           v-for="(step, index) in steps"
+          v-show="step.status !== 'skipped'"
           :key="index"
           class="progress-step"
           :class="{
@@ -117,7 +118,7 @@ import { ref, computed, watch } from 'vue'
 interface Step {
   title: string
   subtitle?: string
-  status: 'pending' | 'active' | 'completed'
+  status: 'pending' | 'active' | 'completed' | 'skipped'
 }
 
 const props = defineProps<{
@@ -160,7 +161,7 @@ const stepMapping: Record<string, number> = {
   '多agent搜索工作已启动': 0,
   '提取搜索关键词': 1,
   '提取关键词': 1,
-  '正在搜索:': 2, // 中文搜索
+  '正在搜索:': -1, // 动态判断（根据语言）
   '初步进行中文搜索': 2,
   '初步进行英文搜索': 3,
   '扩充中文搜索': 4,
@@ -174,9 +175,29 @@ const stepMapping: Record<string, number> = {
   '找到': 7
 }
 
+// 检测查询语言（用于动态调整步骤）
+const detectedLanguage = ref<'zh' | 'en'>('zh')
+
 // 更新进度
 const updateProgress = (message: string, step: number, total: number) => {
   console.log('📊 [SearchProgressModal] 更新进度:', { message, step, total })
+  
+  // 检测查询语言：如果消息中包含英文搜索且没有中文搜索，说明是英语查询
+  if (message.includes('正在搜索:') || message.includes('keywords_en') || message.includes('original')) {
+    // 如果包含英文关键词搜索且没有中文关键词，可能是英语查询
+    if (message.includes('keywords_en') || (message.includes('original') && !message.includes('keywords_zh'))) {
+      detectedLanguage.value = 'en'
+      // 如果是英语查询，隐藏中文搜索步骤
+      if (steps.value[2]) {
+        steps.value[2].status = 'skipped'  // 跳过
+      }
+      if (steps.value[4]) {
+        steps.value[4].status = 'skipped'  // 跳过扩充中文搜索
+      }
+    } else if (message.includes('keywords_zh')) {
+      detectedLanguage.value = 'zh'
+    }
+  }
   
   // 检测是否是搜索完成
   if (message.includes('搜索完成') || message.includes('找到') || (step >= total && total > 0)) {
@@ -214,7 +235,16 @@ const updateProgress = (message: string, step: number, total: number) => {
   // 先尝试精确匹配
   for (const [key, index] of Object.entries(stepMapping)) {
     if (message.includes(key)) {
-      targetStepIndex = index
+      if (index === -1) {
+        // 动态判断：'正在搜索:' 需要根据语言和source判断
+        if (message.includes('keywords_zh') || (message.includes('keywords_en') && detectedLanguage.value === 'zh')) {
+          targetStepIndex = 2  // 中文搜索
+        } else if (message.includes('keywords_en') || (message.includes('original') && detectedLanguage.value === 'en')) {
+          targetStepIndex = 3  // 英文搜索
+        }
+      } else {
+        targetStepIndex = index
+      }
       break
     }
   }
@@ -225,13 +255,23 @@ const updateProgress = (message: string, step: number, total: number) => {
     targetStepIndex = Math.min(Math.floor(progress * (steps.value.length - 1)), steps.value.length - 2)
   }
 
-  // 更新步骤状态
+  // 更新步骤状态（跳过被标记为skipped的步骤）
   if (targetStepIndex >= 0 && targetStepIndex < steps.value.length) {
-    // 完成之前的步骤
+    // 如果当前步骤被跳过，向前查找下一个有效步骤
+    while (targetStepIndex < steps.value.length && steps.value[targetStepIndex].status === 'skipped') {
+      targetStepIndex++
+    }
+    
+    if (targetStepIndex >= steps.value.length) {
+      return  // 所有步骤都被跳过
+    }
+    
+    // 完成之前的步骤（跳过skipped的）
     for (let i = 0; i < targetStepIndex; i++) {
       if (steps.value[i].status === 'active' || steps.value[i].status === 'pending') {
         steps.value[i].status = 'completed'
       }
+      // 跳过skipped状态的步骤
     }
     
     // 激活当前步骤
@@ -279,14 +319,22 @@ const handleClose = () => {
 
 // 重置状态
 const reset = () => {
-  steps.value.forEach(step => {
-    step.status = 'pending'
-    step.subtitle = undefined
-  })
+  // 重置所有步骤状态
+  steps.value = [
+    { title: '多Agent搜索工作已启动', status: 'pending' },
+    { title: '提取关键词', status: 'pending' },
+    { title: '初步进行中文搜索', status: 'pending' },
+    { title: '初步进行英文搜索', status: 'pending' },
+    { title: '扩充中文搜索', status: 'pending' },
+    { title: '补充英语资料', status: 'pending' },
+    { title: '正在分析信息', status: 'pending' },
+    { title: '搜索完成', status: 'pending' }
+  ]
   searchCompleted.value = false
   resultCount.value = 0
   autoCloseCountdown.value = 0
   searchResults.value = []
+  detectedLanguage.value = 'zh'  // 重置为中文
   
   // 第一个步骤立即激活
   if (steps.value[0]) {

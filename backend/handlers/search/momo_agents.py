@@ -210,9 +210,12 @@ class SearchAgent(BaseAgent):
             for ddg_item in ddg_queries:
                 logger.info(f"🦆 [{self.name}] DuckDuckGo搜索: {ddg_item['query']} ({ddg_item['language']})")
                 
+                # 根据max_results参数决定结果数量（英语40，中文20）
+                max_results = ddg_item.get("max_results", 20)
+                
                 ddg_results = await search_duckduckgo(
                     query=ddg_item['query'],
-                    max_results=20,
+                    max_results=max_results,
                     language=ddg_item['language'],
                     time_range=self.searxng_time_range if self.searxng_time_range else None
                 )
@@ -490,19 +493,36 @@ class SearchOrchestrator:
             search_queries = []
             keywords = keyword_result.get("keywords", {})
             
-            if keywords.get("zh"):
-                search_queries.append({
-                    "query": keywords["zh"],
-                    "language": "zh",
-                    "source": "keywords_zh"
-                })
-            
-            if keywords.get("en"):
-                search_queries.append({
-                    "query": keywords["en"],
-                    "language": "en",
-                    "source": "keywords_en"
-                })
+            # 如果检测到是英语，只使用英文搜索，跳过中文搜索
+            if detected_lang == "en":
+                # 英语查询：优先使用英文关键词，否则使用原始查询
+                if keywords.get("en"):
+                    search_queries.append({
+                        "query": keywords["en"],
+                        "language": "en",
+                        "source": "keywords_en"
+                    })
+                else:
+                    search_queries.append({
+                        "query": query,
+                        "language": "en",
+                        "source": "original"
+                    })
+            else:
+                # 中文查询：使用中英文关键词
+                if keywords.get("zh"):
+                    search_queries.append({
+                        "query": keywords["zh"],
+                        "language": "zh",
+                        "source": "keywords_zh"
+                    })
+                
+                if keywords.get("en"):
+                    search_queries.append({
+                        "query": keywords["en"],
+                        "language": "en",
+                        "source": "keywords_en"
+                    })
             
             if not search_queries:
                 search_queries.append({
@@ -513,28 +533,49 @@ class SearchOrchestrator:
             
             # 准备DuckDuckGo查询
             ddg_queries = []
-            if keywords.get("zh"):
-                ddg_queries.append({
-                    "query": keywords["zh"],
-                    "language": "zh",
-                    "source": "ddg_zh"
-                })
-            if keywords.get("en"):
-                ddg_queries.append({
-                    "query": keywords["en"],
-                    "language": "en",
-                    "source": "ddg_en"
-                })
-            elif detected_lang == "zh":
-                # 尝试翻译
-                from .momo_utils import translate_text
-                translated = translate_text(query, source="zh", target="en")
-                if translated:
+            if detected_lang == "en":
+                # 英语查询：只使用英文，且增加结果数量到40
+                if keywords.get("en"):
                     ddg_queries.append({
-                        "query": translated,
+                        "query": keywords["en"],
                         "language": "en",
-                        "source": "ddg_en_translated"
+                        "source": "ddg_en",
+                        "max_results": 40  # 英语查询增加到40条
                     })
+                else:
+                    ddg_queries.append({
+                        "query": query,
+                        "language": "en",
+                        "source": "ddg_en",
+                        "max_results": 40  # 英语查询增加到40条
+                    })
+            else:
+                # 中文查询：使用中英文
+                if keywords.get("zh"):
+                    ddg_queries.append({
+                        "query": keywords["zh"],
+                        "language": "zh",
+                        "source": "ddg_zh",
+                        "max_results": 20
+                    })
+                if keywords.get("en"):
+                    ddg_queries.append({
+                        "query": keywords["en"],
+                        "language": "en",
+                        "source": "ddg_en",
+                        "max_results": 40  # 英语查询增加到40条
+                    })
+                elif detected_lang == "zh":
+                    # 尝试翻译
+                    from .momo_utils import translate_text
+                    translated = translate_text(query, source="zh", target="en")
+                    if translated:
+                        ddg_queries.append({
+                            "query": translated,
+                            "language": "en",
+                            "source": "ddg_en_translated",
+                            "max_results": 40  # 英语查询增加到40条
+                        })
             
             # Agent 2: 搜索
             search_agent = self.agents.get("searcher")

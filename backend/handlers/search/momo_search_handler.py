@@ -370,27 +370,48 @@ class MomoSearchHandler(BaseHandler):
                 # 准备搜索查询列表
                 search_queries = []
                 
-                if keywords_dict:
-                    zh_keys = keywords_dict.get("zh_keys", "").strip()
-                    en_keys = keywords_dict.get("en_keys", "").strip()
+                # 如果检测到是英语，只使用英文搜索，跳过中文搜索
+                if detected_lang == "en":
+                    if keywords_dict:
+                        en_keys = keywords_dict.get("en_keys", "").strip()
+                        if en_keys:
+                            search_queries.append({
+                                "query": en_keys,
+                                "language": "en",
+                                "source": "keywords_en"
+                            })
+                            logger.info(f"✅ 提取到英文关键词: {en_keys}")
                     
-                    # 如果提取到中文关键词，添加到搜索列表
-                    if zh_keys:
+                    # 如果没有提取到英文关键词，使用原始查询
+                    if not search_queries:
                         search_queries.append({
-                            "query": zh_keys,
-                            "language": "zh",
-                            "source": "keywords_zh"
-                        })
-                        logger.info(f"✅ 提取到中文关键词: {zh_keys}")
-                    
-                    # 如果提取到英文关键词，添加到搜索列表
-                    if en_keys:
-                        search_queries.append({
-                            "query": en_keys,
+                            "query": query,
                             "language": "en",
-                            "source": "keywords_en"
+                            "source": "original"
                         })
-                        logger.info(f"✅ 提取到英文关键词: {en_keys}")
+                else:
+                    # 中文查询：使用中英文关键词
+                    if keywords_dict:
+                        zh_keys = keywords_dict.get("zh_keys", "").strip()
+                        en_keys = keywords_dict.get("en_keys", "").strip()
+                        
+                        # 如果提取到中文关键词，添加到搜索列表
+                        if zh_keys:
+                            search_queries.append({
+                                "query": zh_keys,
+                                "language": "zh",
+                                "source": "keywords_zh"
+                            })
+                            logger.info(f"✅ 提取到中文关键词: {zh_keys}")
+                        
+                        # 如果提取到英文关键词，添加到搜索列表
+                        if en_keys:
+                            search_queries.append({
+                                "query": en_keys,
+                                "language": "en",
+                                "source": "keywords_en"
+                            })
+                            logger.info(f"✅ 提取到英文关键词: {en_keys}")
                 
                 # 如果关键词提取失败或没有提取到关键词，使用原始查询
                 if not search_queries:
@@ -470,46 +491,62 @@ class MomoSearchHandler(BaseHandler):
                     
                     logger.info(f"✅ 翻译搜索完成: 获得{len(english_search_results)}个新结果，总计{len(all_search_results)}个")
             
-            # 步骤2: 使用 DuckDuckGo 进行补充搜索（中英文各20条）
+            # 步骤2: 使用 DuckDuckGo 进行补充搜索
             # 准备 DuckDuckGo 搜索查询
             ddg_queries = []
             
-            # 如果有中文关键词，使用中文关键词；否则使用原始查询
-            if keywords_dict and keywords_dict.get("zh_keys"):
-                ddg_queries.append({
-                    "query": keywords_dict.get("zh_keys"),
-                    "language": "zh",
-                    "source": "ddg_zh"
-                })
-            elif detected_lang == "zh":
-                ddg_queries.append({
-                    "query": query,
-                    "language": "zh",
-                    "source": "ddg_zh"
-                })
-            
-            # 如果有英文关键词，使用英文关键词；否则尝试翻译
-            if keywords_dict and keywords_dict.get("en_keys"):
-                ddg_queries.append({
-                    "query": keywords_dict.get("en_keys"),
-                    "language": "en",
-                    "source": "ddg_en"
-                })
-            elif detected_lang == "en":
-                ddg_queries.append({
-                    "query": query,
-                    "language": "en",
-                    "source": "ddg_en"
-                })
-            elif detected_lang == "zh":
-                # 中文查询尝试翻译为英文
-                translated_query = translate_text(query, source="zh", target="en")
-                if translated_query:
+            if detected_lang == "en":
+                # 英语查询：只使用英文，且增加结果数量到40
+                if keywords_dict and keywords_dict.get("en_keys"):
                     ddg_queries.append({
-                        "query": translated_query,
+                        "query": keywords_dict.get("en_keys"),
                         "language": "en",
-                        "source": "ddg_en_translated"
+                        "source": "ddg_en",
+                        "max_results": 40  # 英语查询增加到40条
                     })
+                else:
+                    ddg_queries.append({
+                        "query": query,
+                        "language": "en",
+                        "source": "ddg_en",
+                        "max_results": 40  # 英语查询增加到40条
+                    })
+            else:
+                # 中文查询：使用中英文
+                # 如果有中文关键词，使用中文关键词；否则使用原始查询
+                if keywords_dict and keywords_dict.get("zh_keys"):
+                    ddg_queries.append({
+                        "query": keywords_dict.get("zh_keys"),
+                        "language": "zh",
+                        "source": "ddg_zh",
+                        "max_results": 20
+                    })
+                elif detected_lang == "zh":
+                    ddg_queries.append({
+                        "query": query,
+                        "language": "zh",
+                        "source": "ddg_zh",
+                        "max_results": 20
+                    })
+                
+                # 如果有英文关键词，使用英文关键词；否则尝试翻译
+                if keywords_dict and keywords_dict.get("en_keys"):
+                    ddg_queries.append({
+                        "query": keywords_dict.get("en_keys"),
+                        "language": "en",
+                        "source": "ddg_en",
+                        "max_results": 40  # 英语查询增加到40条
+                    })
+                elif detected_lang == "zh":
+                    # 中文查询尝试翻译为英文
+                    translated_query = translate_text(query, source="zh", target="en")
+                    if translated_query:
+                        ddg_queries.append({
+                            "query": translated_query,
+                            "language": "en",
+                            "source": "ddg_en_translated",
+                            "max_results": 40  # 英语查询增加到40条
+                        })
             
             # 执行 DuckDuckGo 搜索
             for idx, ddg_item in enumerate(ddg_queries):
@@ -527,9 +564,12 @@ class MomoSearchHandler(BaseHandler):
                 
                 logger.info(f"🦆 开始DuckDuckGo搜索: {ddg_item['query']} (语言: {ddg_item['language']})")
                 
+                # 根据max_results参数决定结果数量（英语40，中文20）
+                max_results = ddg_item.get("max_results", 20)
+                
                 ddg_results = await search_duckduckgo(
                     query=ddg_item['query'],
-                    max_results=20,
+                    max_results=max_results,
                     language=ddg_item['language'],
                     time_range=self.searxng_time_range if self.searxng_time_range else None
                 )
