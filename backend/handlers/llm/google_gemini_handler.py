@@ -178,7 +178,8 @@ class GoogleGeminiHandler(BaseHandler):
             return
         
         try:
-            search_results = await momo_search_handler.search_with_progress(
+            # Momo 搜索返回 (relevant_docs, citations) 元组
+            search_results, citations = await momo_search_handler.search_with_progress(
                 user_query,
                 mode=momo_search_quality,
                 progress_callback=progress_callback
@@ -186,6 +187,7 @@ class GoogleGeminiHandler(BaseHandler):
             
             if search_results and len(search_results) > 0:
                 logger.info(f"✅ 搜索完成，获得 {len(search_results)} 个结果")
+                logger.info(f"📚 引用信息长度: {len(citations)}")
                 
                 # 构建搜索上下文
                 from datetime import datetime
@@ -195,10 +197,10 @@ class GoogleGeminiHandler(BaseHandler):
                 
                 for idx, doc in enumerate(search_results[:15], 1):  # 限制15个结果
                     search_context += f"[网页 {idx} 开始]\n\n"
-                    search_context += f"标题: {doc.get('title', 'N/A')}\n\n"
-                    search_context += f"链接: {doc.get('url', 'N/A')}\n\n"
+                    search_context += f"标题: {doc.title if hasattr(doc, 'title') else 'N/A'}\n\n"
+                    search_context += f"链接: {doc.url if hasattr(doc, 'url') else 'N/A'}\n\n"
                     
-                    content = doc.get('content', '')
+                    content = doc.content if hasattr(doc, 'content') else ''
                     if content:
                         # 限制每个文档的内容长度
                         content = content[:1000] if len(content) > 1000 else content
