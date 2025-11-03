@@ -237,12 +237,6 @@ onMounted(async () => {
   height: 100%;
 }
 
-.admin-container :deep(.ant-layout-content) {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
 
 .admin-header {
   background: #FFFFFF;
@@ -269,9 +263,9 @@ onMounted(async () => {
 
 .admin-content {
   padding: 24px;
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: 100%;
 }
 
 .admin-content :deep(.ant-card) {

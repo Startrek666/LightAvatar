@@ -255,10 +255,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                         
                         elif chunk_type == "search_progress":
                             # Send search progress update
-                            await websocket_manager.send_json(session_id, {
-                                "type": "search_progress",
-                                "data": chunk_data
-                            })
+                            try:
+                                await websocket_manager.send_json(session_id, {
+                                    "type": "search_progress",
+                                    "data": chunk_data
+                                })
+                            except Exception as e:
+                                logger.warning(f"[WebSocket] 发送搜索进度失败（可能已断开）: {e}")
+                                # 不抛出异常，避免中断搜索流程
+                        
+                        elif chunk_type == "search_results":
+                            # Send search results (titles and URLs)
+                            try:
+                                await websocket_manager.send_json(session_id, {
+                                    "type": "search_results",
+                                    "data": chunk_data
+                                })
+                            except Exception as e:
+                                logger.warning(f"[WebSocket] 发送搜索结果失败（可能已断开）: {e}")
                         
                         elif chunk_type == "video_chunk":
                             # Send video chunk as binary

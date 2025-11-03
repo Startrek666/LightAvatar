@@ -1,6 +1,7 @@
 <template>
   <a-modal
-    v-model:open="internalVisible"
+    :open="internalVisible"
+    @update:open="handleModalUpdate"
     :title="null"
     :footer="null"
     :closable="true"
@@ -29,8 +30,32 @@
 
       <!-- 搜索查询 -->
       <div class="search-query">
-        <div class="query-icon">🔎</div>
         <div class="query-text">{{ searchQuery }}</div>
+      </div>
+
+      <!-- 搜索结果网页标题列表 -->
+      <div v-if="searchResults.length > 0" class="search-results">
+        <div class="results-title">搜索到的网页：</div>
+        <div class="results-list-container">
+          <div class="results-list">
+            <a
+              v-for="(result, index) in searchResults"
+              :key="index"
+              :href="result.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="result-item"
+            >
+              <div class="result-icon">
+                <span class="icon-placeholder">{{ getDomainInitial(result.url) }}</span>
+              </div>
+              <div class="result-content">
+                <div class="result-title-text">{{ result.title }}</div>
+                <div class="result-domain">{{ getDomainName(result.url) }}</div>
+              </div>
+            </a>
+          </div>
+        </div>
       </div>
 
       <!-- 进度步骤列表 -->
@@ -126,6 +151,7 @@ const steps = ref<Step[]>([
 const searchCompleted = ref(false)
 const resultCount = ref(0)
 const autoCloseCountdown = ref(0)
+const searchResults = ref<Array<{ title: string; url: string }>>([])
 let countdownTimer: number | null = null
 
 // 步骤映射：将后端消息映射到前端步骤
@@ -235,6 +261,11 @@ const startAutoClose = () => {
   }, 1000)
 }
 
+// 处理Modal更新
+const handleModalUpdate = (val: boolean) => {
+  internalVisible.value = val
+}
+
 // 关闭弹窗
 const handleClose = () => {
   if (countdownTimer) {
@@ -254,6 +285,7 @@ const reset = () => {
   searchCompleted.value = false
   resultCount.value = 0
   autoCloseCountdown.value = 0
+  searchResults.value = []
   
   // 第一个步骤立即激活
   if (steps.value[0]) {
@@ -263,6 +295,33 @@ const reset = () => {
   if (countdownTimer) {
     clearInterval(countdownTimer)
     countdownTimer = null
+  }
+}
+
+// 设置搜索结果（供父组件调用）
+const setSearchResults = (results: Array<{ title: string; url: string }>) => {
+  searchResults.value = results
+}
+
+// 获取域名首字母（用于图标占位）
+const getDomainInitial = (url: string): string => {
+  if (!url) return '?'
+  try {
+    const domain = new URL(url).hostname.replace('www.', '')
+    return domain.charAt(0).toUpperCase()
+  } catch {
+    return '?'
+  }
+}
+
+// 获取域名名称
+const getDomainName = (url: string): string => {
+  if (!url) return ''
+  try {
+    const domain = new URL(url).hostname.replace('www.', '')
+    return domain
+  } catch {
+    return url
   }
 }
 
@@ -276,21 +335,20 @@ watch(() => props.visible, (newVal) => {
 // 暴露方法供父组件调用
 defineExpose({
   updateProgress,
-  reset
+  reset,
+  setSearchResults
 })
 </script>
 
 <style scoped>
-.search-progress-modal {
-  :deep(.ant-modal-content) {
-    border-radius: 16px;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-  }
+.search-progress-modal :deep(.ant-modal-content) {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
 
-  :deep(.ant-modal-body) {
-    padding: 0;
-  }
+.search-progress-modal :deep(.ant-modal-body) {
+  padding: 0;
 }
 
 .search-progress-container {
@@ -307,77 +365,175 @@ defineExpose({
   padding: 24px 32px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   background: white;
+}
 
-  .header-title {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 
-    .title-icon {
-      font-size: 24px;
-    }
+.title-icon {
+  font-size: 24px;
+}
 
-    .title-text {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1a1a1a;
-    }
-  }
+.title-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
 
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 
-    .countdown-text {
-      font-size: 12px;
-      color: #8c8c8c;
-      font-weight: 400;
-    }
+.countdown-text {
+  font-size: 12px;
+  color: #8c8c8c;
+  font-weight: 400;
+}
 
-    .close-button {
-      width: 32px;
-      height: 32px;
-      border: none;
-      background: transparent;
-      border-radius: 8px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-      color: #8c8c8c;
+.close-button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  color: #8c8c8c;
+}
 
-      &:hover {
-        background: #f5f5f5;
-        color: #1a1a1a;
-      }
+.close-button:hover {
+  background: #f5f5f5;
+  color: #1a1a1a;
+}
 
-      span {
-        font-size: 24px;
-        line-height: 1;
-      }
-    }
-  }
+.close-button span {
+  font-size: 24px;
+  line-height: 1;
 }
 
 .search-query {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 20px 32px;
+  padding: 20px 32px 16px;
+  background: white;
+}
+
+.query-text {
+  font-size: 16px;
+  color: #1a1a1a;
+  font-weight: 500;
+  flex: 1;
+}
+
+.search-results {
+  padding: 16px 32px 20px;
   background: white;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+}
 
-  .query-icon {
-    font-size: 20px;
-  }
+.results-title {
+  font-size: 13px;
+  color: #8c8c8c;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
 
-  .query-text {
-    font-size: 16px;
-    color: #1a1a1a;
-    font-weight: 500;
-  }
+.results-list-container {
+  height: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.result-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  transition: all 0.2s;
+  text-decoration: none;
+  color: inherit;
+  background: white;
+  cursor: pointer;
+}
+
+.result-item:last-child {
+  border-bottom: none;
+}
+
+.result-item:hover {
+  background: #f5f5f5;
+}
+
+.result-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.icon-placeholder {
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.result-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-title-text {
+  color: #1a1a1a;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.result-item:hover .result-title-text {
+  color: #1890ff;
+}
+
+.result-domain {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .progress-steps {
@@ -512,23 +668,23 @@ defineExpose({
   padding: 24px 32px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   background: white;
+}
 
-  .result-summary {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    justify-content: center;
+.result-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+}
 
-    .result-icon {
-      font-size: 20px;
-    }
+.result-icon {
+  font-size: 20px;
+}
 
-    .result-text {
-      font-size: 15px;
-      color: #52c41a;
-      font-weight: 500;
-    }
-  }
+.result-text {
+  font-size: 15px;
+  color: #52c41a;
+  font-weight: 500;
 }
 
 @keyframes fadeIn {

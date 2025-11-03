@@ -875,6 +875,15 @@ const handleWebSocketMessage = (data: any) => {
       processSearchProgressQueue()
     }
   }
+  else if (data.type === 'search_results') {
+    // Search results - 搜索到的网页标题和链接
+    console.log('📚 [handleWebSocketMessage] 搜索结果:', data.data)
+    
+    if (searchProgressModalRef.value && data.data.results) {
+      searchProgressModalRef.value.setSearchResults(data.data.results)
+      console.log(`✅ 已将 ${data.data.results.length} 个搜索结果传递给弹窗`)
+    }
+  }
   else if (data.type === 'interrupt_ack') {
     // 中断确认
     console.log('🛑 [handleWebSocketMessage] 收到中断确认')

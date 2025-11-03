@@ -419,9 +419,9 @@ class MomoSearchHandler(BaseHandler):
             for idx, search_item in enumerate(search_queries):
                 step_num = idx + 1
                 if progress_callback:
-                    await progress_callback(step_num, total_steps, f"🔍 正在搜索: {search_item['query']} ({search_item['source']})")
+                    await progress_callback(step_num, total_steps, f"正在搜索: {search_item['query']} ({search_item['source']})")
                 
-                logger.info(f"🔍 开始搜索: {search_item['query']} (语言: {search_item['language']}, 来源: {search_item['source']})")
+                logger.info(f"开始搜索: {search_item['query']} (语言: {search_item['language']}, 来源: {search_item['source']})")
                 
                 search_results = search_searxng(
                     query=search_item['query'],

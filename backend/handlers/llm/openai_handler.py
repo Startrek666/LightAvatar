@@ -141,7 +141,8 @@ class OpenAIHandler(BaseHandler):
         search_mode: str = "simple",  # "simple" 或 "advanced"
         momo_search_handler = None,
         momo_search_quality: str = "speed",  # "speed" 或 "quality"
-        progress_callback = None
+        progress_callback = None,
+        search_results_callback = None
     ) -> AsyncGenerator[str, None]:
         """
         Generate streaming response with optional web search
@@ -247,7 +248,12 @@ class OpenAIHandler(BaseHandler):
             if use_search:
                 # 高级搜索模式 (Momo Search)
                 if search_mode == "advanced" and momo_search_handler:
-                    logger.info(f"🔍 执行Momo高级搜索: {text} (模式: {momo_search_quality})")
+                    # 检查是否使用多Agent模式
+                    use_multi_agent = getattr(momo_search_handler, 'use_multi_agent', False) if momo_search_handler else False
+                    if use_multi_agent:
+                        logger.info(f"🤖 [多Agent模式] 执行Momo高级搜索: {text} (质量: {momo_search_quality})")
+                    else:
+                        logger.info(f"⚙️ [管道模式] 执行Momo高级搜索: {text} (质量: {momo_search_quality})")
                     
                     # 执行Momo搜索
                     from datetime import datetime
@@ -258,6 +264,10 @@ class OpenAIHandler(BaseHandler):
                         mode=momo_search_quality,
                         progress_callback=progress_callback
                     )
+                    
+                    # 发送搜索结果到前端（用于弹窗显示）
+                    if relevant_docs and search_results_callback:
+                        await search_results_callback(relevant_docs)
                     
                     if relevant_docs:
                         logger.info(f"\n{'*'*80}")

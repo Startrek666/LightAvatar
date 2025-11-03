@@ -532,7 +532,7 @@ class SearchOrchestrator:
                 for sq in search_queries:
                     await self._report_progress(
                         current_step,
-                        f"🔍 正在搜索: {sq['query']} ({sq['source']})"
+                        f"正在搜索: {sq['query']} ({sq['source']})"
                     )
                     # 单个查询搜索
                     single_result = await search_agent.process({"queries": [sq]})

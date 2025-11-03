@@ -163,6 +163,7 @@ class GoogleGeminiHandler(BaseHandler):
         momo_search_handler=None,
         momo_search_quality: str = "speed",
         progress_callback=None,
+        search_results_callback=None,
         **kwargs
     ) -> AsyncGenerator[str, None]:
         """
@@ -190,13 +191,21 @@ class GoogleGeminiHandler(BaseHandler):
             return
         
         # 执行搜索（仅支持高级搜索）
-        logger.info(f"🔍 开始 Momo 高级搜索 (质量: {momo_search_quality})")
+        # 检查是否使用多Agent模式
+        use_multi_agent = getattr(momo_search_handler, 'use_multi_agent', False) if momo_search_handler else False
+        if use_multi_agent:
+            logger.info(f"🤖 [多Agent模式] 开始 Momo 高级搜索 (质量: {momo_search_quality})")
+        else:
+            logger.info(f"⚙️ [管道模式] 开始 Momo 高级搜索 (质量: {momo_search_quality})")
         
         if not momo_search_handler:
             logger.warning("⚠️ Momo 搜索处理器未提供，跳过搜索")
             async for chunk in self.stream_response(text, conversation_history):
                 yield chunk
             return
+        
+        # 保存引用信息
+        citations_text = ""
         
         try:
             # Momo 搜索返回 (relevant_docs, citations) 元组
@@ -205,6 +214,13 @@ class GoogleGeminiHandler(BaseHandler):
                 mode=momo_search_quality,
                 progress_callback=progress_callback
             )
+            
+            # 保存引用信息用于最后添加
+            citations_text = citations
+            
+            # 发送搜索结果到前端（用于弹窗显示）
+            if search_results and search_results_callback:
+                await search_results_callback(search_results)
             
             if search_results and len(search_results) > 0:
                 logger.info(f"✅ 搜索完成，获得 {len(search_results)} 个结果")
@@ -254,6 +270,11 @@ class GoogleGeminiHandler(BaseHandler):
                 # 使用增强后的消息进行生成
                 async for chunk in self.stream_response(enhanced_text, conversation_history):
                     yield chunk
+                
+                # 在响应结束后添加引用信息
+                if citations_text:
+                    logger.info(f"📚 添加引用信息到响应末尾")
+                    yield f"\n\n**📚 参考来源：**\n{citations_text}"
             else:
                 logger.warning("⚠️ 搜索未返回结果，使用原始消息")
                 async for chunk in self.stream_response(text, conversation_history):

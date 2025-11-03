@@ -403,6 +403,8 @@ class Session:
             search_quality: 搜索质量 ("speed" 或 "quality"，仅用于advanced模式)
         """
         self.update_activity()
+        # 标记为处理中，防止WebSocket断开时Session被清理
+        self.is_processing = True
         logger.info(f"[Session {self.session_id}] process_text_stream 开始处理")
         logger.info(f"  - 输入文本长度: {len(text)}")
         logger.info(f"  - 输入文本预览: {text[:100]}")
@@ -642,19 +644,51 @@ class Session:
             chunk_received = 0
             logger.info(f"[Session {self.session_id}] 开始调用 LLM stream_response (use_search={use_search})")
             
-            # 搜索进度回调
+            # 搜索进度回调（添加错误处理，避免Session清理后继续发送）
             async def search_progress_callback(step: int, total: int, message: str):
-                await callback("search_progress", {
-                    "step": step,
-                    "total": total,
-                    "message": message
-                })
+                try:
+                    # 检查Session是否仍然有效
+                    if not self.is_connected or self.is_interrupted:
+                        logger.debug(f"[搜索进度] Session {self.session_id} 已断开或中断，跳过进度更新")
+                        return
+                    await callback("search_progress", {
+                        "step": step,
+                        "total": total,
+                        "message": message
+                    })
+                except Exception as e:
+                    logger.warning(f"[搜索进度] 发送进度失败（可能已断开）: {e}")
+                    # 不抛出异常，避免中断搜索流程
+            
+            # 搜索结果回调（用于发送搜索到的网页标题和链接）
+            async def search_results_callback(results: list):
+                try:
+                    if not self.is_connected or self.is_interrupted:
+                        logger.debug(f"[搜索结果] Session {self.session_id} 已断开或中断，跳过结果发送")
+                        return
+                    # 只发送标题和URL
+                    search_results_data = [
+                        {"title": doc.title if hasattr(doc, 'title') else 'N/A', 
+                         "url": doc.url if hasattr(doc, 'url') else ''}
+                        for doc in results[:10]  # 最多发送10个结果
+                    ]
+                    await callback("search_results", {
+                        "results": search_results_data
+                    })
+                    logger.info(f"[搜索结果] 已发送 {len(search_results_data)} 个搜索结果到前端")
+                except Exception as e:
+                    logger.warning(f"[搜索结果] 发送结果失败: {e}")
             
             # 根据是否启用搜索选择调用方式
             if use_search:
                 # 只支持高级搜索（Momo Search）
                 if search_mode == "advanced" and self.momo_search_handler:
-                    logger.info(f"使用高级搜索 (模式: {search_quality})")
+                    # 检查是否使用多Agent模式
+                    use_multi_agent = getattr(self.momo_search_handler, 'use_multi_agent', False)
+                    if use_multi_agent:
+                        logger.info(f"🤖 [多Agent模式] 使用高级搜索 (质量: {search_quality})")
+                    else:
+                        logger.info(f"⚙️ [管道模式] 使用高级搜索 (质量: {search_quality})")
                     stream = self.llm_handler.stream_response_with_search(
                         text, 
                         self.conversation_history,
@@ -663,7 +697,8 @@ class Session:
                         search_mode="advanced",
                         momo_search_handler=self.momo_search_handler,
                         momo_search_quality=search_quality,
-                        progress_callback=search_progress_callback
+                        progress_callback=search_progress_callback,
+                        search_results_callback=search_results_callback
                     )
                 else:
                     # 如果高级搜索不可用，回退到普通模式
@@ -811,6 +846,15 @@ class Session:
         """
         try:
             logger.info(f"Preloading sentence: {sentence[:50]}...")
+            
+            # 检查handlers是否存在（防止Session被清理后仍尝试生成）
+            if not self.tts_handler:
+                logger.error(f"❌ TTS handler不可用，Session可能已被清理")
+                return None
+            
+            if not self.avatar_handler:
+                logger.error(f"❌ Avatar handler不可用，Session可能已被清理")
+                return None
             
             # TTS synthesis
             audio_bytes = await self.tts_handler.synthesize(sentence)
@@ -1175,15 +1219,24 @@ class SessionManager:
             if session_id in self.sessions:
                 session = self.sessions[session_id]
                 
+                # 检查是否有正在运行的任务（包括pending_video_tasks和其他后台任务）
+                has_active_tasks = (
+                    session.is_processing or 
+                    (hasattr(session, 'pending_video_tasks') and session.pending_video_tasks) or
+                    (hasattr(session, 'current_tasks') and any(not t.done() for t in session.current_tasks))
+                )
+                
                 # 如果会话已完成处理（没有正在进行的任务），直接清理，避免刷新后冲突
-                if not session.is_processing:
+                if not has_active_tasks:
                     logger.info(f"🔌 Session {session_id} 已完成处理，直接清理（而非保留）")
                     await self._remove_session_internal(session_id)
                 else:
                     # 如果还在处理中，保留等待重连
                     session.is_connected = False
                     session.disconnected_at = datetime.now()
-                    logger.info(f"🔌 Session {session_id} 处理中断开，保留Session数据等待重连")
+                    pending_count = len(session.pending_video_tasks) if hasattr(session, 'pending_video_tasks') else 0
+                    current_count = len([t for t in session.current_tasks if not t.done()]) if hasattr(session, 'current_tasks') else 0
+                    logger.info(f"🔌 Session {session_id} 处理中断开，保留Session数据等待重连（活跃任务: processing={session.is_processing}, pending_videos={pending_count}, current_tasks={current_count}）")
     
     async def interrupt_session(self, session_id: str) -> bool:
         """中断Session的当前任务处理"""
