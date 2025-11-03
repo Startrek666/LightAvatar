@@ -224,8 +224,24 @@ onMounted(async () => {
 
 <style scoped>
 .admin-container {
-  min-height: 100vh;
+  height: 100vh;
   background: #F8F6F2;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-container :deep(.ant-layout) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.admin-container :deep(.ant-layout-content) {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .admin-header {
@@ -233,6 +249,7 @@ onMounted(async () => {
   border-bottom: 2px solid #C9A961;
   box-shadow: 0 4px 12px rgba(201, 169, 97, 0.08);
   padding: 0 24px;
+  flex-shrink: 0;
 }
 
 .header-content {
@@ -252,7 +269,9 @@ onMounted(async () => {
 
 .admin-content {
   padding: 24px;
-  min-height: calc(100vh - 64px);
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .admin-content :deep(.ant-card) {

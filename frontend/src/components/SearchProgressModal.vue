@@ -162,7 +162,7 @@ const updateProgress = (message: string, step: number, total: number) => {
     }
     
     // 完成所有步骤
-    steps.value.forEach((s, idx) => {
+    steps.value.forEach((s) => {
       if (s.status === 'active') {
         s.status = 'completed'
       }
