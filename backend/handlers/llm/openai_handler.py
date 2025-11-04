@@ -259,7 +259,7 @@ class OpenAIHandler(BaseHandler):
                     from datetime import datetime
                     cur_date = datetime.today().strftime('%Y-%m-%d')
                     
-                    relevant_docs, citations = await momo_search_handler.search_with_progress(
+                    relevant_docs, citations, thinking_results = await momo_search_handler.search_with_progress(
                         query=text,
                         mode=momo_search_quality,
                         progress_callback=progress_callback
@@ -274,18 +274,38 @@ class OpenAIHandler(BaseHandler):
                         logger.info(f"📚 构建Momo搜索上下文 (共 {len(relevant_docs)} 个结果)")
                         logger.info(f"{'*'*80}\n")
                         
-                        # 构建Momo风格的搜索上下文
-                        context = f"# 以下内容是基于用户发送的消息的搜索结果（今天是{cur_date}）:\n\n"
+                        # 使用思考链构建深度思考的 Prompt
+                        from backend.handlers.llm.thinking_chain import build_enhanced_search_prompt
                         
-                        for i, doc in enumerate(relevant_docs, 1):
-                            context += f"[网页 {i} 开始]\n"
-                            context += f"标题: {doc.title}\n"
-                            context += f"链接: {doc.url}\n"
-                            content_text = doc.content if doc.content else doc.snippet
-                            context += f"内容: {content_text}\n"
-                            context += f"[网页 {i} 结束]\n\n"
+                        # 根据搜索质量模式决定是否使用思考链
+                        # quality（深度）模式：使用思考链，进行深度思考
+                        # speed（快速）模式：使用简单模式，快速回答
+                        use_thinking_chain = (momo_search_quality == "quality")
                         
-                        context += """在回答时，请注意以下几点：
+                        if use_thinking_chain:
+                            logger.info(f"🧠 [深度模式] 使用深度思考链生成回答 (质量: {momo_search_quality})")
+                            thinking_prompt = build_enhanced_search_prompt(
+                                user_query=text,
+                                search_results=relevant_docs,
+                                current_date=cur_date,
+                                use_thinking_chain=True,
+                                thinking_results=thinking_results
+                            )
+                            context = thinking_prompt
+                        else:
+                            # 快速模式：使用简单 Prompt
+                            logger.info(f"⚡ [快速模式] 使用简单模式生成回答 (质量: {momo_search_quality})")
+                            context = f"# 以下内容是基于用户发送的消息的搜索结果（今天是{cur_date}）:\n\n"
+                            
+                            for i, doc in enumerate(relevant_docs, 1):
+                                context += f"[网页 {i} 开始]\n"
+                                context += f"标题: {doc.title}\n"
+                                context += f"链接: {doc.url}\n"
+                                content_text = doc.content if doc.content else doc.snippet
+                                context += f"内容: {content_text}\n"
+                                context += f"[网页 {i} 结束]\n\n"
+                            
+                            context += """在回答时，请注意以下几点：
 - 在适当的情况下在句子末尾引用上下文，按照引用编号[citation:X]的格式在答案中对应部分引用上下文
 - 如果一句话源自多个上下文，请列出所有相关的引用编号，例如[citation:3][citation:5]
 - 并非搜索结果的所有内容都与用户的问题密切相关，你需要结合问题，对搜索结果进行甄别、筛选
@@ -305,6 +325,8 @@ class OpenAIHandler(BaseHandler):
                             'role': 'system',
                             'content': context
                         })
+                        
+                        logger.info(f"📝 搜索上下文已构建 (长度: {len(context)}, 思考链: {use_thinking_chain})")
                         
                         # 详细记录
                         logger.info(f"📝 Momo搜索上下文已注入 (长度: {len(context)}字符)")

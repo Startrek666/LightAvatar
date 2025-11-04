@@ -85,12 +85,18 @@ export default {
       resultsCount: '个结果',
       steps: {
         started: '多Agent搜索工作已启动',
+        understandingProblem: '理解问题',
         extractingKeywords: '提取关键词',
         chineseSearch: '初步进行中文搜索',
         englishSearch: '初步进行英文搜索',
         expandChinese: '扩充中文搜索',
         supplementEnglish: '补充英语资料',
         analyzing: '正在分析信息',
+        analyzingMaterials: '分析资料',
+        deepThinking: '深度思考与推理',
+        crawling: '深度爬取内容',
+        splitting: '文档分块和二次检索',
+        synthesizing: '综合信息，生成回答',
         completed: '搜索完成'
       },
       completedWithResults: '搜索完成，获得 {count} 个结果'

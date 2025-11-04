@@ -225,6 +225,30 @@ class MomoSearchHandler(BaseHandler):
         """初始化所有Agent"""
         self.agents = {}
         
+        # 深度思考相关Agent（使用智谱清言）
+        from .momo_agents import ProblemUnderstandingAgent, MaterialAnalysisAgent, DeepThinkingAgent
+        
+        # 问题理解Agent（仅深度模式）
+        self.agents["problem_understanding"] = ProblemUnderstandingAgent(
+            zhipu_api_key=self.zhipu_api_key,
+            zhipu_model=self.zhipu_model
+        )
+        
+        # 资料分析Agent（仅深度模式）
+        # 使用更高的相似度阈值（0.5）来筛选更相关的文档进行分析
+        analysis_score_threshold = self.config.get('analysis_score_threshold', 0.5)
+        self.agents["material_analysis"] = MaterialAnalysisAgent(
+            zhipu_api_key=self.zhipu_api_key,
+            zhipu_model=self.zhipu_model,
+            analysis_score_threshold=analysis_score_threshold
+        )
+        
+        # 深度思考Agent（仅深度模式）
+        self.agents["deep_thinking"] = DeepThinkingAgent(
+            zhipu_api_key=self.zhipu_api_key,
+            zhipu_model=self.zhipu_model
+        )
+        
         # 关键词提取Agent
         if self.enable_keyword_extraction:
             self.agents["keyword_extractor"] = KeywordExtractionAgent(
@@ -284,7 +308,7 @@ class MomoSearchHandler(BaseHandler):
         query: str,
         mode: str = "speed",
         progress_callback: Optional[callable] = None
-    ) -> tuple[List[SearchDocument], str]:
+    ) -> tuple[List[SearchDocument], str, dict]:
         """
         执行搜索并报告进度
         
@@ -294,21 +318,22 @@ class MomoSearchHandler(BaseHandler):
             progress_callback: 进度回调函数
         
         Returns:
-            (相关文档列表, 引用信息)
+            (相关文档列表, 引用信息, 思考结果字典)
         """
         # 如果启用多Agent模式，使用Agent协作
         if self.use_multi_agent and hasattr(self, 'agents'):
             return await self._search_with_agents(query, mode, progress_callback)
         
-        # 否则使用传统管道模式
-        return await self._search_with_pipeline(query, mode, progress_callback)
+        # 否则使用传统管道模式（返回空的思考结果）
+        docs, citations = await self._search_with_pipeline(query, mode, progress_callback)
+        return docs, citations, {}
     
     async def _search_with_agents(
         self,
         query: str,
         mode: str = "speed",
         progress_callback: Optional[callable] = None
-    ) -> tuple[List[SearchDocument], str]:
+    ) -> tuple[List[SearchDocument], str, dict]:
         """使用多Agent协作执行搜索"""
         try:
             logger.info(f"🤖 [多Agent模式] 开始执行搜索: 查询='{query}', 模式={mode}")
@@ -323,18 +348,20 @@ class MomoSearchHandler(BaseHandler):
             )
             
             # 执行多Agent协作搜索
-            relevant_docs, citations = await orchestrator.execute(
+            relevant_docs, citations, thinking_results = await orchestrator.execute(
                 query=query,
                 mode=mode,
                 detected_lang=detected_lang
             )
             
             logger.info(f"✅ [多Agent模式] 搜索完成: 返回 {len(relevant_docs)} 个文档")
-            return relevant_docs, citations
+            if thinking_results:
+                logger.info(f"🧠 思考结果: {list(thinking_results.keys())}")
+            return relevant_docs, citations, thinking_results
             
         except Exception as e:
             logger.error(f"❌ 多Agent搜索失败: {e}", exc_info=True)
-            return [], ""
+            return [], "", {}
     
     async def _search_with_pipeline(
         self,
@@ -546,7 +573,7 @@ class MomoSearchHandler(BaseHandler):
                             "language": "en",
                             "source": "ddg_en_translated",
                             "max_results": 40  # 英语查询增加到40条
-                        })
+                    })
             
             # 执行 DuckDuckGo 搜索
             for idx, ddg_item in enumerate(ddg_queries):

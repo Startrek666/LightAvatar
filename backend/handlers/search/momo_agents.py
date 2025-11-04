@@ -384,6 +384,269 @@ class CrawlerAgent(BaseAgent):
             }
 
 
+class ProblemUnderstandingAgent(BaseAgent):
+    """问题理解Agent - 深度理解用户问题"""
+    
+    def __init__(self, zhipu_api_key: str, zhipu_model: str = "glm-4.5-flash"):
+        super().__init__(
+            name="problem_understanding",
+            description="深度理解用户问题"
+        )
+        self.zhipu_api_key = zhipu_api_key
+        self.zhipu_model = zhipu_model
+    
+    async def process(self, input_data: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """理解问题"""
+        self.set_status(AgentStatus.PROCESSING)
+        
+        try:
+            query = input_data.get("query", "")
+            if not query:
+                raise ValueError("查询为空")
+            
+            from datetime import datetime
+            from .momo_utils import call_zhipu_llm
+            
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            
+            prompt = f"""今天是{current_date}。请深入理解用户的问题，分析问题的核心需求、背景和上下文。
+
+用户问题：{query}
+
+请从以下角度进行分析：
+1. 用户的核心需求是什么？
+2. 问题的背景和上下文是什么？
+3. 用户可能想要什么样的回答？（信息、分析、建议、对比等）
+4. 这个问题涉及哪些关键概念和领域？
+
+请用简洁清晰的语言输出你的理解，控制在200字以内。"""
+            
+            logger.info(f"[{self.name}] 开始理解问题: {query}")
+            understanding = call_zhipu_llm(
+                prompt=prompt,
+                api_key=self.zhipu_api_key,
+                model=self.zhipu_model,
+                temperature=0.7,
+                max_tokens=500
+            )
+            
+            if understanding:
+                result = {
+                    "success": True,
+                    "understanding": understanding
+                }
+                logger.info(f"✅ [{self.name}] 理解完成")
+            else:
+                result = {
+                    "success": False,
+                    "understanding": None,
+                    "message": "问题理解失败"
+                }
+                logger.warning(f"⚠️ [{self.name}] 理解失败")
+            
+            self.result = result
+            self.set_status(AgentStatus.COMPLETED)
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ [{self.name}] 处理失败: {e}", exc_info=True)
+            self.set_status(AgentStatus.FAILED)
+            return {
+                "success": False,
+                "understanding": None,
+                "message": str(e)
+            }
+
+
+class MaterialAnalysisAgent(BaseAgent):
+    """资料分析Agent - 批判性分析搜索结果"""
+    
+    def __init__(self, zhipu_api_key: str, zhipu_model: str = "glm-4.5-flash", analysis_score_threshold: float = 0.5):
+        super().__init__(
+            name="material_analysis",
+            description="批判性分析搜索结果"
+        )
+        self.zhipu_api_key = zhipu_api_key
+        self.zhipu_model = zhipu_model
+        self.analysis_score_threshold = analysis_score_threshold  # 资料分析的相似度阈值
+    
+    async def process(self, input_data: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """分析资料"""
+        self.set_status(AgentStatus.PROCESSING)
+        
+        try:
+            query = input_data.get("query", "")
+            documents = input_data.get("documents", [])
+            understanding = input_data.get("understanding", "")  # 从前面的步骤获取
+            
+            if not query or not documents:
+                raise ValueError("查询或文档为空")
+            
+            from .momo_utils import call_zhipu_llm
+            
+            # 根据相似度阈值进一步筛选文档（不限制数量，但提高质量）
+            filtered_docs = []
+            for doc in documents:
+                score = getattr(doc, 'score', 0.0)
+                if score >= self.analysis_score_threshold:
+                    filtered_docs.append(doc)
+            
+            if not filtered_docs:
+                logger.warning(f"⚠️ [{self.name}] 没有文档达到分析阈值 ({self.analysis_score_threshold})，使用所有文档")
+                filtered_docs = documents
+            
+            # 按相似度分数排序（从高到低）
+            filtered_docs.sort(key=lambda x: getattr(x, 'score', 0.0), reverse=True)
+            
+            # 构建资料摘要（不限制数量，使用所有通过阈值的文档）
+            materials_summary = []
+            for idx, doc in enumerate(filtered_docs, 1):
+                title = doc.title if hasattr(doc, 'title') else 'N/A'
+                content = doc.content if hasattr(doc, 'content') else ''
+                if not content and hasattr(doc, 'snippet'):
+                    content = doc.snippet
+                # 限制内容长度
+                content = content[:500] if len(content) > 500 else content
+                score = getattr(doc, 'score', 0.0)
+                materials_summary.append(f"[资料{idx}] 标题: {title}\n相似度: {score:.3f}\n内容: {content}\n")
+            
+            materials_text = "\n".join(materials_summary)
+            
+            understanding_context = f"\n之前对问题的理解：{understanding}\n" if understanding else ""
+            
+            prompt = f"""请对以下搜索结果进行批判性分析。
+
+用户问题：{query}
+{understanding_context}
+搜索结果：
+{materials_text}
+
+请从以下角度进行分析：
+1. 哪些资料最相关？为什么？
+2. 不同资料之间有什么一致性和差异？
+3. 资料的可靠性和权威性如何？
+4. 哪些信息可能过时或不准确？
+5. 是否存在观点冲突？如何理解这些冲突？
+
+请用简洁清晰的语言输出你的分析，控制在300字以内。"""
+            
+            logger.info(f"[{self.name}] 开始分析资料: {len(documents)}个文档 -> {len(filtered_docs)}个文档（阈值>={self.analysis_score_threshold}）")
+            analysis = call_zhipu_llm(
+                prompt=prompt,
+                api_key=self.zhipu_api_key,
+                model=self.zhipu_model,
+                temperature=0.7,
+                max_tokens=800
+            )
+            
+            if analysis:
+                result = {
+                    "success": True,
+                    "analysis": analysis
+                }
+                logger.info(f"✅ [{self.name}] 分析完成")
+            else:
+                result = {
+                    "success": False,
+                    "analysis": None,
+                    "message": "资料分析失败"
+                }
+                logger.warning(f"⚠️ [{self.name}] 分析失败")
+            
+            self.result = result
+            self.set_status(AgentStatus.COMPLETED)
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ [{self.name}] 处理失败: {e}", exc_info=True)
+            self.set_status(AgentStatus.FAILED)
+            return {
+                "success": False,
+                "analysis": None,
+                "message": str(e)
+            }
+
+
+class DeepThinkingAgent(BaseAgent):
+    """深度思考Agent - 进行深度推理和思考"""
+    
+    def __init__(self, zhipu_api_key: str, zhipu_model: str = "glm-4.5-flash"):
+        super().__init__(
+            name="deep_thinking",
+            description="深度思考与推理"
+        )
+        self.zhipu_api_key = zhipu_api_key
+        self.zhipu_model = zhipu_model
+    
+    async def process(self, input_data: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """深度思考"""
+        self.set_status(AgentStatus.PROCESSING)
+        
+        try:
+            query = input_data.get("query", "")
+            understanding = input_data.get("understanding", "")
+            analysis = input_data.get("analysis", "")
+            
+            if not query:
+                raise ValueError("查询为空")
+            
+            from .momo_utils import call_zhipu_llm
+            
+            understanding_context = f"\n问题理解：{understanding}\n" if understanding else ""
+            analysis_context = f"\n资料分析：{analysis}\n" if analysis else ""
+            
+            prompt = f"""基于以下信息进行深度思考与推理。
+
+用户问题：{query}
+{understanding_context}
+{analysis_context}
+
+请从以下角度进行深度思考：
+1. 这些信息背后反映了什么趋势或规律？
+2. 不同观点或方案的优势和劣势是什么？
+3. 可以从哪些角度来分析这个问题？
+4. 有什么被忽视的重要方面？
+5. 如何将这些信息联系起来，形成更深入的见解？
+
+请用简洁清晰的语言输出你的思考，控制在400字以内。"""
+            
+            logger.info(f"[{self.name}] 开始深度思考")
+            thinking = call_zhipu_llm(
+                prompt=prompt,
+                api_key=self.zhipu_api_key,
+                model=self.zhipu_model,
+                temperature=0.8,  # 稍高温度以增加创造性
+                max_tokens=1000
+            )
+            
+            if thinking:
+                result = {
+                    "success": True,
+                    "thinking": thinking
+                }
+                logger.info(f"✅ [{self.name}] 思考完成")
+            else:
+                result = {
+                    "success": False,
+                    "thinking": None,
+                    "message": "深度思考失败"
+                }
+                logger.warning(f"⚠️ [{self.name}] 思考失败")
+            
+            self.result = result
+            self.set_status(AgentStatus.COMPLETED)
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ [{self.name}] 处理失败: {e}", exc_info=True)
+            self.set_status(AgentStatus.FAILED)
+            return {
+                "success": False,
+                "thinking": None,
+                "message": str(e)
+            }
+
+
 class DocumentProcessorAgent(BaseAgent):
     """文档处理Agent - 负责文档分块和二次检索"""
     
@@ -461,7 +724,7 @@ class SearchOrchestrator:
         self.total_steps = 0
         self.current_step = 0
     
-    async def execute(self, query: str, mode: str = "speed", detected_lang: str = "zh") -> tuple[List, str]:
+    async def execute(self, query: str, mode: str = "speed", detected_lang: str = "zh") -> tuple[List, str, dict]:
         """
         执行多Agent协作搜索
         
@@ -471,16 +734,30 @@ class SearchOrchestrator:
             detected_lang: 检测到的语言
             
         Returns:
-            (相关文档列表, 引用信息)
+            (相关文档列表, 引用信息, 思考结果字典)
         """
         try:
             # 计算总步骤数
             self._calculate_steps(mode)
             
+            # 用于存储思考结果（深度模式）
+            thinking_results = {}
+            
+            # 深度模式：Agent 0: 理解问题
+            if mode == "quality":
+                understanding_agent = self.agents.get("problem_understanding")
+                if understanding_agent:
+                    await self._report_progress(0, "理解问题")
+                    understanding_result = await understanding_agent.process({"query": query})
+                    if understanding_result.get("success"):
+                        thinking_results["understanding"] = understanding_result.get("understanding", "")
+                        logger.info(f"✅ 问题理解完成: {thinking_results['understanding'][:50]}...")
+            
             # Agent 1: 关键词提取
             keyword_agent = self.agents.get("keyword_extractor")
+            step_offset = 1 if mode == "quality" else 0
             if keyword_agent:
-                await self._report_progress(0, "提取搜索关键词")
+                await self._report_progress(step_offset, "提取搜索关键词")
                 keyword_result = await keyword_agent.process({"query": query})
                 
                 if not keyword_result.get("success"):
@@ -523,13 +800,6 @@ class SearchOrchestrator:
                         "language": "en",
                         "source": "keywords_en"
                     })
-            
-            if not search_queries:
-                search_queries.append({
-                    "query": query,
-                    "language": detected_lang,
-                    "source": "original"
-                })
             
             # 准备DuckDuckGo查询
             ddg_queries = []
@@ -655,13 +925,44 @@ class SearchOrchestrator:
             
             if not relevant_docs:
                 logger.warning("⚠️ 未找到相关文档")
-                return [], ""
+                return [], "", thinking_results
             
-            # Agent 4: 深度爬取（仅quality模式）
+            # 深度模式：在爬取之前进行思考步骤
             if mode == "quality":
+                # Agent 4: 分析资料
+                analysis_agent = self.agents.get("material_analysis")
+                if analysis_agent:
+                    analysis_step = vector_step + 1
+                    await self._report_progress(analysis_step, "分析资料")
+                    analysis_result = await analysis_agent.process({
+                        "query": query,
+                        "documents": relevant_docs,
+                        "understanding": thinking_results.get("understanding", "")
+                    })
+                    if analysis_result.get("success"):
+                        thinking_results["analysis"] = analysis_result.get("analysis", "")
+                        logger.info(f"✅ 资料分析完成: {thinking_results['analysis'][:50]}...")
+                
+                # Agent 5: 深度思考
+                thinking_agent = self.agents.get("deep_thinking")
+                if thinking_agent:
+                    thinking_step = analysis_step + 1 if analysis_agent else vector_step + 1
+                    await self._report_progress(thinking_step, "深度思考与推理")
+                    thinking_result = await thinking_agent.process({
+                        "query": query,
+                        "understanding": thinking_results.get("understanding", ""),
+                        "analysis": thinking_results.get("analysis", "")
+                    })
+                    if thinking_result.get("success"):
+                        thinking_results["thinking"] = thinking_result.get("thinking", "")
+                        logger.info(f"✅ 深度思考完成: {thinking_results['thinking'][:50]}...")
+                
+                # Agent 6: 深度爬取（仅quality模式）
                 crawler_agent = self.agents.get("crawler")
                 if crawler_agent:
-                    crawl_step = vector_step + 1
+                    # 计算爬取步骤位置
+                    thinking_step = analysis_step + 1 if analysis_agent else vector_step + 1
+                    crawl_step = thinking_step + 1 if thinking_agent else thinking_step
                     await self._report_progress(
                         crawl_step,
                         f"🕷️ 深度爬取内容 (前{len(relevant_docs)}个)"
@@ -669,7 +970,7 @@ class SearchOrchestrator:
                     
                     await crawler_agent.process({"documents": relevant_docs})
                     
-                    # Agent 5: 文档处理
+                    # Agent 7: 文档处理
                     processor_agent = self.agents.get("document_processor")
                     if processor_agent:
                         split_step = crawl_step + 1
@@ -697,22 +998,25 @@ class SearchOrchestrator:
             citations = self._format_citations(relevant_docs)
             
             logger.info(f"✅ 多Agent搜索完成: 返回{len(relevant_docs)}个文档")
-            return relevant_docs, citations
+            return relevant_docs, citations, thinking_results
             
         except Exception as e:
             logger.error(f"❌ 多Agent搜索失败: {e}", exc_info=True)
-            return [], ""
+            return [], "", {}
     
     def _calculate_steps(self, mode: str):
         """计算总步骤数"""
-        base_steps = 5  # 关键词(1) + 向量检索(1) + 深度爬取(1) + 文档分块(1) + 完成(1)
         search_steps = 2  # 估算：中文+英文关键词搜索
         ddg_steps = 2  # DuckDuckGo中英文
         
         if mode == "quality":
+            # 深度模式：理解问题(1) + 关键词(1) + 搜索(2) + 向量检索(1) + 分析资料(1) + 深度思考(1) + 爬取(1) + 分块(1) + 完成(1)
+            base_steps = 9
             self.total_steps = base_steps + search_steps + ddg_steps
         else:
-            self.total_steps = base_steps + search_steps + ddg_steps - 2  # 无爬取和分块
+            # 快速模式：关键词(1) + 搜索(2) + 向量检索(1) + 完成(1)
+            base_steps = 5
+            self.total_steps = base_steps + search_steps + ddg_steps
         
         self.current_step = 0
     

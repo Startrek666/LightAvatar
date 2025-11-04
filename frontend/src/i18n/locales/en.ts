@@ -85,12 +85,18 @@ export default {
       resultsCount: 'results',
       steps: {
         started: 'Multi-Agent search started',
+        understandingProblem: 'Understanding Problem',
         extractingKeywords: 'Extracting keywords',
         chineseSearch: 'Initial Chinese search',
         englishSearch: 'Initial English search',
         expandChinese: 'Expanding Chinese search',
         supplementEnglish: 'Supplementing English materials',
         analyzing: 'Analyzing information',
+        analyzingMaterials: 'Analyzing Materials',
+        deepThinking: 'Deep Thinking and Reasoning',
+        crawling: 'Deep Crawling Content',
+        splitting: 'Document Splitting and Re-retrieval',
+        synthesizing: 'Synthesizing Information, Generating Answer',
         completed: 'Search completed'
       },
       completedWithResults: 'Search completed, found {count} results'

@@ -142,7 +142,7 @@ const internalVisible = computed({
 })
 
 // 步骤标题键值类型
-type StepTitleKey = 'started' | 'extractingKeywords' | 'chineseSearch' | 'englishSearch' | 'expandChinese' | 'supplementEnglish' | 'analyzing' | 'completed'
+type StepTitleKey = 'started' | 'understandingProblem' | 'extractingKeywords' | 'chineseSearch' | 'englishSearch' | 'expandChinese' | 'supplementEnglish' | 'analyzing' | 'analyzingMaterials' | 'deepThinking' | 'crawling' | 'splitting' | 'synthesizing' | 'completed'
 
 // 获取步骤标题（响应式，会根据语言自动更新）
 const getStepTitle = (stepKey: StepTitleKey): string => {
@@ -159,14 +159,21 @@ const detectLanguageFromText = (text: string): 'zh' | 'en' => {
 }
 
 // 步骤定义（初始状态，会在 reset() 时更新为国际化文本）
+// 深度模式会显示更多步骤，快速模式只显示基础步骤
 const steps = ref<Step[]>([
   { title: getStepTitle('started'), status: 'pending' },
+  { title: getStepTitle('understandingProblem'), status: 'pending' }, // 深度模式
   { title: getStepTitle('extractingKeywords'), status: 'pending' },
   { title: getStepTitle('chineseSearch'), status: 'pending' },
   { title: getStepTitle('englishSearch'), status: 'pending' },
   { title: getStepTitle('expandChinese'), status: 'pending' },
   { title: getStepTitle('supplementEnglish'), status: 'pending' },
   { title: getStepTitle('analyzing'), status: 'pending' },
+  { title: getStepTitle('analyzingMaterials'), status: 'pending' }, // 深度模式
+  { title: getStepTitle('deepThinking'), status: 'pending' }, // 深度模式
+  { title: getStepTitle('crawling'), status: 'pending' }, // 深度模式
+  { title: getStepTitle('splitting'), status: 'pending' }, // 深度模式
+  { title: getStepTitle('synthesizing'), status: 'pending' }, // 深度模式
   { title: getStepTitle('completed'), status: 'pending' }
 ])
 
@@ -179,20 +186,26 @@ let countdownTimer: number | null = null
 // 步骤映射：将后端消息映射到前端步骤
 const stepMapping: Record<string, number> = {
   '多agent搜索工作已启动': 0,
-  '提取搜索关键词': 1,
-  '提取关键词': 1,
+  '理解问题': 1,
+  '提取搜索关键词': 2,
+  '提取关键词': 2,
   '正在搜索:': -1, // 动态判断（根据语言）
-  '初步进行中文搜索': 2,
-  '初步进行英文搜索': 3,
-  '扩充中文搜索': 4,
-  '扩充搜索英语资料': 5,
-  '补充英语资料': 5,
-  '深度爬取内容': 6,
-  '深度搜集信息': 6,
+  '初步进行中文搜索': 3,
+  '初步进行英文搜索': 4,
+  '扩充中文搜索': 5,
+  '扩充搜索英语资料': 6,
+  '补充英语资料': 6,
   '分析相关性': 7,
   '正在分析信息': 7,
-  '搜索完成': 7,
-  '找到': 7
+  '分析资料': 8,
+  '深度思考与推理': 9,
+  '深度爬取内容': 10,
+  '深度搜集信息': 10,
+  '文档分块和二次检索': 11,
+  '综合信息': 12,
+  '综合信息，生成回答': 12,
+  '搜索完成': 13,
+  '找到': 13
 }
 
 // 更新进度
@@ -219,10 +232,11 @@ const updateProgress = (message: string, step: number, total: number) => {
     })
     
     // 标记最后一步为完成
-    if (steps.value[7]) {
-      steps.value[7].status = 'completed'
+    const lastStepIndex = steps.value.length - 1
+    if (steps.value[lastStepIndex]) {
+      steps.value[lastStepIndex].status = 'completed'
       if (resultCount.value > 0) {
-        steps.value[7].title = `搜索完成，获得 ${resultCount.value} 个结果`
+        steps.value[lastStepIndex].title = `搜索完成，获得 ${resultCount.value} 个结果`
       }
     }
     
@@ -240,13 +254,13 @@ const updateProgress = (message: string, step: number, total: number) => {
       if (index === -1) {
         // 动态判断：'正在搜索:' 根据 source 与已检测语言映射步骤
         if (message.includes('(keywords_zh)')) {
-          targetStepIndex = 2
-        } else if (message.includes('(keywords_en)')) {
           targetStepIndex = 3
+        } else if (message.includes('(keywords_en)')) {
+          targetStepIndex = 4
         } else if (message.includes('(original)')) {
-          targetStepIndex = detectedLanguage.value === 'en' ? 3 : 2
+          targetStepIndex = detectedLanguage.value === 'en' ? 4 : 3
         } else {
-          targetStepIndex = detectedLanguage.value === 'en' ? 3 : 2
+          targetStepIndex = detectedLanguage.value === 'en' ? 4 : 3
         }
       } else {
         targetStepIndex = index
@@ -277,7 +291,7 @@ const updateProgress = (message: string, step: number, total: number) => {
     if (steps.value[targetStepIndex].status === 'pending') {
       steps.value[targetStepIndex].status = 'active'
       // 更新步骤标题以确保使用最新语言（响应语言切换）
-      const stepKeys: StepTitleKey[] = ['started', 'extractingKeywords', 'chineseSearch', 'englishSearch', 'expandChinese', 'supplementEnglish', 'analyzing', 'completed']
+      const stepKeys: StepTitleKey[] = ['started', 'understandingProblem', 'extractingKeywords', 'chineseSearch', 'englishSearch', 'expandChinese', 'supplementEnglish', 'analyzing', 'analyzingMaterials', 'deepThinking', 'crawling', 'splitting', 'synthesizing', 'completed']
       if (targetStepIndex < stepKeys.length) {
         steps.value[targetStepIndex].title = getStepTitle(stepKeys[targetStepIndex])
       }
@@ -326,12 +340,18 @@ const reset = () => {
   // 重置所有步骤状态（使用函数获取标题，确保响应语言变化）
   steps.value = [
     { title: getStepTitle('started'), status: 'pending' },
+    { title: getStepTitle('understandingProblem'), status: 'pending' },
     { title: getStepTitle('extractingKeywords'), status: 'pending' },
     { title: getStepTitle('chineseSearch'), status: 'pending' },
     { title: getStepTitle('englishSearch'), status: 'pending' },
     { title: getStepTitle('expandChinese'), status: 'pending' },
     { title: getStepTitle('supplementEnglish'), status: 'pending' },
     { title: getStepTitle('analyzing'), status: 'pending' },
+    { title: getStepTitle('analyzingMaterials'), status: 'pending' },
+    { title: getStepTitle('deepThinking'), status: 'pending' },
+    { title: getStepTitle('crawling'), status: 'pending' },
+    { title: getStepTitle('splitting'), status: 'pending' },
+    { title: getStepTitle('synthesizing'), status: 'pending' },
     { title: getStepTitle('completed'), status: 'pending' }
   ]
   searchCompleted.value = false
@@ -341,11 +361,8 @@ const reset = () => {
   
   // 使用原始查询文本检测语言
   detectedLanguage.value = detectLanguageFromText(props.searchQuery)
-  if (detectedLanguage.value === 'en') {
-    // 英语查询：隐藏中文相关步骤
-    if (steps.value[2]) steps.value[2].status = 'skipped'
-    if (steps.value[4]) steps.value[4].status = 'skipped'
-  }
+  // 注意：深度模式的步骤会在收到相应消息时激活，快速模式的步骤会被跳过
+  // 这里暂时不预设跳过，让后端消息来控制
   
   // 第一个步骤立即激活
   if (steps.value[0]) {
@@ -551,7 +568,7 @@ defineExpose({
 }
 
 .results-list-container {
-  height: 350px;
+  height: 180px;
   overflow-y: auto;
   overflow-x: hidden;
   border-radius: 12px;
@@ -567,8 +584,8 @@ defineExpose({
 .result-item {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding: 14px 18px;
+  gap: 10px;
+  padding: 10px 14px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   text-decoration: none;
@@ -587,16 +604,16 @@ defineExpose({
 }
 
 .result-number {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 4px;
   background: #f0f0f0;
   color: #8c8c8c;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   transition: all 0.2s;
 }
@@ -611,14 +628,14 @@ defineExpose({
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .result-title-text {
   color: #262626;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.6;
+  line-height: 1.5;
   word-break: break-word;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -635,8 +652,8 @@ defineExpose({
 
 .result-domain {
   color: #999;
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

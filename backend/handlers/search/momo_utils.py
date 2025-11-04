@@ -183,6 +183,90 @@ def extract_keywords(
         return None
 
 
+def call_zhipu_llm(
+    prompt: str,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 2000,
+    response_format: Optional[dict] = None
+) -> Optional[str]:
+    """
+    通用的智谱清言 LLM 调用函数
+    
+    Args:
+        prompt: 提示词
+        api_key: 智谱清言API密钥，如果为None则使用默认值
+        model: 智谱清言模型名称，如果为None则使用默认值
+        temperature: 温度参数
+        max_tokens: 最大token数
+        response_format: 响应格式（如 {"type": "json_object"}）
+    
+    Returns:
+        LLM返回的文本内容，失败返回None
+    """
+    try:
+        zhipu_api_key = api_key if api_key is not None else ZHIPU_API_KEY
+        zhipu_model = model if model is not None else ZHIPU_MODEL
+        
+        headers = {
+            "Authorization": f"Bearer {zhipu_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": zhipu_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+            "thinking": {"type": "disabled"},
+            "do_sample": True,
+            "top_p": 0.95,
+            "tool_stream": False
+        }
+        
+        # 如果指定了响应格式，添加到payload
+        if response_format:
+            payload["response_format"] = response_format
+        
+        response = requests.post(
+            ZHIPU_API_URL,
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        # 解析返回的JSON
+        choices = result.get("choices", [])
+        if not choices:
+            logger.warning("⚠️ 智谱清言API返回空choices")
+            return None
+        
+        message = choices[0].get("message", {})
+        content = message.get("content", "").strip()
+        
+        if not content:
+            logger.warning("⚠️ 智谱清言API返回空内容")
+            return None
+        
+        return content
+            
+    except Exception as e:
+        logger.error(f"❌ 智谱清言调用失败: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
+
+
 def translate_text(query: str, source: str = "zh", target: str = "en") -> Optional[str]:
     """
     调用翻译API翻译文本
@@ -580,7 +664,7 @@ class FaissRetriever:
             logger.debug(f"  {idx+1}. {doc.title[:50]}... (sim: {doc.score:.3f})")
         
         return relevant_docs
-    
+
     def get_relevant_documents_multi_query(self, queries: List[str]) -> List[SearchDocument]:
         """
         使用多个查询分别检索，然后合并结果（保留最高相似度分数）

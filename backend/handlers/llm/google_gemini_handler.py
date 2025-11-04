@@ -209,7 +209,7 @@ class GoogleGeminiHandler(BaseHandler):
         
         try:
             # Momo 搜索返回 (relevant_docs, citations) 元组
-            search_results, citations = await momo_search_handler.search_with_progress(
+            search_results, citations, thinking_results = await momo_search_handler.search_with_progress(
                 user_query,
                 mode=momo_search_quality,
                 progress_callback=progress_callback
@@ -226,44 +226,37 @@ class GoogleGeminiHandler(BaseHandler):
                 logger.info(f"✅ 搜索完成，获得 {len(search_results)} 个结果")
                 logger.info(f"📚 引用信息长度: {len(citations)}")
                 
-                # 构建搜索上下文
+                # 使用思考链构建深度思考的 Prompt
                 from datetime import datetime
+                from backend.handlers.llm.thinking_chain import build_enhanced_search_prompt
+                
                 today = datetime.now().strftime("%Y-%m-%d")
                 
-                search_context = f"# 以下内容是基于用户发送的消息的搜索结果（今天是{today}）:\n\n"
-                search_context += "# 重要提示：\n"
-                search_context += "# 1. 请用自然、严谨的方式回答问题\n"
-                search_context += "# 2. 可以提及来源网站名称，但不要说出完整的URL地址\n"
+                # 根据搜索质量模式决定是否使用思考链
+                # quality（深度）模式：使用思考链，进行深度思考
+                # speed（快速）模式：使用简单模式，快速回答
+                use_thinking_chain = (momo_search_quality == "quality")
                 
-                for idx, doc in enumerate(search_results[:15], 1):  # 限制15个结果
-                    search_context += f"[参考资料 {idx}]\n\n"
-                    search_context += f"标题: {doc.title if hasattr(doc, 'title') else 'N/A'}\n\n"
-                    
-                    # 链接仅用于后端参考，不在回答中提及
-                    url = doc.url if hasattr(doc, 'url') else ''
-                    if url:
-                        # 提取域名作为来源
-                        from urllib.parse import urlparse
-                        try:
-                            domain = urlparse(url).netloc
-                            search_context += f"来源: {domain}\n\n"
-                        except:
-                            search_context += f"来源: 网络资料\n\n"
-                    
-                    content = doc.content if hasattr(doc, 'content') else ''
-                    if content:
-                        # 限制每个文档的内容长度
-                        content = content[:1000] if len(content) > 1000 else content
-                        search_context += f"内容:\n{content}\n\n"
-                    
-                    search_context += f"---\n\n"
+                if use_thinking_chain:
+                    logger.info(f"🧠 [深度模式] 使用深度思考链生成回答 (质量: {momo_search_quality})")
+                    enhanced_text = build_enhanced_search_prompt(
+                        user_query=user_query,
+                        search_results=search_results,
+                        current_date=today,
+                        use_thinking_chain=True,
+                        thinking_results=thinking_results
+                    )
+                else:
+                    # 快速模式：使用简单 Prompt
+                    logger.info(f"⚡ [快速模式] 使用简单模式生成回答 (质量: {momo_search_quality})")
+                    enhanced_text = build_enhanced_search_prompt(
+                        user_query=user_query,
+                        search_results=search_results,
+                        current_date=today,
+                        use_thinking_chain=False
+                    )
                 
-                search_context += "# 请基于以上参考资料，用自然严谨的方式回答用户的问题。记住：不要读出URL链接！\n\n"
-                
-                logger.info(f"📝 搜索上下文已构建 (长度: {len(search_context)})")
-                
-                # 将搜索上下文合并到用户消息中
-                enhanced_text = f"{search_context}\n\n用户问题: {user_query}"
+                logger.info(f"📝 搜索上下文已构建 (长度: {len(enhanced_text)}, 思考链: {use_thinking_chain})")
                 
                 logger.info(f"📤 准备发送增强消息 (总长度: {len(enhanced_text)})")
                 
