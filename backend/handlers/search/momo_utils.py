@@ -131,51 +131,72 @@ def extract_keywords(
             "response_format": {"type": "json_object"}
         }
         
-        response = requests.post(
-            ZHIPU_API_URL,
-            json=payload,
-            headers=headers,
-            timeout=15
-        )
+        # 添加重试机制（最多3次）
+        max_retries = 3
+        retry_delay = 2  # 重试间隔（秒）
         
-        response.raise_for_status()
-        result = response.json()
-        
-        # 解析返回的JSON
-        choices = result.get("choices", [])
-        if not choices:
-            logger.warning("⚠️ 关键词提取API返回空choices")
-            return None
-        
-        message = choices[0].get("message", {})
-        content = message.get("content", "").strip()
-        
-        if not content:
-            logger.warning("⚠️ 关键词提取API返回空内容")
-            return None
-        
-        # 解析JSON字符串（content中包含JSON格式的字符串）
-        import json
-        try:
-            keywords_dict = json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON解析失败: {e}")
-            logger.error(f"原始内容: {content[:200]}")  # 记录前200个字符用于调试
-            return None
-        
-        zh_keys = keywords_dict.get("zh_keys", "").strip()
-        en_keys = keywords_dict.get("en_keys", "").strip()
-        
-        if zh_keys or en_keys:
-            logger.info(f"✅ 关键词提取成功: zh_keys={zh_keys}, en_keys={en_keys}")
-            return {
-                "zh_keys": zh_keys,
-                "en_keys": en_keys
-            }
-        else:
-            logger.warning("⚠️ 关键词提取API返回空关键词")
-            return None
-            
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    ZHIPU_API_URL,
+                    json=payload,
+                    headers=headers,
+                    timeout=30  # 增加超时时间到30秒，与call_zhipu_llm一致
+                )
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                # 解析返回的JSON
+                choices = result.get("choices", [])
+                if not choices:
+                    logger.warning("⚠️ 关键词提取API返回空choices")
+                    return None
+                
+                message = choices[0].get("message", {})
+                content = message.get("content", "").strip()
+                
+                if not content:
+                    logger.warning("⚠️ 关键词提取API返回空内容")
+                    return None
+                
+                # 解析JSON字符串（content中包含JSON格式的字符串）
+                import json
+                try:
+                    keywords_dict = json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ JSON解析失败: {e}")
+                    logger.error(f"原始内容: {content[:200]}")  # 记录前200个字符用于调试
+                    return None
+                
+                zh_keys = keywords_dict.get("zh_keys", "").strip()
+                en_keys = keywords_dict.get("en_keys", "").strip()
+                
+                if zh_keys or en_keys:
+                    logger.info(f"✅ 关键词提取成功: zh_keys={zh_keys}, en_keys={en_keys}")
+                    return {
+                        "zh_keys": zh_keys,
+                        "en_keys": en_keys
+                    }
+                else:
+                    logger.warning("⚠️ 关键词提取API返回空关键词")
+                    return None
+                    
+            except (requests.exceptions.ReadTimeout, requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (attempt + 1)  # 指数退避
+                    logger.warning(f"⚠️ 关键词提取超时（尝试 {attempt + 1}/{max_retries}），{wait_time}秒后重试...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"❌ 关键词提取失败（已重试{max_retries}次）: {e}")
+                    raise
+            except Exception as e:
+                # 其他错误直接抛出，不重试
+                logger.error(f"❌ 关键词提取失败: {e}")
+                raise
+                
     except Exception as e:
         logger.error(f"❌ 关键词提取失败: {e}")
         import traceback
@@ -235,30 +256,51 @@ def call_zhipu_llm(
         if response_format:
             payload["response_format"] = response_format
         
-        response = requests.post(
-            ZHIPU_API_URL,
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
+        # 添加重试机制（最多3次）
+        max_retries = 3
+        retry_delay = 2  # 重试间隔（秒）
         
-        response.raise_for_status()
-        result = response.json()
-        
-        # 解析返回的JSON
-        choices = result.get("choices", [])
-        if not choices:
-            logger.warning("⚠️ 智谱清言API返回空choices")
-            return None
-        
-        message = choices[0].get("message", {})
-        content = message.get("content", "").strip()
-        
-        if not content:
-            logger.warning("⚠️ 智谱清言API返回空内容")
-            return None
-        
-        return content
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    ZHIPU_API_URL,
+                    json=payload,
+                    headers=headers,
+                    timeout=30
+                )
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                # 解析返回的JSON
+                choices = result.get("choices", [])
+                if not choices:
+                    logger.warning("⚠️ 智谱清言API返回空choices")
+                    return None
+                
+                message = choices[0].get("message", {})
+                content = message.get("content", "").strip()
+                
+                if not content:
+                    logger.warning("⚠️ 智谱清言API返回空内容")
+                    return None
+                
+                return content
+                
+            except (requests.exceptions.ReadTimeout, requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (attempt + 1)  # 指数退避
+                    logger.warning(f"⚠️ 智谱清言API超时（尝试 {attempt + 1}/{max_retries}），{wait_time}秒后重试...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"❌ 智谱清言调用失败（已重试{max_retries}次）: {e}")
+                    raise
+            except Exception as e:
+                # 其他错误直接抛出，不重试
+                logger.error(f"❌ 智谱清言调用失败: {e}")
+                raise
             
     except Exception as e:
         logger.error(f"❌ 智谱清言调用失败: {e}")
