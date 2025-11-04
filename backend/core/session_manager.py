@@ -772,6 +772,15 @@ class Session:
             # Send completion signal
             await callback("stream_complete", {"full_text": full_response})
             
+            # 如果使用了搜索，发送综合信息完成的进度更新
+            if use_search and search_mode == "advanced":
+                try:
+                    # 发送综合信息完成的消息（step > total 表示完成）
+                    # 这里使用一个较大的step值，确保前端识别为完成
+                    await search_progress_callback(999, 999, "综合信息，生成回答")
+                except Exception as e:
+                    logger.warning(f"[搜索进度] 发送综合信息完成消息失败: {e}")
+            
         except Exception as e:
             logger.error(f"Error in streaming text processing: {e}", exc_info=True)
             await callback("error", {"message": str(e)})

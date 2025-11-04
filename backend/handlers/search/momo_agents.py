@@ -740,6 +740,9 @@ class SearchOrchestrator:
             # 计算总步骤数
             self._calculate_steps(mode)
             
+            # 立即发送开始消息
+            await self._report_progress(0, "多Agent搜索工作已启动")
+            
             # 用于存储思考结果（深度模式）
             thinking_results = {}
             
@@ -747,15 +750,18 @@ class SearchOrchestrator:
             if mode == "quality":
                 understanding_agent = self.agents.get("problem_understanding")
                 if understanding_agent:
-                    await self._report_progress(0, "理解问题")
+                    await self._report_progress(1, "理解问题")
                     understanding_result = await understanding_agent.process({"query": query})
                     if understanding_result.get("success"):
-                        thinking_results["understanding"] = understanding_result.get("understanding", "")
-                        logger.info(f"✅ 问题理解完成: {thinking_results['understanding'][:50]}...")
+                        understanding_text = understanding_result.get("understanding", "")
+                        thinking_results["understanding"] = understanding_text
+                        logger.info(f"✅ 问题理解完成: {understanding_text[:50]}...")
+                        # 发送理解结果（单独发送，让前端可以显示）
+                        await self._report_progress(1, f"理解问题\n{understanding_text}")
             
             # Agent 1: 关键词提取
             keyword_agent = self.agents.get("keyword_extractor")
-            step_offset = 1 if mode == "quality" else 0
+            step_offset = 2 if mode == "quality" else 1  # 深度模式：理解问题(1) + 关键词(2)，快速模式：开始(0) + 关键词(1)
             if keyword_agent:
                 await self._report_progress(step_offset, "提取搜索关键词")
                 keyword_result = await keyword_agent.process({"query": query})
@@ -965,7 +971,7 @@ class SearchOrchestrator:
                     crawl_step = thinking_step + 1 if thinking_agent else thinking_step
                     await self._report_progress(
                         crawl_step,
-                        f"🕷️ 深度爬取内容 (前{len(relevant_docs)}个)"
+                        f"深度爬取内容 (前{len(relevant_docs)}个)"
                     )
                     
                     await crawler_agent.process({"documents": relevant_docs})
@@ -989,10 +995,13 @@ class SearchOrchestrator:
                         })
                         relevant_docs = processor_result.get("results", relevant_docs)
             
-            # 完成
-            final_step = self.total_steps
-            await self._report_progress(final_step, "✅ 搜索完成，正在生成内容")
-            await self._report_progress(final_step + 1, f"找到{len(relevant_docs)}篇相关文档")
+            # 完成搜索阶段
+            final_step = self.total_steps - 1  # 搜索完成是倒数第二步
+            await self._report_progress(final_step, f"✅ 搜索完成，找到{len(relevant_docs)}篇相关文档")
+            
+            # 综合信息，生成回答（最后一步）
+            synthesizing_step = self.total_steps
+            await self._report_progress(synthesizing_step, "综合信息，生成回答")
             
             # 生成引用信息（使用静态方法或直接实现）
             citations = self._format_citations(relevant_docs)

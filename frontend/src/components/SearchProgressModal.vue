@@ -97,6 +97,7 @@
           <div class="step-content">
             <div class="step-title">{{ step.title }}</div>
             <div v-if="step.subtitle" class="step-subtitle">{{ step.subtitle }}</div>
+            <div v-if="step.result && step.status === 'completed'" class="step-result">{{ step.result }}</div>
           </div>
         </div>
       </div>
@@ -121,6 +122,7 @@ const { t, locale } = useI18n()
 interface Step {
   title: string
   subtitle?: string
+  result?: string  // 用于显示步骤的结果内容（如理解问题的结果）
   status: 'pending' | 'active' | 'completed' | 'skipped'
 }
 
@@ -160,6 +162,7 @@ const detectLanguageFromText = (text: string): 'zh' | 'en' => {
 
 // 步骤定义（初始状态，会在 reset() 时更新为国际化文本）
 // 深度模式会显示更多步骤，快速模式只显示基础步骤
+// 注意：综合信息，生成回答应该是最后一步，放在搜索完成之前
 const steps = ref<Step[]>([
   { title: getStepTitle('started'), status: 'pending' },
   { title: getStepTitle('understandingProblem'), status: 'pending' }, // 深度模式
@@ -173,8 +176,8 @@ const steps = ref<Step[]>([
   { title: getStepTitle('deepThinking'), status: 'pending' }, // 深度模式
   { title: getStepTitle('crawling'), status: 'pending' }, // 深度模式
   { title: getStepTitle('splitting'), status: 'pending' }, // 深度模式
-  { title: getStepTitle('synthesizing'), status: 'pending' }, // 深度模式
-  { title: getStepTitle('completed'), status: 'pending' }
+  { title: getStepTitle('completed'), status: 'pending' },
+  { title: getStepTitle('synthesizing'), status: 'pending' } // 综合信息放在最后
 ])
 
 const searchCompleted = ref(false)
@@ -184,6 +187,7 @@ const searchResults = ref<Array<{ title: string; url: string }>>([])
 let countdownTimer: number | null = null
 
 // 步骤映射：将后端消息映射到前端步骤
+// 注意：综合信息现在是第13步（最后一步），搜索完成是第12步
 const stepMapping: Record<string, number> = {
   '多agent搜索工作已启动': 0,
   '理解问题': 1,
@@ -202,10 +206,11 @@ const stepMapping: Record<string, number> = {
   '深度爬取内容': 10,
   '深度搜集信息': 10,
   '文档分块和二次检索': 11,
-  '综合信息': 12,
-  '综合信息，生成回答': 12,
-  '搜索完成': 13,
-  '找到': 13
+  '搜索完成': 12,
+  '找到': 12,
+  '综合信息': 13,
+  '综合信息，生成回答': 13,
+  '正在生成内容': 13
 }
 
 // 更新进度
@@ -214,15 +219,43 @@ const updateProgress = (message: string, step: number, total: number) => {
   
   // 不再基于进度消息推断语言，统一使用原始查询文本的检测结果
   
-  // 检测是否是搜索完成
-  if (message.includes('搜索完成') || message.includes('找到') || (step >= total && total > 0)) {
-    searchCompleted.value = true
-    
+  // 检测是否是搜索完成（搜索完成应该是倒数第二步，综合信息是最后一步）
+  if (message.includes('搜索完成') || message.includes('找到')) {
     // 提取结果数量
     const match = message.match(/(\d+)\s*个|(\d+)\s*篇/)
     if (match) {
       resultCount.value = parseInt(match[1] || match[2])
     }
+    
+    // 标记"搜索完成"步骤（第12步）为完成
+    const completedStepIndex = 12
+    if (steps.value[completedStepIndex]) {
+      steps.value[completedStepIndex].status = 'completed'
+      if (resultCount.value > 0) {
+        steps.value[completedStepIndex].title = `搜索完成，获得 ${resultCount.value} 个结果`
+      }
+    }
+    
+    // 完成所有当前激活的步骤（除了综合信息）
+    for (let i = 0; i < completedStepIndex; i++) {
+      if (steps.value[i] && steps.value[i].status === 'active') {
+        steps.value[i].status = 'completed'
+      }
+    }
+    
+    // 激活"综合信息，生成回答"步骤（第13步，最后一步）
+    const synthesizingStepIndex = 13
+    if (steps.value[synthesizingStepIndex]) {
+      steps.value[synthesizingStepIndex].status = 'active'
+    }
+    
+    return  // 不在这里启动自动关闭，等综合信息完成后再关闭
+  }
+  
+  // 检测是否是综合信息完成（这是最后一步）
+  // 条件：消息包含"综合信息"或"正在生成内容"，或者step >= total（包括step=999的特殊情况）
+  if (message.includes('综合信息') || message.includes('正在生成内容') || (step >= total && total > 0) || (step === 999 && total === 999)) {
+    searchCompleted.value = true
     
     // 完成所有步骤
     steps.value.forEach((s) => {
@@ -231,13 +264,10 @@ const updateProgress = (message: string, step: number, total: number) => {
       }
     })
     
-    // 标记最后一步为完成
+    // 确保综合信息步骤（最后一步）被标记为完成
     const lastStepIndex = steps.value.length - 1
     if (steps.value[lastStepIndex]) {
       steps.value[lastStepIndex].status = 'completed'
-      if (resultCount.value > 0) {
-        steps.value[lastStepIndex].title = `搜索完成，获得 ${resultCount.value} 个结果`
-      }
     }
     
     // 启动自动关闭倒计时
@@ -291,13 +321,33 @@ const updateProgress = (message: string, step: number, total: number) => {
     if (steps.value[targetStepIndex].status === 'pending') {
       steps.value[targetStepIndex].status = 'active'
       // 更新步骤标题以确保使用最新语言（响应语言切换）
-      const stepKeys: StepTitleKey[] = ['started', 'understandingProblem', 'extractingKeywords', 'chineseSearch', 'englishSearch', 'expandChinese', 'supplementEnglish', 'analyzing', 'analyzingMaterials', 'deepThinking', 'crawling', 'splitting', 'synthesizing', 'completed']
+      const stepKeys: StepTitleKey[] = ['started', 'understandingProblem', 'extractingKeywords', 'chineseSearch', 'englishSearch', 'expandChinese', 'supplementEnglish', 'analyzing', 'analyzingMaterials', 'deepThinking', 'crawling', 'splitting', 'completed', 'synthesizing']
       if (targetStepIndex < stepKeys.length) {
         steps.value[targetStepIndex].title = getStepTitle(stepKeys[targetStepIndex])
       }
       const cleanMessage = message.replace(/^[🔍🔑📊🕷️✂️✅🤖⚙️]\s*/g, '').trim()
-      if (cleanMessage && !cleanMessage.includes('搜索完成')) {
+      if (cleanMessage && !cleanMessage.includes('搜索完成') && !cleanMessage.includes('找到')) {
         steps.value[targetStepIndex].subtitle = cleanMessage
+      }
+    }
+    
+    // 特殊处理：理解问题步骤，如果消息包含结果内容，保存到result字段
+    if (targetStepIndex === 1 && message.includes('理解问题')) {
+      // 检查消息中是否包含理解结果（格式：理解问题\n结果内容）
+      const lines = message.split('\n')
+      if (lines.length > 1) {
+        const resultText = lines.slice(1).join('\n').trim()
+        if (resultText && resultText.length > 0) {
+          steps.value[targetStepIndex].result = resultText
+        }
+      }
+    }
+    
+    // 当理解问题步骤完成时，保存结果
+    if (targetStepIndex === 1 && steps.value[targetStepIndex].status === 'completed') {
+      // 如果消息中包含理解结果（可能是单独的消息）
+      if (message.length > 20 && !message.includes('理解问题') && !message.includes('提取') && !message.includes('搜索')) {
+        steps.value[targetStepIndex].result = message
       }
     }
   }
@@ -338,6 +388,7 @@ const handleClose = () => {
 // 重置状态
 const reset = () => {
   // 重置所有步骤状态（使用函数获取标题，确保响应语言变化）
+  // 注意：综合信息应该是最后一步
   steps.value = [
     { title: getStepTitle('started'), status: 'pending' },
     { title: getStepTitle('understandingProblem'), status: 'pending' },
@@ -351,8 +402,8 @@ const reset = () => {
     { title: getStepTitle('deepThinking'), status: 'pending' },
     { title: getStepTitle('crawling'), status: 'pending' },
     { title: getStepTitle('splitting'), status: 'pending' },
-    { title: getStepTitle('synthesizing'), status: 'pending' },
-    { title: getStepTitle('completed'), status: 'pending' }
+    { title: getStepTitle('completed'), status: 'pending' },
+    { title: getStepTitle('synthesizing'), status: 'pending' }  // 综合信息放在最后
   ]
   searchCompleted.value = false
   resultCount.value = 0
@@ -778,6 +829,17 @@ defineExpose({
   font-size: 13px;
   color: #8c8c8c;
   margin-top: 4px;
+}
+
+.step-result {
+  font-size: 13px;
+  color: #595959;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  line-height: 1.6;
+  border-left: 3px solid #52c41a;
 }
 
 .progress-step.step-completed .step-content .step-title {
