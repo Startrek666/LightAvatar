@@ -80,19 +80,22 @@ function processCitations(content: string): string {
   console.log('开始处理引用标记，引用数量:', citations.value.length) // 调试日志
   
   // 保留完整的原始内容（包括参考来源部分）
-  // 将 [citation:X] 转换为可点击的上标
-  // 匹配 [citation:1] 或 [citation:1][citation:2] 这样的格式
-  const processedContent = content.replace(/\[citation:(\d+)\]/g, (match, num) => {
-    const citationIndex = parseInt(num) - 1
-    console.log(`处理 ${match}, index: ${citationIndex}, 引用总数: ${citations.value.length}`) // 调试日志
+  // 将 [citation:X] 或 [citation:X, Y] 转换为可点击的上标
+  // 匹配 [citation:1] 或 [citation:1, 9] 或 [citation:1][citation:2] 这样的格式
+  const processedContent = content.replace(/\[citation:([\d\s,]+)\]/g, (match, nums) => {
+    // 处理多个数字的情况，如 "1, 9" 或 "1,9"
+    const numList = nums.split(',').map(n => n.trim()).filter(n => n)
+    const supElements = numList.map(num => {
+      const citationIndex = parseInt(num) - 1
+      console.log(`处理 ${match} 中的 ${num}, index: ${citationIndex}, 引用总数: ${citations.value.length}`) // 调试日志
+      
+      if (citationIndex >= 0 && citationIndex < citations.value.length) {
+        return `<sup class="citation-sup" data-citation="${num}" title="点击查看来源">${num}</sup>`
+      }
+      return num // 如果索引无效，保持原数字
+    }).join(', ')
     
-    if (citationIndex >= 0 && citationIndex < citations.value.length) {
-      const replacement = `<sup class="citation-sup" data-citation="${num}" title="点击查看来源">${num}</sup>`
-      console.log(`替换为: ${replacement}`) // 调试日志
-      return replacement
-    }
-    console.log(`保持原样: ${match}`) // 调试日志
-    return match
+    return supElements || match // 如果无法处理，保持原样
   })
   
   return processedContent

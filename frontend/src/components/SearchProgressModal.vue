@@ -247,6 +247,8 @@ const updateProgress = (message: string, step: number, total: number) => {
     const synthesizingStepIndex = 13
     if (steps.value[synthesizingStepIndex]) {
       steps.value[synthesizingStepIndex].status = 'active'
+      // 当综合信息步骤激活时，启动倒计时（但不自动关闭，等待完成）
+      startSynthesizingCountdown()
     }
     
     return  // 不在这里启动自动关闭，等综合信息完成后再关闭
@@ -270,8 +272,7 @@ const updateProgress = (message: string, step: number, total: number) => {
       steps.value[lastStepIndex].status = 'completed'
     }
     
-    // 启动自动关闭倒计时
-    startAutoClose()
+    // 注意：不启动新的倒计时，使用已启动的10秒倒计时（在综合信息步骤激活时已启动）
     return
   }
 
@@ -353,18 +354,21 @@ const updateProgress = (message: string, step: number, total: number) => {
   }
 }
 
-// 开始自动关闭倒计时
-const startAutoClose = () => {
+// 开始综合信息步骤的倒计时（显示倒计时，倒计时结束后自动关闭）
+const startSynthesizingCountdown = () => {
   if (countdownTimer) {
     clearInterval(countdownTimer)
   }
   
-  autoCloseCountdown.value = 5
+  // 设置初始倒计时值（10秒）
+  autoCloseCountdown.value = 10
   
+  // 启动倒计时，倒计时到0时自动关闭弹窗
   countdownTimer = window.setInterval(() => {
     autoCloseCountdown.value--
     
     if (autoCloseCountdown.value <= 0) {
+      // 倒计时到0时自动关闭弹窗
       handleClose()
     }
   }, 1000)
@@ -485,12 +489,29 @@ const markNewSearch = () => {
   isFirstOpen = true
 }
 
+// 标记综合信息步骤完成（供父组件调用）
+const markSynthesizingComplete = () => {
+  const synthesizingStepIndex = 13
+  if (steps.value[synthesizingStepIndex]) {
+    steps.value[synthesizingStepIndex].status = 'completed'
+    searchCompleted.value = true
+    // 完成所有步骤
+    steps.value.forEach((s) => {
+      if (s.status === 'active') {
+        s.status = 'completed'
+      }
+    })
+    // 注意：不启动新的倒计时，使用已启动的10秒倒计时
+  }
+}
+
 // 暴露方法供父组件调用
 defineExpose({
   updateProgress,
   reset,
   setSearchResults,
-  markNewSearch
+  markNewSearch,
+  markSynthesizingComplete
 })
 </script>
 
@@ -839,7 +860,6 @@ defineExpose({
   background: #f5f5f5;
   border-radius: 6px;
   line-height: 1.6;
-  border-left: 3px solid #52c41a;
 }
 
 .progress-step.step-completed .step-content .step-title {

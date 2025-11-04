@@ -573,7 +573,7 @@ class MomoSearchHandler(BaseHandler):
                             "language": "en",
                             "source": "ddg_en_translated",
                             "max_results": 40  # 英语查询增加到40条
-                    })
+                        })
             
             # 执行 DuckDuckGo 搜索
             for idx, ddg_item in enumerate(ddg_queries):

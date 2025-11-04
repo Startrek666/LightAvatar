@@ -995,6 +995,11 @@ const handleWebSocketMessage = (data: any) => {
     // 需要等待所有视频播放完成
     streamCompleted.value = true
     
+    // 如果搜索弹窗还在显示，标记综合信息步骤完成
+    if (showSearchProgressModal.value && searchProgressModalRef.value) {
+      searchProgressModalRef.value.markSynthesizingComplete()
+    }
+    
     // 检查是否可以立即解锁（队列为空且没有正在播放的视频）
     if (videoQueue.value.length === 0 && !isPlayingSpeechVideo.value) {
       console.log('  - 流式传输完成且无待播放视频，解锁输入框')

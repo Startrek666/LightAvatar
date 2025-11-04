@@ -47,9 +47,9 @@ def clean_markdown_for_tts(text: str) -> str:
         from loguru import logger
         logger.debug(f"✂️ 已移除参考来源部分 (从 {len(original_text)} 字符减少到 {len(text)} 字符)")
     
-    # 移除引用标记 [citation:X]（不读出）
+    # 移除引用标记 [citation:X] 或 [citation:X, Y]（不读出）
     before_citation_remove = text
-    text = re.sub(r'\[citation:\d+\]', '', text)
+    text = re.sub(r'\[citation:[\d\s,]+\]', '', text)
     
     if len(text) != len(before_citation_remove):
         from loguru import logger
