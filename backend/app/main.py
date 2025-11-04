@@ -10,7 +10,8 @@ from contextlib import asynccontextmanager
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from typing import Optional
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
@@ -336,8 +337,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                             except:
                                 pass
                     
-                    # 启动后台任务，不等待完成
-                    asyncio.create_task(process_text_background())
+                    # 启动后台任务，并添加到session的current_tasks中以便中断
+                    background_task = asyncio.create_task(process_text_background())
+                    session.current_tasks.append(background_task)
+                    
+                    # 任务完成后自动从列表中移除
+                    def remove_task(task):
+                        if task in session.current_tasks:
+                            session.current_tasks.remove(task)
+                    background_task.add_done_callback(lambda t: remove_task(t))
                 
                 else:
                     # Non-streaming mode (legacy support)
@@ -530,6 +538,88 @@ async def get_sessions():
         "active_sessions": session_manager.get_active_sessions(),
         "total_memory_mb": session_manager.get_total_memory_usage()
     }
+
+
+@app.get("/api/session/current")
+async def get_current_user_session(
+    authorization: Optional[str] = Header(default=None, alias="Authorization")
+):
+    """Get current user's session information"""
+    try:
+        from backend.database.auth import AuthService
+        from backend.database.models import db_manager
+        
+        # 获取token
+        if not authorization or not authorization.startswith("Bearer "):
+            return {"has_session": False, "message": "未提供认证信息"}
+        
+        token = authorization[7:]
+        
+        auth_service = AuthService()
+        db_session = db_manager.get_session()
+        try:
+            user = auth_service.get_current_user(db_session, token)
+            if not user:
+                return {"has_session": False, "message": "无效的认证信息"}
+            
+            # 获取用户会话
+            session_info = session_manager.get_user_session(user.id)
+            if session_info:
+                return {
+                    "has_session": True,
+                    "session": session_info
+                }
+            else:
+                return {
+                    "has_session": False,
+                    "message": "当前没有活跃会话"
+                }
+        finally:
+            db_session.close()
+    except Exception as e:
+        logger.error(f"获取用户会话失败: {e}", exc_info=True)
+        return {"has_session": False, "message": f"获取会话信息失败: {str(e)}"}
+
+
+@app.post("/api/session/disconnect")
+async def disconnect_current_user_session(
+    authorization: Optional[str] = Header(default=None, alias="Authorization")
+):
+    """Disconnect current user's session"""
+    try:
+        from backend.database.auth import AuthService
+        from backend.database.models import db_manager
+        
+        # 获取token
+        if not authorization or not authorization.startswith("Bearer "):
+            return {"success": False, "message": "未提供认证信息"}
+        
+        token = authorization[7:]
+        
+        auth_service = AuthService()
+        db_session = db_manager.get_session()
+        try:
+            user = auth_service.get_current_user(db_session, token)
+            if not user:
+                return {"success": False, "message": "无效的认证信息"}
+            
+            # 断开用户会话
+            success = await session_manager.disconnect_user_session(user.id)
+            if success:
+                return {
+                    "success": True,
+                    "message": "会话已断开"
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "当前没有活跃会话"
+                }
+        finally:
+            db_session.close()
+    except Exception as e:
+        logger.error(f"断开会话失败: {e}", exc_info=True)
+        return {"success": False, "message": f"断开会话失败: {str(e)}"}
 
 
 @app.get("/api/models")

@@ -2,6 +2,7 @@
 Google Gemini API Handler for LLM responses
 使用谷歌云原生 Gemini API，支持流式对话和历史记录
 """
+import asyncio
 from typing import AsyncGenerator, List, Dict, Optional, Any
 from loguru import logger
 from google import genai
@@ -118,8 +119,6 @@ class GoogleGeminiHandler(BaseHandler):
             
             # Google Gemini 的 send_message_stream 返回同步迭代器
             # 需要在异步环境中逐块处理，避免阻塞事件循环
-            import asyncio
-            
             # 使用 run_in_executor 在线程池中处理同步迭代器
             loop = asyncio.get_event_loop()
             
@@ -131,17 +130,45 @@ class GoogleGeminiHandler(BaseHandler):
                     return sentinel
             
             sentinel = object()
+            # 添加超时保护，避免在处理大表格时卡死
+            CHUNK_TIMEOUT = 30.0  # 每个chunk最多等待30秒
+            
             while True:
-                # 在线程池中获取下一个 chunk
-                chunk = await loop.run_in_executor(None, get_next_chunk, response, sentinel)
-                
-                if chunk is sentinel:
-                    break
-                
-                if hasattr(chunk, 'text') and chunk.text:
-                    chunk_count += 1
-                    total_text += chunk.text
-                    yield chunk.text
+                try:
+                    # 在线程池中获取下一个 chunk，添加超时保护
+                    chunk = await asyncio.wait_for(
+                        loop.run_in_executor(None, get_next_chunk, response, sentinel),
+                        timeout=CHUNK_TIMEOUT
+                    )
+                    
+                    if chunk is sentinel:
+                        break
+                    
+                    if hasattr(chunk, 'text') and chunk.text:
+                        chunk_count += 1
+                        total_text += chunk.text
+                        yield chunk.text
+                        
+                except asyncio.TimeoutError:
+                    logger.error(f"❌ Gemini chunk 获取超时（{CHUNK_TIMEOUT}秒），可能遇到大表格或网络问题")
+                    logger.error(f"  - 已接收块数: {chunk_count}")
+                    logger.error(f"  - 已接收字符数: {len(total_text)}")
+                    # 尝试继续获取下一个chunk，但如果连续超时则退出
+                    try:
+                        # 再尝试一次，缩短超时时间
+                        chunk = await asyncio.wait_for(
+                            loop.run_in_executor(None, get_next_chunk, response, sentinel),
+                            timeout=5.0
+                        )
+                        if chunk is sentinel:
+                            break
+                        if hasattr(chunk, 'text') and chunk.text:
+                            chunk_count += 1
+                            total_text += chunk.text
+                            yield chunk.text
+                    except asyncio.TimeoutError:
+                        logger.error("❌ 连续超时，停止流式处理")
+                        break
             
             logger.info(f"✅ Gemini 流式响应完成")
             logger.info(f"  - 总块数: {chunk_count}")

@@ -681,6 +681,11 @@ class Session:
             
             # 根据是否启用搜索选择调用方式
             if use_search:
+                # 检查是否已被中断
+                if self.is_interrupted:
+                    logger.info(f"[Session {self.session_id}] 已被中断，跳过搜索")
+                    return
+                
                 # 只支持高级搜索（Momo Search）
                 if search_mode == "advanced" and self.momo_search_handler:
                     # 检查是否使用多Agent模式
@@ -709,6 +714,11 @@ class Session:
                 stream = self.llm_handler.stream_response(text, self.conversation_history)
             
             async for chunk in stream:
+                # 检查是否已被中断
+                if self.is_interrupted:
+                    logger.info(f"[Session {self.session_id}] 已被中断，停止处理LLM流")
+                    break
+                
                 chunk_received += 1
                 full_response += chunk
                 sentence_buffer += chunk
@@ -1276,13 +1286,15 @@ class SessionManager:
                     session.pending_video_tasks.clear()
                     logger.info(f"🛑 已取消 Session {session_id} 的 {cancelled_count} 个视频生成任务")
                 
-                # 中断其他正在运行的任务
+                # 中断其他正在运行的任务（包括搜索任务和LLM流式处理任务）
                 if hasattr(session, 'current_tasks'):
-                    for task in session.current_tasks:
+                    cancelled_count = 0
+                    for task in list(session.current_tasks):
                         if not task.done():
                             task.cancel()
+                            cancelled_count += 1
                     session.current_tasks.clear()
-                    logger.info(f"🛑 已取消 Session {session_id} 的其他任务")
+                    logger.info(f"🛑 已取消 Session {session_id} 的 {cancelled_count} 个后台任务（包括搜索和LLM处理）")
                 
                 # 重置处理状态
                 session.is_processing = False
@@ -1413,13 +1425,55 @@ class SessionManager:
         return [
             {
                 "session_id": session.session_id,
+                "user_id": session.user_id,
+                "username": session.username,
                 "created_at": session.created_at.isoformat(),
                 "last_active": session.last_active.isoformat(),
                 "is_processing": session.is_processing,
+                "is_connected": session.is_connected,
                 "conversation_length": len(session.conversation_history)
             }
             for session in self.sessions.values()
         ]
+    
+    def get_user_session(self, user_id: int) -> Optional[dict]:
+        """Get current session for a specific user"""
+        session_id = self.user_sessions.get(user_id)
+        if not session_id:
+            return None
+        
+        session = self.sessions.get(session_id)
+        if not session:
+            return None
+        
+        return {
+            "session_id": session.session_id,
+            "user_id": session.user_id,
+            "username": session.username,
+            "created_at": session.created_at.isoformat(),
+            "last_active": session.last_active.isoformat(),
+            "is_processing": session.is_processing,
+            "is_connected": session.is_connected,
+            "conversation_length": len(session.conversation_history)
+        }
+    
+    async def disconnect_user_session(self, user_id: int) -> bool:
+        """Disconnect session for a specific user"""
+        session_id = self.user_sessions.get(user_id)
+        if not session_id:
+            return False
+        
+        # 先中断正在进行的任务（如果有）
+        await self.interrupt_session(session_id)
+        
+        # 断开WebSocket连接
+        self.websocket_manager.disconnect(session_id)
+        
+        # 标记Session为断开状态
+        await self.disconnect_session(session_id)
+        
+        logger.info(f"🔌 已断开用户 {user_id} 的会话 {session_id}（已中断所有正在进行的任务）")
+        return True
     
     def get_total_memory_usage(self) -> float:
         """Get total memory usage in MB"""

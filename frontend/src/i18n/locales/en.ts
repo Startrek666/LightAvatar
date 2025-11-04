@@ -9,7 +9,9 @@ export default {
     loading: 'Loading...',
     success: 'Success',
     error: 'Error',
-    warning: 'Warning'
+    warning: 'Warning',
+    yes: 'Yes',
+    no: 'No'
   },
   header: {
     title: 'Avatar Chat',
@@ -116,7 +118,15 @@ export default {
     language: 'Language / 语言',
     languageHint: 'Select interface language',
     chinese: '简体中文',
-    english: 'English'
+    english: 'English',
+    sessionStatus: 'Session Status',
+    sessionConnected: 'Connected',
+    noSession: 'No Active Session',
+    sessionId: 'Session ID',
+    isProcessing: 'Processing',
+    disconnectSession: 'Disconnect Session',
+    sessionDisconnected: 'Session Disconnected',
+    disconnectFailed: 'Failed to Disconnect Session'
   },
   models: {
     qwen: 'Qwen 2.5B',

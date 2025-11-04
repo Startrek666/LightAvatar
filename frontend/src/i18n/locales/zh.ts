@@ -9,7 +9,9 @@ export default {
     loading: '加载中...',
     success: '成功',
     error: '错误',
-    warning: '警告'
+    warning: '警告',
+    yes: '是',
+    no: '否'
   },
   header: {
     title: 'Avatar Chat',
@@ -116,7 +118,15 @@ export default {
     language: '语言 / Language',
     languageHint: '选择界面语言',
     chinese: '简体中文',
-    english: 'English'
+    english: 'English',
+    sessionStatus: '会话状态',
+    sessionConnected: '已连接',
+    noSession: '无活跃会话',
+    sessionId: '会话ID',
+    isProcessing: '正在处理',
+    disconnectSession: '断开会话',
+    sessionDisconnected: '会话已断开',
+    disconnectFailed: '断开会话失败'
   },
   models: {
     qwen: 'Qwen 2.5B',

@@ -270,6 +270,31 @@
           </a-button>
         </a-form-item>
         <a-divider />
+        <!-- 会话管理 -->
+        <a-form-item :label="t('settings.sessionStatus')">
+          <div class="session-info">
+            <div v-if="currentSession.has_session" class="session-status connected">
+              <a-badge status="success" :text="t('settings.sessionConnected')" />
+              <div class="session-details">
+                <div class="session-detail-item">
+                  <span class="detail-label">{{ t('settings.sessionId') }}:</span>
+                  <span class="detail-value">{{ currentSession.session?.session_id }}</span>
+                </div>
+                <div class="session-detail-item">
+                  <span class="detail-label">{{ t('settings.isProcessing') }}:</span>
+                  <span class="detail-value">{{ currentSession.session?.is_processing ? t('common.yes') : t('common.no') }}</span>
+                </div>
+              </div>
+              <a-button type="default" danger block @click="handleDisconnectSession" :loading="disconnectingSession" style="margin-top: 12px;">
+                {{ t('settings.disconnectSession') }}
+              </a-button>
+            </div>
+            <div v-else class="session-status disconnected">
+              <a-badge status="default" :text="t('settings.noSession')" />
+            </div>
+          </div>
+        </a-form-item>
+        <a-divider />
         <a-form-item :label="t('settings.llmModel')">
           <a-select v-model:value="settings.llm.model">
             <a-select-option value="qwen">{{ t('models.qwen') }}</a-select-option>
@@ -330,6 +355,7 @@ import { useDocParser } from '@/composables/useDocParser'
 import { isTokenInvalidReason } from '@/utils/auth'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import SearchProgressModal from '@/components/SearchProgressModal.vue'
+import axios from '@/utils/axios'
 import { 
   SERVER_NODES, 
   getCurrentNode, 
@@ -360,6 +386,8 @@ const uploadedDocInfo = ref<{ filename: string; textLength: number } | null>(nul
 const isPlayingIdleVideo = ref(false)
 const settingsVisible = ref(false)
 const videoPlaybackUnlocked = ref(false) // 视频播放权限是否已解锁
+const currentSession = ref<{has_session: boolean, session?: any, message?: string}>({has_session: false})
+const disconnectingSession = ref(false)
 const isReady = ref(false) // 是否已准备就绪
 const isInitializing = ref(false) // 是否正在初始化
 
@@ -424,8 +452,43 @@ const settings = ref({
 })
 
 // Methods
-const showSettings = () => {
+const showSettings = async () => {
   settingsVisible.value = true
+  // 加载当前会话信息
+  await loadCurrentSession()
+}
+
+// 加载当前会话信息
+const loadCurrentSession = async () => {
+  try {
+    const response = await axios.get('/session/current')
+    currentSession.value = response.data
+  } catch (error: any) {
+    console.error('获取会话信息失败:', error)
+    currentSession.value = {has_session: false, message: error.response?.data?.message || '获取会话信息失败'}
+  }
+}
+
+// 断开会话
+const handleDisconnectSession = async () => {
+  try {
+    disconnectingSession.value = true
+    const response = await axios.post('/session/disconnect')
+    if (response.data.success) {
+      message.success(response.data.message || t('settings.sessionDisconnected'))
+      // 更新会话状态
+      currentSession.value = {has_session: false}
+      // 断开WebSocket连接
+      disconnect()
+    } else {
+      message.warning(response.data.message || t('settings.disconnectFailed'))
+    }
+  } catch (error: any) {
+    console.error('断开会话失败:', error)
+    message.error(error.response?.data?.message || t('settings.disconnectFailed'))
+  } finally {
+    disconnectingSession.value = false
+  }
 }
 
 const goToProfile = () => {
@@ -2427,5 +2490,45 @@ onUnmounted(() => {
   margin-top: 16px;
   font-size: 14px;
   color: #666;
+}
+.session-info {
+  width: 100%;
+}
+
+.session-status {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.session-details {
+  margin-top: 8px;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+}
+
+.session-detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.session-detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.detail-label {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+.detail-value {
+  font-size: 13px;
+  color: #1a1a1a;
+  font-family: 'Consolas', 'Monaco', monospace;
+  word-break: break-all;
 }
 </style>
