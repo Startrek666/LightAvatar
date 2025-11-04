@@ -82,10 +82,10 @@ function processCitations(content: string): string {
   // 保留完整的原始内容（包括参考来源部分）
   // 将 [citation:X] 或 [citation:X, Y] 转换为可点击的上标
   // 匹配 [citation:1] 或 [citation:1, 9] 或 [citation:1][citation:2] 这样的格式
-  const processedContent = content.replace(/\[citation:([\d\s,]+)\]/g, (match, nums) => {
+  const processedContent = content.replace(/\[citation:([\d\s,]+)\]/g, (match: string, nums: string) => {
     // 处理多个数字的情况，如 "1, 9" 或 "1,9"
-    const numList = nums.split(',').map(n => n.trim()).filter(n => n)
-    const supElements = numList.map(num => {
+    const numList = nums.split(',').map((n: string) => n.trim()).filter((n: string) => n)
+    const supElements = numList.map((num: string) => {
       const citationIndex = parseInt(num) - 1
       console.log(`处理 ${match} 中的 ${num}, index: ${citationIndex}, 引用总数: ${citations.value.length}`) // 调试日志
       
