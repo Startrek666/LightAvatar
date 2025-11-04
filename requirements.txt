@@ -51,8 +51,8 @@ faiss-cpu>=1.7.4          # FAISS for vector similarity search (CPU version)
 sentence-transformers>=2.2.2  # Sentence embeddings for semantic search
 transformers>=4.35.0      # Required by sentence-transformers (explicit version for compatibility)
 langchain-text-splitters>=0.2.0  # Text splitting utilities
-langchain>=0.1.0  # LangChain core framework for advanced reasoning chains
-langchain-core>=0.1.0  # LangChain core components
+# langchain>=0.1.0  # LangChain core framework (currently not used, reserved for future use)
+# langchain-core>=0.1.0  # LangChain core components (currently not used, reserved for future use)
 
 # Authentication
 bcrypt==4.1.2
