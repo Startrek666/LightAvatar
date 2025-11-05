@@ -37,6 +37,7 @@ export default {
     sendMessage: 'Send Message',
     interrupt: 'Interrupt',
     interruptedMessage: 'Digital avatar generation interrupted',
+    generating: 'Generating...',
     uploadDoc: 'Upload Document',
     uploadDocHint: 'Upload document (PDF/DOCX/PPTX, max 30MB)',
     startRecording: 'Click to start recording',

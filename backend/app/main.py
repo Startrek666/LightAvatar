@@ -10,12 +10,15 @@ from contextlib import asynccontextmanager
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from typing import Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
+from typing import Optional, List
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File
+from fastapi.responses import StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 import uvicorn
+import tempfile
+import subprocess
 
 from backend.app.ws_manager import WebSocketManager
 from backend.app.config import settings
@@ -234,7 +237,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 use_search = data.get("use_search", False)  # 是否启用联网搜索
                 search_mode = data.get("search_mode", "simple")  # 搜索模式: simple/advanced
                 search_quality = data.get("search_quality", "speed")  # 搜索质量: speed/quality
-                text_content = data.get("text") or ""  # 确保不会是None
+                text_content = data.get("text", "")
                 logger.info(f"[WebSocket] Session {session_id}: 收到文本消息")
                 logger.info(f"  - streaming: {use_streaming}")
                 logger.info(f"  - use_search: {use_search}")
@@ -319,9 +322,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                     async def process_text_background():
                         """在后台处理文本，避免阻塞WebSocket接收循环"""
                         try:
-                            text_for_processing = data.get("text") or ""  # 确保不会是None
                             await session.process_text_stream(
-                                text_for_processing, 
+                                data.get("text"), 
                                 stream_callback,
                                 use_search=use_search,
                                 search_mode=search_mode,
@@ -350,8 +352,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 
                 else:
                     # Non-streaming mode (legacy support)
-                    text_for_processing = data.get("text") or ""  # 确保不会是None
-                    response = await session.process_text(text_for_processing)
+                    response = await session.process_text(data.get("text"))
                     
                     # Send text response
                     await websocket_manager.send_json(session_id, {
@@ -685,6 +686,96 @@ async def get_idle_video():
     else:
         logger.error(f"Idle video not found. Searched paths: {idle_video_path}")
         raise HTTPException(status_code=404, detail=f"Idle video not found at: {idle_video_path}")
+
+
+@app.post("/api/merge-videos")
+async def merge_videos(videos: List[UploadFile] = File(...)):
+    """
+    合并多个MP4视频片段为一个完整的视频文件
+    使用FFmpeg的concat协议来正确合并MP4文件
+    """
+    if not videos:
+        raise HTTPException(status_code=400, detail="No videos provided")
+    
+    logger.info(f"📹 开始合并 {len(videos)} 个视频片段...")
+    
+    # 创建临时目录存储视频片段和输出文件
+    temp_dir = Path(tempfile.mkdtemp(prefix="video_merge_"))
+    input_files = []
+    concat_list_path = temp_dir / "concat_list.txt"
+    output_path = temp_dir / "merged_output.mp4"
+    
+    try:
+        # 保存所有上传的视频片段
+        for idx, video in enumerate(videos):
+            video_path = temp_dir / f"segment_{idx:03d}.mp4"
+            content = await video.read()
+            video_path.write_bytes(content)
+            input_files.append(video_path)
+            logger.debug(f"  - 保存片段 {idx + 1}: {len(content)} bytes")
+        
+        # 创建FFmpeg concat列表文件
+        with open(concat_list_path, 'w', encoding='utf-8') as f:
+            for input_file in input_files:
+                # 使用相对路径或绝对路径
+                f.write(f"file '{input_file.absolute()}'\n")
+        
+        # 使用FFmpeg concat协议合并视频
+        # concat协议会正确处理MP4文件结构，不会简单拼接
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', str(concat_list_path),
+            '-c', 'copy',  # 直接复制编码，不重新编码（最快）
+            '-movflags', '+faststart',  # 优化Web播放
+            str(output_path)
+        ]
+        
+        logger.info(f"🎬 执行FFmpeg合并: {' '.join(cmd)}")
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60  # 60秒超时
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"❌ FFmpeg合并失败: {result.stderr}")
+            raise HTTPException(status_code=500, detail=f"Video merge failed: {result.stderr}")
+        
+        # 检查输出文件是否生成
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            logger.error(f"❌ 合并后的视频文件为空或不存在")
+            raise HTTPException(status_code=500, detail="Merged video is empty")
+        
+        # 读取合并后的视频
+        merged_video = output_path.read_bytes()
+        logger.info(f"✅ 视频合并成功: {len(merged_video)} bytes ({len(merged_video) / 1024 / 1024:.2f} MB)")
+        
+        # 返回合并后的视频文件
+        return Response(
+            content=merged_video,
+            media_type="video/mp4",
+            headers={
+                "Content-Disposition": "attachment; filename=merged_video.mp4"
+            }
+        )
+        
+    except subprocess.TimeoutExpired:
+        logger.error("❌ FFmpeg合并超时")
+        raise HTTPException(status_code=500, detail="Video merge timeout")
+    except Exception as e:
+        logger.error(f"❌ 视频合并失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Video merge error: {str(e)}")
+    finally:
+        # 清理临时文件
+        try:
+            import shutil
+            shutil.rmtree(temp_dir)
+            logger.debug(f"🧹 清理临时目录: {temp_dir}")
+        except Exception as e:
+            logger.warning(f"清理临时文件失败: {e}")
 
 
 # Mount static files

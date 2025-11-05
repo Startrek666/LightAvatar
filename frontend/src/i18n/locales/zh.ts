@@ -37,6 +37,7 @@ export default {
     sendMessage: '发送消息',
     interrupt: '中断',
     interruptedMessage: '已中断数字人生成',
+    generating: '生成中...',
     uploadDoc: '上传文档',
     uploadDocHint: '上传文档 (PDF/DOCX/PPTX, 最大30MB)',
     startRecording: '点击开始录音',

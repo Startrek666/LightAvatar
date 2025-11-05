@@ -210,8 +210,11 @@
                       type="link" 
                       size="small" 
                       @click="downloadVideo(message.videoUrl || '', index)"
+                      :disabled="message.isGenerating"
+                      :loading="message.isGenerating"
                       class="video-download-btn">
-                      <DownloadOutlined /> {{ t('download.video') }}
+                      <DownloadOutlined v-if="!message.isGenerating" /> 
+                      {{ message.isGenerating ? t('chat.generating') : t('download.video') }}
                     </a-button>
                   </div>
                 </template>
@@ -482,6 +485,7 @@ const messages = ref<Array<{
   hasSearchProcess?: boolean  // 标记是否有搜索过程
   selected?: boolean  // 是否被选中用于下载
   videoUrl?: string  // 视频URL（如果有）
+  isGenerating?: boolean  // 是否正在生成视频（用于控制下载按钮）
 }>>([])
 
 // 下载相关状态
@@ -611,6 +615,9 @@ const saveSettings = async () => {
     })
 
     if (response.ok) {
+      // 同步保存到localStorage，确保刷新后配置不丢失
+      localStorage.setItem('avatar-chat-settings', JSON.stringify(settings.value))
+      
       message.success(t('common.success'))
       settingsVisible.value = false
 
@@ -771,7 +778,8 @@ const sendTextMessage = (event?: Event) => {
     role: 'assistant' as const,
     content: '',
     timestamp: new Date(),
-    hasSearchProcess: enableWebSearch.value  // 如果启用了搜索，标记这条消息
+    hasSearchProcess: enableWebSearch.value,  // 如果启用了搜索，标记这条消息
+    isGenerating: true  // 标记正在生成，禁用下载
   }
   messages.value.push(assistantMessage)
 
@@ -1059,15 +1067,20 @@ const downloadAsPDF = async () => {
 // 下载视频
 const downloadVideo = async (videoUrl: string, messageIndex: number) => {
   try {
-    // 如果videoUrl是blob URL，直接下载
-    if (videoUrl.startsWith('blob:')) {
-      const response = await fetch(videoUrl)
-      if (!response.ok) {
-        throw new Error('视频下载失败')
-      }
-      
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
+    isDownloading.value = true
+    
+    // 获取该消息的所有视频片段
+    const videoBlobs = messageVideos.value.get(messageIndex)
+    
+    if (!videoBlobs || videoBlobs.length === 0) {
+      throw new Error('未找到视频数据')
+    }
+    
+    console.log(`📹 开始合并下载 ${videoBlobs.length} 个视频片段...`)
+    
+    // 如果只有一个片段，直接下载
+    if (videoBlobs.length === 1) {
+      const url = URL.createObjectURL(videoBlobs[0])
       const link = document.createElement('a')
       link.href = url
       link.download = `AI视频_${messageIndex + 1}_${new Date().toISOString().split('T')[0]}.mp4`
@@ -1076,28 +1089,46 @@ const downloadVideo = async (videoUrl: string, messageIndex: number) => {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
       message.success(t('download.videoSuccess'))
-    } else {
-      // 如果不是blob URL，尝试从消息的视频集合中获取
-      const videoBlobs = messageVideos.value.get(messageIndex)
-      if (videoBlobs && videoBlobs.length > 0) {
-        // 合并所有视频blob
-        const combinedBlob = new Blob(videoBlobs, { type: 'video/mp4' })
-        const url = URL.createObjectURL(combinedBlob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `AI视频_${messageIndex + 1}_${new Date().toISOString().split('T')[0]}.mp4`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(url)
-        message.success(t('download.videoSuccess'))
-      } else {
-        throw new Error('未找到视频数据')
-      }
+      return
     }
+    
+    // 多个片段需要后端合并
+    message.loading({ content: '正在合并视频片段...', key: 'merging', duration: 0 })
+    
+    // 将所有视频片段上传到后端进行合并
+    const formData = new FormData()
+    videoBlobs.forEach((blob, index) => {
+      formData.append('videos', blob, `segment_${index}.mp4`)
+    })
+    
+    const response = await fetch('/api/merge-videos', {
+      method: 'POST',
+      body: formData
+    })
+    
+    if (!response.ok) {
+      throw new Error('视频合并失败')
+    }
+    
+    // 下载合并后的视频
+    const mergedBlob = await response.blob()
+    const url = URL.createObjectURL(mergedBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `AI视频_${messageIndex + 1}_${new Date().toISOString().split('T')[0]}.mp4`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    message.destroy('merging')
+    message.success(t('download.videoSuccess'))
   } catch (error) {
     console.error('视频下载失败:', error)
+    message.destroy('merging')
     message.error(t('download.videoFailed'))
+  } finally {
+    isDownloading.value = false
   }
 }
 
@@ -1230,6 +1261,13 @@ const handleWebSocketMessage = (data: any) => {
     isInterrupting.value = false
     isProcessing.value = false
     
+    // 标记最后一条assistant消息的生成已完成（允许下载已生成的部分视频）
+    const lastMessage = messages.value[messages.value.length - 1]
+    if (lastMessage && lastMessage.role === 'assistant') {
+      lastMessage.isGenerating = false
+      console.log('✅ 已标记消息生成完成，允许下载部分视频')
+    }
+    
     // 显示中断提示消息
     const interruptMessage = {
       role: 'system' as const,
@@ -1331,6 +1369,8 @@ const handleWebSocketMessage = (data: any) => {
         const lastMessage = messages.value[messages.value.length - 1]
         if (lastMessage && lastMessage.role === 'assistant') {
           lastMessage.videoUrl = videoUrl
+          // 标记生成完成，允许下载
+          lastMessage.isGenerating = false
         }
         console.log(`✅ 已保存消息 ${currentMessageVideoIndex.value} 的完整视频 (${videoBlobs.length}个片段)`)
       }
