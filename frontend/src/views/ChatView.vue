@@ -146,7 +146,7 @@
           <!-- Chat Messages -->
           <div class="chat-messages" v-if="showChatHistory">
             <!-- 下载工具栏（仅在启用消息选择时显示） -->
-            <div v-if="settings.download.enableMessageSelection && selectedMessageIds.size > 0" class="download-toolbar">
+            <div v-if="settings.download?.enableMessageSelection && selectedMessageIds.size > 0" class="download-toolbar">
               <span class="selected-count">{{ t('download.selectedCount', { count: selectedMessageIds.size }) }}</span>
               <a-button-group>
                 <a-button @click="downloadAsWord" :loading="isDownloading">
@@ -172,7 +172,7 @@
                 <!-- 普通消息 -->
                 <template v-else>
                   <!-- 消息选择复选框（仅assistant消息可选，且需要开启设置） -->
-                  <div v-if="message.role === 'assistant' && settings.download.enableMessageSelection" class="message-checkbox">
+                  <div v-if="message.role === 'assistant' && settings.download?.enableMessageSelection" class="message-checkbox">
                     <a-checkbox 
                       :checked="selectedMessageIds.has(index)"
                       @change="(e: any) => toggleMessageSelection(index, e.target.checked)"
@@ -505,6 +505,24 @@ const settings = ref({
     enableMessageSelection: false  // 默认不显示消息勾选框
   }
 })
+
+// 合并配置，确保所有字段都存在
+const mergeSettings = (loadedConfig: any) => {
+  return {
+    llm: {
+      model: loadedConfig?.llm?.model || 'qwen'
+    },
+    tts: {
+      voice: loadedConfig?.tts?.voice || 'zh-CN-XiaoxiaoNeural'
+    },
+    avatar: {
+      template: loadedConfig?.avatar?.template || 'default.mp4'
+    },
+    download: {
+      enableMessageSelection: loadedConfig?.download?.enableMessageSelection ?? false
+    }
+  }
+}
 
 // Methods
 const showSettings = async () => {
@@ -1671,13 +1689,14 @@ const startDialog = async () => {
       const response = await fetch('/api/config')
       if (response.ok) {
         const config = await response.json()
-        settings.value = config
-        localStorage.setItem('avatar-chat-settings', JSON.stringify(config))
+        settings.value = mergeSettings(config)
+        localStorage.setItem('avatar-chat-settings', JSON.stringify(settings.value))
         configLoaded.value = true
       } else {
         const savedSettings = localStorage.getItem('avatar-chat-settings')
         if (savedSettings) {
-          settings.value = JSON.parse(savedSettings)
+          const parsedConfig = JSON.parse(savedSettings)
+          settings.value = mergeSettings(parsedConfig)
           configLoaded.value = true
         }
       }
@@ -1685,7 +1704,8 @@ const startDialog = async () => {
       console.error('Failed to load settings:', error)
       const savedSettings = localStorage.getItem('avatar-chat-settings')
       if (savedSettings) {
-        settings.value = JSON.parse(savedSettings)
+        const parsedConfig = JSON.parse(savedSettings)
+        settings.value = mergeSettings(parsedConfig)
         configLoaded.value = true
       }
     }
