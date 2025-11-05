@@ -126,7 +126,9 @@ export default {
     isProcessing: '正在处理',
     disconnectSession: '断开会话',
     sessionDisconnected: '会话已断开',
-    disconnectFailed: '断开会话失败'
+    disconnectFailed: '断开会话失败',
+    enableMessageSelection: '启用消息选择',
+    enableMessageSelectionHint: '开启后可在消息前显示勾选框，用于批量下载'
   },
   models: {
     qwen: 'Qwen 2.5B',
@@ -144,6 +146,21 @@ export default {
     default: '默认女性',
     male: '默认男性',
     custom: '自定义'
+  },
+  download: {
+    selectedCount: '已选择 {count} 条消息',
+    word: '下载为Word',
+    pdf: '下载为PDF',
+    video: '下载视频',
+    clear: '清除选择',
+    noSelection: '请先选择要下载的消息',
+    noValidMessages: '没有有效的消息可下载',
+    wordSuccess: 'Word文档下载成功',
+    wordFailed: 'Word文档下载失败',
+    pdfSuccess: 'PDF文档已生成，请使用浏览器的打印功能保存',
+    pdfFailed: 'PDF文档生成失败',
+    videoSuccess: '视频下载成功',
+    videoFailed: '视频下载失败'
   },
   document: {
     uploaded: '已上传文档',

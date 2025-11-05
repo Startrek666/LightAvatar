@@ -126,7 +126,9 @@ export default {
     isProcessing: 'Processing',
     disconnectSession: 'Disconnect Session',
     sessionDisconnected: 'Session Disconnected',
-    disconnectFailed: 'Failed to Disconnect Session'
+    disconnectFailed: 'Failed to Disconnect Session',
+    enableMessageSelection: 'Enable Message Selection',
+    enableMessageSelectionHint: 'Enable checkboxes before messages for batch download'
   },
   models: {
     qwen: 'Qwen 2.5B',
@@ -144,6 +146,21 @@ export default {
     default: 'Default Female',
     male: 'Default Male',
     custom: 'Custom'
+  },
+  download: {
+    selectedCount: 'Selected {count} messages',
+    word: 'Download as Word',
+    pdf: 'Download as PDF',
+    video: 'Download Video',
+    clear: 'Clear Selection',
+    noSelection: 'Please select messages to download',
+    noValidMessages: 'No valid messages to download',
+    wordSuccess: 'Word document downloaded successfully',
+    wordFailed: 'Word document download failed',
+    pdfSuccess: 'PDF document generated, please use browser print function to save',
+    pdfFailed: 'PDF document generation failed',
+    videoSuccess: 'Video downloaded successfully',
+    videoFailed: 'Video download failed'
   },
   document: {
     uploaded: 'Document Uploaded',

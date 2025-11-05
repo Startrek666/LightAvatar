@@ -145,8 +145,24 @@
 
           <!-- Chat Messages -->
           <div class="chat-messages" v-if="showChatHistory">
+            <!-- 下载工具栏（仅在启用消息选择时显示） -->
+            <div v-if="settings.download.enableMessageSelection && selectedMessageIds.size > 0" class="download-toolbar">
+              <span class="selected-count">{{ t('download.selectedCount', { count: selectedMessageIds.size }) }}</span>
+              <a-button-group>
+                <a-button @click="downloadAsWord" :loading="isDownloading">
+                  <FileWordOutlined /> {{ t('download.word') }}
+                </a-button>
+                <a-button @click="downloadAsPDF" :loading="isDownloading">
+                  <FilePdfOutlined /> {{ t('download.pdf') }}
+                </a-button>
+                <a-button @click="clearSelection">
+                  {{ t('download.clear') }}
+                </a-button>
+              </a-button-group>
+            </div>
+            
             <div class="messages-container" ref="messagesContainer">
-              <div v-for="(message, index) in messages" :key="index" :class="['message', message.role]">
+              <div v-for="(message, index) in messages" :key="index" :class="['message', message.role, { 'selected': selectedMessageIds.has(index) }]">
                 <!-- 搜索进度消息 -->
                 <template v-if="message.role === 'search_progress'">
                   <div class="search-progress-message">
@@ -155,6 +171,14 @@
                 </template>
                 <!-- 普通消息 -->
                 <template v-else>
+                  <!-- 消息选择复选框（仅assistant消息可选，且需要开启设置） -->
+                  <div v-if="message.role === 'assistant' && settings.download.enableMessageSelection" class="message-checkbox">
+                    <a-checkbox 
+                      :checked="selectedMessageIds.has(index)"
+                      @change="(e: any) => toggleMessageSelection(index, e.target.checked)"
+                    />
+                  </div>
+                  
                   <!-- AI消息且有搜索过程时显示查看链接 -->
                   <div v-if="message.role === 'assistant' && message.hasSearchProcess" class="search-process-link">
                     <a @click="reopenSearchModal" class="view-search-link">
@@ -178,7 +202,18 @@
                       </template>
                     </div>
                   </div>
-                  <div class="message-time">{{ formatTime(message.timestamp) }}</div>
+                  <div class="message-time">
+                    {{ formatTime(message.timestamp) }}
+                    <!-- 视频下载按钮（如果有视频或视频数据） -->
+                    <a-button 
+                      v-if="message.videoUrl || messageVideos.has(index)" 
+                      type="link" 
+                      size="small" 
+                      @click="downloadVideo(message.videoUrl || '', index)"
+                      class="video-download-btn">
+                      <DownloadOutlined /> {{ t('download.video') }}
+                    </a-button>
+                  </div>
                 </template>
               </div>
             </div>
@@ -317,6 +352,11 @@
             <a-select-option value="male.mp4">{{ t('avatars.male') }}</a-select-option>
           </a-select>
         </a-form-item>
+        
+        <a-form-item :label="t('settings.enableMessageSelection')">
+          <a-switch v-model:checked="settings.download.enableMessageSelection" />
+          <span style="margin-left: 8px; color: #666;">{{ t('settings.enableMessageSelectionHint') }}</span>
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -347,7 +387,10 @@ import {
   FileTextOutlined,
   CloseOutlined,
   GlobalOutlined,
-  StopOutlined
+  StopOutlined,
+  FileWordOutlined,
+  FilePdfOutlined,
+  DownloadOutlined
 } from '@ant-design/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
@@ -415,6 +458,9 @@ const isPlayingSpeechVideo = ref(false)
 const streamCompleted = ref(false) // 流式传输是否已完成
 const configLoaded = ref(false)
 const idleVideoUrl = ref('')
+// 存储每个消息对应的完整视频（用于下载）
+const messageVideos = ref<Map<number, Blob[]>>(new Map())
+const currentMessageVideoIndex = ref<number | null>(null) // 当前正在接收视频的消息索引
 
 // Connection status messages
 const connectionMessage = ref('')
@@ -434,7 +480,13 @@ const messages = ref<Array<{
   content: string
   timestamp: Date
   hasSearchProcess?: boolean  // 标记是否有搜索过程
+  selected?: boolean  // 是否被选中用于下载
+  videoUrl?: string  // 视频URL（如果有）
 }>>([])
+
+// 下载相关状态
+const selectedMessageIds = ref<Set<number>>(new Set())
+const isDownloading = ref(false)
 
 // 当前搜索进度消息的索引（用于更新）
 const currentSearchProgressIndex = ref<number | null>(null)
@@ -448,6 +500,9 @@ const settings = ref({
   },
   avatar: {
     template: 'default.mp4'
+  },
+  download: {
+    enableMessageSelection: false  // 默认不显示消息勾选框
   }
 })
 
@@ -846,6 +901,188 @@ const toggleRecording = () => {
   }
 }
 
+// 下载相关函数
+const toggleMessageSelection = (index: number, checked: boolean) => {
+  if (checked) {
+    selectedMessageIds.value.add(index)
+  } else {
+    selectedMessageIds.value.delete(index)
+  }
+}
+
+const clearSelection = () => {
+  selectedMessageIds.value.clear()
+}
+
+// 下载为Word文档
+const downloadAsWord = async () => {
+  if (selectedMessageIds.value.size === 0) {
+    message.warning(t('download.noSelection'))
+    return
+  }
+  
+  try {
+    isDownloading.value = true
+    const selectedMessages = Array.from(selectedMessageIds.value)
+      .sort((a, b) => a - b)
+      .map(index => messages.value[index])
+      .filter(msg => msg.role === 'assistant')
+    
+    if (selectedMessages.length === 0) {
+      message.warning(t('download.noValidMessages'))
+      return
+    }
+    
+    // 创建Word文档内容
+    const content = selectedMessages.map((msg, idx) => {
+      // 清理Markdown格式，转换为纯文本
+      const cleanContent = msg.content
+        .replace(/\*\*(.*?)\*\*/g, '$1')  // 加粗
+        .replace(/\*(.*?)\*/g, '$1')      // 斜体
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1')  // 链接
+        .replace(/`(.*?)`/g, '$1')        // 代码
+        .replace(/#{1,6}\s+(.*)/g, '$1')  // 标题
+        .replace(/\[citation:[\d\s,]+\]/g, '')  // 引用标记
+      return `问题 ${idx + 1}:\n${cleanContent}\n\n`
+    }).join('\n---\n\n')
+    
+    // 创建Blob并下载
+    const blob = new Blob(['\ufeff' + content], { type: 'application/msword;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `AI对话记录_${new Date().toISOString().split('T')[0]}.doc`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    message.success(t('download.wordSuccess'))
+  } catch (error) {
+    console.error('下载Word失败:', error)
+    message.error(t('download.wordFailed'))
+  } finally {
+    isDownloading.value = false
+  }
+}
+
+// 下载为PDF文档
+const downloadAsPDF = async () => {
+  if (selectedMessageIds.value.size === 0) {
+    message.warning(t('download.noSelection'))
+    return
+  }
+  
+  try {
+    isDownloading.value = true
+    const selectedMessages = Array.from(selectedMessageIds.value)
+      .sort((a, b) => a - b)
+      .map(index => messages.value[index])
+      .filter(msg => msg.role === 'assistant')
+    
+    if (selectedMessages.length === 0) {
+      message.warning(t('download.noValidMessages'))
+      return
+    }
+    
+    // 使用html2pdf库生成PDF（需要安装 html2pdf.js）
+    // 如果未安装，则使用简单的文本转PDF方法
+    const content = selectedMessages.map((msg, idx) => {
+      const cleanContent = msg.content
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        .replace(/\*(.*?)\*/g, '$1')
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+        .replace(/`(.*?)`/g, '$1')
+        .replace(/#{1,6}\s+(.*)/g, '$1')
+        .replace(/\[citation:[\d\s,]+\]/g, '')
+      return `问题 ${idx + 1}:\n${cleanContent}\n\n`
+    }).join('\n---\n\n')
+    
+    // 创建打印窗口生成PDF
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>AI对话记录</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
+            h1 { color: #333; }
+            .message { margin-bottom: 20px; padding: 10px; border-left: 3px solid #1890ff; }
+          </style>
+        </head>
+        <body>
+          <h1>AI对话记录</h1>
+          <p>生成时间: ${new Date().toLocaleString()}</p>
+          <hr>
+          <pre style="white-space: pre-wrap; font-family: Arial, sans-serif;">${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+        </body>
+        </html>
+      `)
+      printWindow.document.close()
+      printWindow.onload = () => {
+        printWindow.print()
+        setTimeout(() => printWindow.close(), 1000)
+      }
+      message.success(t('download.pdfSuccess'))
+    } else {
+      throw new Error('无法打开打印窗口')
+    }
+  } catch (error) {
+    console.error('下载PDF失败:', error)
+    message.error(t('download.pdfFailed'))
+  } finally {
+    isDownloading.value = false
+  }
+}
+
+// 下载视频
+const downloadVideo = async (videoUrl: string, messageIndex: number) => {
+  try {
+    // 如果videoUrl是blob URL，直接下载
+    if (videoUrl.startsWith('blob:')) {
+      const response = await fetch(videoUrl)
+      if (!response.ok) {
+        throw new Error('视频下载失败')
+      }
+      
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `AI视频_${messageIndex + 1}_${new Date().toISOString().split('T')[0]}.mp4`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      message.success(t('download.videoSuccess'))
+    } else {
+      // 如果不是blob URL，尝试从消息的视频集合中获取
+      const videoBlobs = messageVideos.value.get(messageIndex)
+      if (videoBlobs && videoBlobs.length > 0) {
+        // 合并所有视频blob
+        const combinedBlob = new Blob(videoBlobs, { type: 'video/mp4' })
+        const url = URL.createObjectURL(combinedBlob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `AI视频_${messageIndex + 1}_${new Date().toISOString().split('T')[0]}.mp4`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+        message.success(t('download.videoSuccess'))
+      } else {
+        throw new Error('未找到视频数据')
+      }
+    }
+  } catch (error) {
+    console.error('视频下载失败:', error)
+    message.error(t('download.videoFailed'))
+  }
+}
+
 const formatTime = (date: Date) => {
   return new Intl.DateTimeFormat('zh-CN', {
     hour: '2-digit',
@@ -1024,6 +1261,14 @@ const handleWebSocketMessage = (data: any) => {
     if (lastMessage && lastMessage.role === 'assistant') {
       lastMessage.content += data.data.chunk
       console.log('  - 已追加到assistant消息, 当前长度:', lastMessage.content.length)
+      
+      // 如果是新消息，初始化视频存储
+      if (currentMessageVideoIndex.value === null) {
+        currentMessageVideoIndex.value = messages.value.length - 1
+        messageVideos.value.set(currentMessageVideoIndex.value, [])
+        console.log(`📹 开始收集消息 ${currentMessageVideoIndex.value} 的视频`)
+      }
+      
       scrollToBottom()
     } else {
       console.warn('⚠️ [handleWebSocketMessage] 没有找到assistant消息或最后一条不是assistant')
@@ -1057,6 +1302,22 @@ const handleWebSocketMessage = (data: any) => {
     // 标记流式传输已完成，但不立即解锁输入框
     // 需要等待所有视频播放完成
     streamCompleted.value = true
+    
+    // 合并当前消息的所有视频blob并保存
+    if (currentMessageVideoIndex.value !== null) {
+      const videoBlobs = messageVideos.value.get(currentMessageVideoIndex.value) || []
+      if (videoBlobs.length > 0) {
+        // 合并所有视频blob
+        const combinedBlob = new Blob(videoBlobs, { type: 'video/mp4' })
+        const videoUrl = URL.createObjectURL(combinedBlob)
+        const lastMessage = messages.value[messages.value.length - 1]
+        if (lastMessage && lastMessage.role === 'assistant') {
+          lastMessage.videoUrl = videoUrl
+        }
+        console.log(`✅ 已保存消息 ${currentMessageVideoIndex.value} 的完整视频 (${videoBlobs.length}个片段)`)
+      }
+      currentMessageVideoIndex.value = null
+    }
     
     // 如果搜索弹窗还在显示，标记综合信息步骤完成
     if (showSearchProgressModal.value && searchProgressModalRef.value) {
@@ -1110,6 +1371,13 @@ const handleWebSocketMessage = (data: any) => {
 const handleWebSocketBinary = (videoBlob: Blob) => {
   // Add to video queue
   videoQueue.value.push(videoBlob)
+  
+  // 保存视频blob到当前消息的视频集合中（用于后续下载）
+  if (currentMessageVideoIndex.value !== null) {
+    const videoBlobs = messageVideos.value.get(currentMessageVideoIndex.value) || []
+    videoBlobs.push(videoBlob)
+    messageVideos.value.set(currentMessageVideoIndex.value, videoBlobs)
+  }
   
   // 更新已接收的视频序号
   if (pendingVideoSeq.value !== null) {
@@ -1874,8 +2142,42 @@ onUnmounted(() => {
   padding-bottom: 16px;
 }
 
-.message {
+/* 下载工具栏样式 */
+.download-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f0f7ff;
+  border-bottom: 1px solid #e6f7ff;
   margin-bottom: 16px;
+  border-radius: 8px 8px 0 0;
+}
+
+.selected-count {
+  font-size: 14px;
+  color: #1890ff;
+  font-weight: 500;
+}
+
+.message {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.message.selected {
+  background: #f0f7ff;
+  border-radius: 8px;
+  padding: 8px;
+  margin: -8px;
+}
+
+/* 消息选择复选框 */
+.message-checkbox {
+  position: absolute;
+  left: -30px;
+  top: 8px;
+  z-index: 10;
 }
 
 .message-content {
@@ -1912,6 +2214,9 @@ onUnmounted(() => {
   color: #999;
   margin-top: 4px;
   text-align: right;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .message.user .message-time {
@@ -1922,6 +2227,12 @@ onUnmounted(() => {
 .message.assistant .message-time {
   text-align: left;
   margin-left: 48px;
+}
+
+.video-download-btn {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
 }
 
 /* 搜索进度消息样式 */
