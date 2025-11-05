@@ -1433,6 +1433,9 @@ const handleWebSocketMessage = (data: any) => {
 
 // Handle binary video data
 const handleWebSocketBinary = (videoBlob: Blob) => {
+  const receiveTime = performance.now()
+  console.log(`📦 收到视频数据: ${(videoBlob.size / 1024).toFixed(2)} KB`)
+  
   // Add to video queue
   videoQueue.value.push(videoBlob)
   
@@ -1465,7 +1468,10 @@ const handleWebSocketBinary = (videoBlob: Blob) => {
 
   // Start playing if not already playing
   if (!isPlayingSpeechVideo.value) {
+    console.log(`🎬 立即开始播放视频`)
     playNextVideo()
+  } else {
+    console.log(`⏳ 视频已加入队列，等待当前视频播放完成 (队列长度: ${videoQueue.value.length})`)
   }
 }
 
@@ -1507,10 +1513,18 @@ const playNextVideo = async () => {
     
     // 等待加载并播放
     try {
+      const loadStartTime = performance.now()
+      console.log(`⏱️ 开始加载视频 (大小: ${(videoBlob.size / 1024).toFixed(2)} KB)`)
+      
       await new Promise((resolve, reject) => {
-        nextVideo.onloadeddata = async () => {
+        // 使用 loadedmetadata 而不是 loadeddata，更快触发
+        nextVideo.onloadedmetadata = async () => {
+          const loadTime = performance.now() - loadStartTime
+          console.log(`✅ 视频元数据加载完成 (耗时: ${loadTime.toFixed(0)}ms)`)
           try {
             await nextVideo.play()
+            const totalTime = performance.now() - loadStartTime
+            console.log(`▶️ 视频开始播放 (总耗时: ${totalTime.toFixed(0)}ms)`)
             resolve(null)
           } catch (playError: any) {
             // 移动端自动播放被阻止，尝试静音播放
@@ -1528,11 +1542,19 @@ const playNextVideo = async () => {
             }
           }
         }
-        nextVideo.onerror = reject
+        nextVideo.onerror = (e) => {
+          console.error('❌ 视频加载失败:', e)
+          reject(e)
+        }
+        
+        // 先设置 src 再 load（更快）
         nextVideo.load()
         
-        // 超时保护
-        setTimeout(() => reject(new Error('Video load timeout')), 10000)
+        // 超时保护（缩短到 5 秒）
+        setTimeout(() => {
+          console.error(`⏰ 视频加载超时 (>5秒)`)
+          reject(new Error('Video load timeout'))
+        }, 5000)
       })
       
       // 等待一帧，确保视频已渲染
