@@ -171,8 +171,8 @@
                 </template>
                 <!-- 普通消息 -->
                 <template v-else>
-                  <!-- 消息选择复选框（仅assistant消息可选，且需要开启设置） -->
-                  <div v-if="message.role === 'assistant' && settings.download?.enableMessageSelection" class="message-checkbox">
+                  <!-- 消息选择复选框（用户和AI消息都可选，且需要开启设置） -->
+                  <div v-if="(message.role === 'user' || message.role === 'assistant') && settings.download?.enableMessageSelection" class="message-checkbox">
                     <a-checkbox 
                       :checked="selectedMessageIds.has(index)"
                       @change="(e: any) => toggleMessageSelection(index, e.target.checked)"
@@ -952,7 +952,7 @@ const downloadAsWord = async () => {
     const selectedMessages = Array.from(selectedMessageIds.value)
       .sort((a, b) => a - b)
       .map(index => messages.value[index])
-      .filter(msg => msg.role === 'assistant')
+      .filter(msg => msg.role === 'user' || msg.role === 'assistant')
     
     if (selectedMessages.length === 0) {
       message.warning(t('download.noValidMessages'))
@@ -969,7 +969,10 @@ const downloadAsWord = async () => {
         .replace(/`(.*?)`/g, '$1')        // 代码
         .replace(/#{1,6}\s+(.*)/g, '$1')  // 标题
         .replace(/\[citation:[\d\s,]+\]/g, '')  // 引用标记
-      return `问题 ${idx + 1}:\n${cleanContent}\n\n`
+      
+      // 根据角色添加标签
+      const roleLabel = msg.role === 'user' ? '用户' : 'AI'
+      return `${roleLabel} (${idx + 1}):\n${cleanContent}\n\n`
     }).join('\n---\n\n')
     
     // 创建Blob并下载
@@ -1004,7 +1007,7 @@ const downloadAsPDF = async () => {
     const selectedMessages = Array.from(selectedMessageIds.value)
       .sort((a, b) => a - b)
       .map(index => messages.value[index])
-      .filter(msg => msg.role === 'assistant')
+      .filter(msg => msg.role === 'user' || msg.role === 'assistant')
     
     if (selectedMessages.length === 0) {
       message.warning(t('download.noValidMessages'))
@@ -1021,7 +1024,10 @@ const downloadAsPDF = async () => {
         .replace(/`(.*?)`/g, '$1')
         .replace(/#{1,6}\s+(.*)/g, '$1')
         .replace(/\[citation:[\d\s,]+\]/g, '')
-      return `问题 ${idx + 1}:\n${cleanContent}\n\n`
+      
+      // 根据角色添加标签
+      const roleLabel = msg.role === 'user' ? '用户' : 'AI'
+      return `${roleLabel} (${idx + 1}):\n${cleanContent}\n\n`
     }).join('\n---\n\n')
     
     // 创建打印窗口生成PDF

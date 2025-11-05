@@ -721,13 +721,19 @@ async def merge_videos(videos: List[UploadFile] = File(...)):
                 f.write(f"file '{input_file.absolute()}'\n")
         
         # 使用FFmpeg concat协议合并视频
-        # concat协议会正确处理MP4文件结构，不会简单拼接
+        # 重新编码以确保兼容性（避免编码参数不一致导致播放失败）
         cmd = [
             'ffmpeg', '-y',
             '-f', 'concat',
             '-safe', '0',
             '-i', str(concat_list_path),
-            '-c', 'copy',  # 直接复制编码，不重新编码（最快）
+            # 重新编码视频，使用统一的编码参数
+            '-c:v', 'libx264',  # H.264编码（兼容性最好）
+            '-preset', 'fast',  # 快速编码
+            '-crf', '23',  # 质量（18-28，23为默认，质量较好）
+            '-pix_fmt', 'yuv420p',  # 像素格式（兼容性最好）
+            '-c:a', 'aac',  # AAC音频编码
+            '-b:a', '128k',  # 音频比特率
             '-movflags', '+faststart',  # 优化Web播放
             str(output_path)
         ]
