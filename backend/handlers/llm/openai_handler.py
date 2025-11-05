@@ -32,7 +32,7 @@ class OpenAIHandler(BaseHandler):
         self.frequency_penalty = self.config.get("frequency_penalty", 0)
         self.system_prompt = self.config.get(
             "system_prompt",
-            "你是一个友好的AI助手，请用简洁清晰的语言回答问题。"
+            "You are a friendly AI assistant. Please answer questions clearly and concisely. IMPORTANT: Always respond in the SAME LANGUAGE as the user's input. If the user writes in English, respond in English. If the user writes in Chinese, respond in Chinese. Match the user's language naturally.\n\n你是一个友好的AI助手。请用简洁清晰的语言回答问题。重要提示：必须使用与用户输入相同的语言回复。如果用户用英语提问，请用英语回答。如果用户用中文提问，请用中文回答。自然地匹配用户的语言。"
         )
         
     async def _setup(self):
