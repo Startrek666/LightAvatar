@@ -187,9 +187,12 @@ class SearchAgent(BaseAgent):
                 
                 logger.info(f"🔍 [{self.name}] SearXNG搜索: {search_item['query']} ({search_item['language']})")
                 
+                # 使用查询项中指定的max_results，如果没有则使用默认值
+                num_results = search_item.get("max_results", self.max_results)
+                
                 results = search_searxng(
                     query=search_item['query'],
-                    num_results=self.max_results,
+                    num_results=num_results,
                     ip_address=self.searxng_url,
                     language=search_item['language'],
                     time_range=self.searxng_time_range,
@@ -772,7 +775,7 @@ class SearchOrchestrator:
             else:
                 keyword_result = {"keywords": {"zh": query, "en": ""}}
             
-            # 准备搜索查询列表
+            # 准备搜索查询列表（先英文，后中文）
             search_queries = []
             keywords = keyword_result.get("keywords", {})
             
@@ -783,66 +786,63 @@ class SearchOrchestrator:
                     search_queries.append({
                         "query": keywords["en"],
                         "language": "en",
-                        "source": "keywords_en"
+                        "source": "keywords_en",
+                        "max_results": 60  # 英语SearXNG搜索增加到60条
                     })
                 else:
                     search_queries.append({
                         "query": query,
                         "language": "en",
-                        "source": "original"
+                        "source": "original",
+                        "max_results": 60  # 英语SearXNG搜索增加到60条
                     })
             else:
-                # 中文查询：使用中英文关键词
-                if keywords.get("zh"):
+                # 中文查询：先英文，后中文
+                if keywords.get("en"):
                     search_queries.append({
-                        "query": keywords["zh"],
-                        "language": "zh",
-                        "source": "keywords_zh"
+                        "query": keywords["en"],
+                        "language": "en",
+                        "source": "keywords_en",
+                        "max_results": 60  # 英语SearXNG搜索增加到60条
                     })
                 
-                if keywords.get("en"):
+                if keywords.get("zh"):
                     search_queries.append({
-                        "query": keywords["en"],
-                        "language": "en",
-                        "source": "keywords_en"
+                        "query": keywords["zh"],
+                        "language": "zh",
+                        "source": "keywords_zh",
+                        "max_results": 50  # 中文SearXNG搜索保持50条
                     })
             
-            # 准备DuckDuckGo查询
+            # 准备DuckDuckGo查询（先英文，后中文）
             ddg_queries = []
             if detected_lang == "en":
-                # 英语查询：只使用英文，且增加结果数量到40
+                # 英语查询：只使用英文，且增加结果数量到60
                 if keywords.get("en"):
                     ddg_queries.append({
                         "query": keywords["en"],
                         "language": "en",
                         "source": "ddg_en",
-                        "max_results": 40  # 英语查询增加到40条
+                        "max_results": 60  # 英语查询增加到60条
                     })
                 else:
                     ddg_queries.append({
                         "query": query,
                         "language": "en",
                         "source": "ddg_en",
-                        "max_results": 40  # 英语查询增加到40条
+                        "max_results": 60  # 英语查询增加到60条
                     })
             else:
-                # 中文查询：使用中英文
-                if keywords.get("zh"):
-                    ddg_queries.append({
-                        "query": keywords["zh"],
-                        "language": "zh",
-                        "source": "ddg_zh",
-                        "max_results": 20
-                    })
+                # 中文查询：先英文，后中文
                 if keywords.get("en"):
                     ddg_queries.append({
                         "query": keywords["en"],
                         "language": "en",
                         "source": "ddg_en",
-                        "max_results": 40  # 英语查询增加到40条
+                        "max_results": 40  # 中文搜索时的英语资料为40条
                     })
                 elif detected_lang == "zh":
-                    # 尝试翻译
+                    # 如果没有英文关键词，尝试翻译
                     from .momo_utils import translate_text
                     translated = translate_text(query, source="zh", target="en")
                     if translated:
@@ -850,8 +850,16 @@ class SearchOrchestrator:
                             "query": translated,
                             "language": "en",
                             "source": "ddg_en_translated",
-                            "max_results": 40  # 英语查询增加到40条
+                            "max_results": 40  # 中文搜索时的英语资料为40条
                         })
+                
+                if keywords.get("zh"):
+                    ddg_queries.append({
+                        "query": keywords["zh"],
+                        "language": "zh",
+                        "source": "ddg_zh",
+                        "max_results": 20
+                    })
             
             # Agent 2: 搜索
             search_agent = self.agents.get("searcher")
@@ -862,12 +870,13 @@ class SearchOrchestrator:
             if search_agent:
                 # 逐个执行搜索并报告进度
                 
-                # 执行SearXNG搜索
+                # 执行SearXNG搜索（先英文，后中文）
                 for sq in search_queries:
-                    await self._report_progress(
-                        current_step,
-                        f"正在搜索: {sq['query']} ({sq['source']})"
-                    )
+                    if sq['language'] == 'en':
+                        message = f"正在搜索英语资料: {sq['query']}"
+                    else:
+                        message = f"正在搜索中文资料: {sq['query']}"
+                    await self._report_progress(current_step, message)
                     # 单个查询搜索
                     single_result = await search_agent.process({"queries": [sq]})
                     docs = single_result.get("results", [])
@@ -879,12 +888,12 @@ class SearchOrchestrator:
                             seen_urls.add(doc.url)
                     current_step += 1
                 
-                # 执行DuckDuckGo搜索
+                # 执行DuckDuckGo搜索（先英文，后中文）
                 for dq in ddg_queries:
-                    if dq['language'] == 'zh':
-                        message = "正在进一步深度搜索..."
-                    else:
+                    if dq['language'] == 'en':
                         message = "正在扩充搜索英语资料..."
+                    else:
+                        message = "正在进一步深度搜索中文资料..."
                     await self._report_progress(current_step, message)
                     # 单个查询搜索
                     single_result = await search_agent.process({"queries": [dq]})

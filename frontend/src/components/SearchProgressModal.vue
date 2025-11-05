@@ -167,10 +167,10 @@ const steps = ref<Step[]>([
   { title: getStepTitle('started'), status: 'pending' },
   { title: getStepTitle('understandingProblem'), status: 'pending' }, // 深度模式
   { title: getStepTitle('extractingKeywords'), status: 'pending' },
-  { title: getStepTitle('chineseSearch'), status: 'pending' },
-  { title: getStepTitle('englishSearch'), status: 'pending' },
-  { title: getStepTitle('expandChinese'), status: 'pending' },
-  { title: getStepTitle('supplementEnglish'), status: 'pending' },
+  { title: getStepTitle('englishSearch'), status: 'pending' }, // 先英文
+  { title: getStepTitle('chineseSearch'), status: 'pending' }, // 后中文
+  { title: getStepTitle('supplementEnglish'), status: 'pending' }, // 先扩充英文
+  { title: getStepTitle('expandChinese'), status: 'pending' }, // 后扩充中文
   { title: getStepTitle('analyzing'), status: 'pending' },
   { title: getStepTitle('analyzingMaterials'), status: 'pending' }, // 深度模式
   { title: getStepTitle('deepThinking'), status: 'pending' }, // 深度模式
@@ -194,11 +194,14 @@ const stepMapping: Record<string, number> = {
   '提取搜索关键词': 2,
   '提取关键词': 2,
   '正在搜索:': -1, // 动态判断（根据语言）
-  '初步进行中文搜索': 3,
-  '初步进行英文搜索': 4,
-  '扩充中文搜索': 5,
-  '扩充搜索英语资料': 6,
-  '补充英语资料': 6,
+  '正在搜索英语资料:': 3, // 先英文
+  '正在搜索中文资料:': 4, // 后中文
+  '初步进行英文搜索': 3,
+  '初步进行中文搜索': 4,
+  '扩充搜索英语资料': 5, // 先扩充英文
+  '补充英语资料': 5,
+  '正在进一步深度搜索中文资料': 6, // 后扩充中文
+  '扩充中文搜索': 6,
   '分析相关性': 7,
   '正在分析信息': 7,
   '分析资料': 8,
@@ -283,15 +286,22 @@ const updateProgress = (message: string, step: number, total: number) => {
   for (const [key, index] of Object.entries(stepMapping)) {
     if (message.includes(key)) {
       if (index === -1) {
-        // 动态判断：'正在搜索:' 根据 source 与已检测语言映射步骤
-        if (message.includes('(keywords_zh)')) {
-          targetStepIndex = 3
-        } else if (message.includes('(keywords_en)')) {
-          targetStepIndex = 4
+        // 动态判断：'正在搜索:' 根据 source 与已检测语言映射步骤（先英文后中文）
+        if (message.includes('(keywords_en)') || message.includes('正在搜索英语资料:')) {
+          targetStepIndex = 3  // 英文搜索（先）
+        } else if (message.includes('(keywords_zh)') || message.includes('正在搜索中文资料:')) {
+          targetStepIndex = 4  // 中文搜索（后）
         } else if (message.includes('(original)')) {
-          targetStepIndex = detectedLanguage.value === 'en' ? 4 : 3
+          targetStepIndex = detectedLanguage.value === 'en' ? 3 : 4
         } else {
-          targetStepIndex = detectedLanguage.value === 'en' ? 4 : 3
+          // 根据消息内容判断语言
+          if (message.includes('英语') || message.includes('English') || message.includes('english')) {
+            targetStepIndex = 3
+          } else if (message.includes('中文') || message.includes('Chinese') || message.includes('chinese')) {
+            targetStepIndex = 4
+          } else {
+            targetStepIndex = detectedLanguage.value === 'en' ? 3 : 4
+          }
         }
       } else {
         targetStepIndex = index
@@ -322,7 +332,7 @@ const updateProgress = (message: string, step: number, total: number) => {
     if (steps.value[targetStepIndex].status === 'pending') {
       steps.value[targetStepIndex].status = 'active'
       // 更新步骤标题以确保使用最新语言（响应语言切换）
-      const stepKeys: StepTitleKey[] = ['started', 'understandingProblem', 'extractingKeywords', 'chineseSearch', 'englishSearch', 'expandChinese', 'supplementEnglish', 'analyzing', 'analyzingMaterials', 'deepThinking', 'crawling', 'splitting', 'completed', 'synthesizing']
+      const stepKeys: StepTitleKey[] = ['started', 'understandingProblem', 'extractingKeywords', 'englishSearch', 'chineseSearch', 'supplementEnglish', 'expandChinese', 'analyzing', 'analyzingMaterials', 'deepThinking', 'crawling', 'splitting', 'completed', 'synthesizing']
       if (targetStepIndex < stepKeys.length) {
         steps.value[targetStepIndex].title = getStepTitle(stepKeys[targetStepIndex])
       }
@@ -397,10 +407,10 @@ const reset = () => {
     { title: getStepTitle('started'), status: 'pending' },
     { title: getStepTitle('understandingProblem'), status: 'pending' },
     { title: getStepTitle('extractingKeywords'), status: 'pending' },
-    { title: getStepTitle('chineseSearch'), status: 'pending' },
-    { title: getStepTitle('englishSearch'), status: 'pending' },
-    { title: getStepTitle('expandChinese'), status: 'pending' },
-    { title: getStepTitle('supplementEnglish'), status: 'pending' },
+    { title: getStepTitle('englishSearch'), status: 'pending' }, // 先英文
+    { title: getStepTitle('chineseSearch'), status: 'pending' }, // 后中文
+    { title: getStepTitle('supplementEnglish'), status: 'pending' }, // 先扩充英文
+    { title: getStepTitle('expandChinese'), status: 'pending' }, // 后扩充中文
     { title: getStepTitle('analyzing'), status: 'pending' },
     { title: getStepTitle('analyzingMaterials'), status: 'pending' },
     { title: getStepTitle('deepThinking'), status: 'pending' },
@@ -440,12 +450,13 @@ watch(() => locale.value, () => {
   // 更新所有步骤的标题（保持状态不变）
   if (steps.value.length >= 8) {
     steps.value[0].title = getStepTitle('started')
-    steps.value[1].title = getStepTitle('extractingKeywords')
-    steps.value[2].title = getStepTitle('chineseSearch')
-    steps.value[3].title = getStepTitle('englishSearch')
-    steps.value[4].title = getStepTitle('expandChinese')
-    steps.value[5].title = getStepTitle('supplementEnglish')
-    steps.value[6].title = getStepTitle('analyzing')
+    steps.value[1].title = getStepTitle('understandingProblem')
+    steps.value[2].title = getStepTitle('extractingKeywords')
+    steps.value[3].title = getStepTitle('englishSearch') // 先英文
+    steps.value[4].title = getStepTitle('chineseSearch') // 后中文
+    steps.value[5].title = getStepTitle('supplementEnglish') // 先扩充英文
+    steps.value[6].title = getStepTitle('expandChinese') // 后扩充中文
+    steps.value[7].title = getStepTitle('analyzing')
     // 如果是完成状态且有关键词，保持原有的完成文本（包含结果数量）
     if (steps.value[7].status === 'completed' && resultCount.value > 0) {
       steps.value[7].title = t('search.modal.completedWithResults', { count: resultCount.value })
