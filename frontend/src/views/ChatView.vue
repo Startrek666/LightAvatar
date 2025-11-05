@@ -1433,7 +1433,6 @@ const handleWebSocketMessage = (data: any) => {
 
 // Handle binary video data
 const handleWebSocketBinary = (videoBlob: Blob) => {
-  const receiveTime = performance.now()
   console.log(`📦 收到视频数据: ${(videoBlob.size / 1024).toFixed(2)} KB`)
   
   // Add to video queue
