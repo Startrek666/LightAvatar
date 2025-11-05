@@ -107,16 +107,22 @@ class KeywordExtractionAgent(BaseAgent):
         
         try:
             query = input_data.get("query", "")
+            understanding = input_data.get("understanding", None)  # 获取问题理解结果
             if not query:
                 raise ValueError("查询为空")
             
             from .momo_utils import extract_keywords
             
-            logger.info(f"[{self.name}] 开始提取关键词: {query}")
+            if understanding:
+                logger.info(f"[{self.name}] 开始提取关键词（基于问题理解）: {query}")
+            else:
+                logger.info(f"[{self.name}] 开始提取关键词: {query}")
+            
             keywords_dict = extract_keywords(
                 query,
                 api_key=self.zhipu_api_key,
-                model=self.zhipu_model
+                model=self.zhipu_model,
+                understanding=understanding  # 传递理解结果
             )
             
             if keywords_dict:
@@ -412,25 +418,54 @@ class ProblemUnderstandingAgent(BaseAgent):
             
             current_date = datetime.now().strftime("%Y-%m-%d")
             
-            prompt = f"""今天是{current_date}。请深入理解用户的问题，分析问题的核心需求、背景和上下文。
+            prompt = f"""今天是{current_date}。作为一个专业的问题分析专家，请深入理解用户的问题，挖掘其背后的多层次需求。
 
 用户问题：{query}
 
-请从以下角度进行分析：
-1. 用户的核心需求是什么？
-2. 问题的背景和上下文是什么？
-3. 用户可能想要什么样的回答？（信息、分析、建议、对比等）
-4. 这个问题涉及哪些关键概念和领域？
+请进行多维度深度分析，识别用户的显性需求和潜在需求：
 
-请用简洁清晰的语言输出你的理解，控制在200字以内。"""
+**第一步：表面意图分析**
+- 用户直接询问的是什么？
+- 问题的类型：询问事实、寻求建议、对比选择、学习方法、解决问题等
+- 问题的核心关键词是什么？
+
+**第二步：潜在需求挖掘**（这是重点！）
+根据问题类型，用户可能还关心以下维度（选择相关的）：
+
+**通用维度**：
+- **基础概念**：定义、分类、组成部分、发展历史
+- **关键属性**：特征、参数、规格、版本、创建者/品牌
+- **对比评估**：优缺点、横向对比、排名、用户评价、专业评测
+- **实际应用**：使用场景、适用人群、成功案例、注意事项
+- **获取方式**：如何购买/下载、价格/成本、渠道、门槛
+- **实操指导**：使用方法、最佳实践、常见问题、学习资源
+- **发展动态**：最新进展、趋势预测、市场状况、未来展望
+
+**第三步：信息需求清单**
+基于上述分析，列出用户最可能需要的5-8个关键信息点（按重要性排序）。
+
+**第四步：搜索策略建议**
+为了全面回答这个问题，建议从哪些角度进行搜索？需要查找哪些类型的资料（如：产品列表、评测报告、教程文档、专家观点等）？
+
+**分析原则**：
+1. 不要只停留在问题表面，要思考"用户为什么问这个问题？他们真正想解决什么？"
+2. 考虑问题的实用性 - 用户通常希望得到可操作的、有价值的信息
+3. 关注时效性 - 如果涉及"最新"、"现在"等词，要特别注意搜索最新资料
+
+**示例**（仅供参考，实际分析要根据具体问题灵活调整）：
+- 技术问题："Python和Java哪个好？" → 用户可能需要：学习曲线对比、应用领域差异、就业前景、语法特点、生态对比、选择建议
+- 消费问题："iPhone 15值得买吗？" → 用户可能需要：性能参数、与前代对比、优缺点、价格分析、用户评价、购买建议
+- 学习问题："如何学习机器学习？" → 用户可能需要：学习路径、前置知识、推荐书籍/课程、实践项目、常见误区
+
+现在，请对用户的问题进行深度分析，输出你的理解（控制在400字以内，重点放在潜在需求挖掘）："""
             
-            logger.info(f"[{self.name}] 开始理解问题: {query}")
+            logger.info(f"[{self.name}] 开始深度理解问题: {query}")
             understanding = call_zhipu_llm(
                 prompt=prompt,
                 api_key=self.zhipu_api_key,
                 model=self.zhipu_model,
-                temperature=0.7,
-                max_tokens=500
+                temperature=0.8,  # 提高温度以增加分析的全面性
+                max_tokens=1200  # 增加 token 限制以支持更详细的分析
             )
             
             if understanding:
@@ -767,7 +802,12 @@ class SearchOrchestrator:
             step_offset = 2 if mode == "quality" else 1  # 深度模式：理解问题(1) + 关键词(2)，快速模式：开始(0) + 关键词(1)
             if keyword_agent:
                 await self._report_progress(step_offset, "提取搜索关键词")
-                keyword_result = await keyword_agent.process({"query": query})
+                # 如果有问题理解结果，传递给关键词提取Agent
+                keyword_input = {"query": query}
+                if mode == "quality" and thinking_results.get("understanding"):
+                    keyword_input["understanding"] = thinking_results["understanding"]
+                
+                keyword_result = await keyword_agent.process(keyword_input)
                 
                 if not keyword_result.get("success"):
                     logger.warning("关键词提取失败，使用原始查询")

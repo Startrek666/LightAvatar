@@ -81,7 +81,8 @@ def detect_language(text: str) -> str:
 def extract_keywords(
     query: str,
     api_key: Optional[str] = None,
-    model: Optional[str] = None
+    model: Optional[str] = None,
+    understanding: Optional[str] = None
 ) -> Optional[dict]:
     """
     使用智谱清言模型提取搜索关键词
@@ -90,6 +91,7 @@ def extract_keywords(
         query: 用户查询文本
         api_key: 智谱清言API密钥，如果为None则使用默认值
         model: 智谱清言模型名称，如果为None则使用默认值
+        understanding: 问题理解结果（可选），如果提供，将基于理解结果生成更全面的关键词
     
     Returns:
         包含zh_keys和en_keys的字典，失败返回None
@@ -105,8 +107,47 @@ def extract_keywords(
         now = datetime.now()
         current_date = f"{now.year}年{now.month}月{now.day}日"
         
-        # 构建Prompt
-        prompt = f"""今天是{current_date}。为了给用户的回答保持准确，你需要使用搜索引擎。使用json格式返回关键词，属性为zh_keys,en_keys。每个属性只需要一行，关键词用空格分隔。仅需返回重要关键词，每行不超过10个。对于英语关键词，除了完整翻译，还可以加上相关缩写。如果语句中包含"最近"，"最新"等词语，根据需要加上年份或者月份，年份和月份不能连在一起。从下面这句话中提取用于搜索引擎的关键词：{query}"""
+        # 构建Prompt（根据是否有理解结果选择不同的prompt）
+        if understanding:
+            # 深度模式：基于问题理解生成更全面的关键词
+            prompt = f"""今天是{current_date}。你是一个专业的搜索关键词提取专家。基于对用户问题的深度理解，提取全面的搜索关键词。
+
+用户问题：{query}
+
+问题理解：
+{understanding}
+
+**任务要求：**
+1. 基于问题理解，提取涵盖用户所有潜在需求的搜索关键词
+2. 关键词应该覆盖问题的多个维度：
+   - **核心概念**：问题的主体、相关术语、同义词
+   - **关键属性**：特征、参数、规格、品牌、版本等
+   - **评估维度**：评测、对比、优缺点、排名、评价等
+   - **实用信息**：应用、使用、购买、获取、教程等
+   - **时间限定**：如果涉及"最新"、"最近"，必须加上{now.year}年或{now.month}月
+
+3. **输出格式（JSON）**：
+   - zh_keys: 中文关键词，用空格分隔，15-20个
+   - en_keys: 英文关键词，用空格分隔，15-20个
+   - 英文关键词要包含完整术语和常用缩写
+
+**示例**（仅供参考，需根据实际问题灵活调整）：
+1. 技术问题："Python和Java哪个好？"
+{{
+  "zh_keys": "Python Java 编程语言对比 优缺点 学习难度 应用领域 性能对比 就业前景 开发效率 生态系统 适用场景 {now.year}年",
+  "en_keys": "Python Java programming language comparison pros cons learning curve application domain performance job market development efficiency ecosystem use case {now.year}"
+}}
+
+2. 消费问题："iPhone 15值得买吗？"
+{{
+  "zh_keys": "iPhone 15 苹果手机 值得购买 性能评测 价格 优缺点 用户评价 对比iPhone14 参数配置 购买建议 {now.year}年",
+  "en_keys": "iPhone 15 Apple smartphone worth buying performance review price pros cons user review comparison iPhone14 specs buying guide {now.year}"
+}}
+
+现在，请为用户问题提取关键词："""
+        else:
+            # 快速模式：原有的简单关键词提取
+            prompt = f"""今天是{current_date}。为了给用户的回答保持准确，你需要使用搜索引擎。使用json格式返回关键词，属性为zh_keys,en_keys。每个属性只需要一行，关键词用空格分隔。仅需返回重要关键词，每行不超过10个。对于英语关键词，除了完整翻译，还可以加上相关缩写。如果语句中包含"最近"，"最新"等词语，根据需要加上年份或者月份，年份和月份不能连在一起。从下面这句话中提取用于搜索引擎的关键词：{query}"""
         
         headers = {
             "Authorization": f"Bearer {zhipu_api_key}",
@@ -196,7 +237,7 @@ def extract_keywords(
                 # 其他错误直接抛出，不重试
                 logger.error(f"❌ 关键词提取失败: {e}")
                 raise
-                
+            
     except Exception as e:
         logger.error(f"❌ 关键词提取失败: {e}")
         import traceback

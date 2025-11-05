@@ -439,15 +439,15 @@ class MomoSearchHandler(BaseHandler):
                                 "source": "keywords_en"
                             })
                             logger.info(f"✅ 提取到英文关键词: {en_keys}")
-                
-                # 如果关键词提取失败或没有提取到关键词，使用原始查询
-                if not search_queries:
-                    logger.warning("⚠️ 关键词提取失败或为空，使用原始查询")
-                    search_queries.append({
-                        "query": query,
-                        "language": detected_lang,
-                        "source": "original"
-                    })
+                    
+                    # 如果关键词提取失败或没有提取到关键词，使用原始查询
+                    if not search_queries:
+                        logger.warning("⚠️ 关键词提取失败或为空，使用原始查询")
+                        search_queries.append({
+                            "query": query,
+                            "language": detected_lang,
+                            "source": "original"
+                        })
             else:
                 # 未启用关键词提取，使用原始查询
                 search_queries = [{
