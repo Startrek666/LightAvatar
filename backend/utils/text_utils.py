@@ -47,9 +47,11 @@ def clean_markdown_for_tts(text: str) -> str:
         from loguru import logger
         logger.debug(f"✂️ 已移除参考来源部分 (从 {len(original_text)} 字符减少到 {len(text)} 字符)")
     
-    # 移除引用标记 [citation:X] 或 [citation:X, Y]（不读出）
+    # 移除引用标记 [citation:X] 或 [citation:X, Y] 或 [citation: X]（不读出）
+    # 匹配格式：[citation:1], [citation:1, 9], [citation: 12], [citation:1, 12, 40] 等
     before_citation_remove = text
-    text = re.sub(r'\[citation:[\d\s,]+\]', '', text)
+    # 更全面的正则表达式，匹配所有可能的citation格式（包括空格、多个数字等）
+    text = re.sub(r'\[citation\s*:\s*[\d\s,]+\]', '', text, flags=re.IGNORECASE)
     
     if len(text) != len(before_citation_remove):
         from loguru import logger

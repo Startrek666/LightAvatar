@@ -92,7 +92,7 @@ export default {
         chineseSearch: '初步进行中文搜索',
         englishSearch: '初步进行英文搜索',
         expandChinese: '扩充中文搜索',
-        supplementEnglish: '补充英语资料',
+        supplementEnglish: '正在扩充英语资料',
         analyzing: '正在分析信息',
         analyzingMaterials: '分析资料',
         deepThinking: '深度思考与推理',

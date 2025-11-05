@@ -47,25 +47,43 @@ function extractCitations(content: string): Array<{ title: string; url: string }
   // 匹配 "参考来源：" 后面的内容（支持多种 Markdown 格式）
   // 匹配格式：**📚 参考来源：** 或 📚 参考来源： 或 参考来源：
   // 使用更宽松的正则表达式，匹配从"参考来源"到文件末尾的所有引用
-  const referencesMatch = content.match(/(?:\*\*)?(?:📚\s*)?参考来源[：:]\s*(?:\*\*)?\s*\n((?:\d+\.\s*\[.*?\]\(.*?\)\s*)+)/s)
+  // 注意：使用 [\s\S] 来匹配包括换行符在内的所有字符，确保匹配所有引用
+  const referencesMatch = content.match(/(?:\*\*)?(?:📚\s*)?参考来源[：:]\s*(?:\*\*)?\s*\n((?:\d+\.\s*\[[\s\S]*?\]\([\s\S]*?\)\s*)+)/)
   
   if (referencesMatch) {
     const referencesText = referencesMatch[1]
-    console.log('找到参考来源部分:', referencesText) // 调试日志
+    console.log('找到参考来源部分，长度:', referencesText.length) // 调试日志
+    console.log('参考来源内容预览:', referencesText.substring(0, 500)) // 调试日志
     
-    // 匹配每个引用：[标题](URL)
-    const citationRegex = /(\d+)\.\s*\[(.*?)\]\((.*?)\)/g
+    // 匹配每个引用：[标题](URL)，使用 [\s\S] 匹配包括换行符在内的所有字符
+    // 重置正则表达式的lastIndex，确保从头开始匹配
+    const citationRegex = /(\d+)\.\s*\[([\s\S]*?)\]\(([\s\S]*?)\)/g
+    citationRegex.lastIndex = 0  // 重置正则表达式状态
     let match
+    let matchCount = 0
     
     while ((match = citationRegex.exec(referencesText)) !== null) {
+      matchCount++
+      // 提取所有引用（用于处理citation标记点击），但显示时只显示前10个
       citationsList.push({
-        title: match[2],
-        url: match[3]
+        title: match[2].trim(),
+        url: match[3].trim()
       })
-      console.log(`提取引用 ${match[1]}: ${match[2]}`) // 调试日志
+      console.log(`提取引用 ${match[1]}: ${match[2].substring(0, 50)}...`) // 调试日志
     }
+    
+    console.log(`✅ 总共提取到 ${matchCount} 个引用`) // 调试日志
   } else {
-    console.log('未找到参考来源部分，content:', content) // 调试日志
+    console.log('未找到参考来源部分') // 调试日志
+    // 尝试查找是否有"参考来源"关键词
+    if (content.includes('参考来源')) {
+      console.log('⚠️ 内容包含"参考来源"但正则匹配失败，可能需要调整正则表达式')
+      // 尝试更宽松的匹配
+      const fallbackMatch = content.match(/参考来源[：:][\s\S]*?(\d+\.\s*\[[\s\S]*?\]\([\s\S]*?\))/)
+      if (fallbackMatch) {
+        console.log('找到备用匹配')
+      }
+    }
   }
   
   console.log('提取到的引用数量:', citationsList.length) // 调试日志
@@ -74,25 +92,56 @@ function extractCitations(content: string): Array<{ title: string; url: string }
 
 // 处理引用标记，转换为可点击的上标
 function processCitations(content: string): string {
-  // 先提取引用信息
+  // 先提取引用信息（提取所有引用，用于处理citation标记点击）
   citations.value = extractCitations(content)
   
   console.log('开始处理引用标记，引用数量:', citations.value.length) // 调试日志
   
-  // 保留完整的原始内容（包括参考来源部分）
+  // 截断参考来源部分，只显示前10个引用（避免占用太多空间）
+  // 但保留所有引用数据用于处理citation标记点击
+  let processedContent = content
+  const referencesMatch = processedContent.match(/(?:\*\*)?(?:📚\s*)?参考来源[：:]\s*(?:\*\*)?\s*\n((?:\d+\.\s*\[[\s\S]*?\]\([\s\S]*?\)\s*)+)/)
+  if (referencesMatch && citations.value.length > 10) {
+    const referencesText = referencesMatch[1]
+    const citationRegex = /(\d+)\.\s*\[([\s\S]*?)\]\(([\s\S]*?)\)/g
+    citationRegex.lastIndex = 0
+    let match
+    let displayedCount = 0
+    let truncatedText = ''
+    
+    while ((match = citationRegex.exec(referencesText)) !== null && displayedCount < 10) {
+      truncatedText += `${match[1]}. [${match[2]}](${match[3]})\n`
+      displayedCount++
+    }
+    
+    // 如果引用超过10个，添加提示
+    if (displayedCount < citations.value.length) {
+      truncatedText += `\n*（共${citations.value.length}个引用，仅显示前10个）*`
+    }
+    
+    // 替换参考来源部分
+    const referencesHeader = referencesMatch[0].replace(referencesText, truncatedText.trim())
+    processedContent = processedContent.replace(referencesMatch[0], referencesHeader)
+  }
+  
   // 将 [citation:X] 或 [citation:X, Y] 转换为可点击的上标
   // 匹配 [citation:1] 或 [citation:1, 9] 或 [citation:1][citation:2] 这样的格式
-  const processedContent = content.replace(/\[citation:([\d\s,]+)\]/g, (match: string, nums: string) => {
-    // 处理多个数字的情况，如 "1, 9" 或 "1,9"
+  processedContent = processedContent.replace(/\[citation:([\d\s,]+)\]/g, (match: string, nums: string) => {
+    // 处理多个数字的情况，如 "1, 9" 或 "1,9" 或 "12" 或 "1, 12, 40"
     const numList = nums.split(',').map((n: string) => n.trim()).filter((n: string) => n)
     const supElements = numList.map((num: string) => {
       const citationIndex = parseInt(num) - 1
       console.log(`处理 ${match} 中的 ${num}, index: ${citationIndex}, 引用总数: ${citations.value.length}`) // 调试日志
       
+      // 始终渲染sup标签，支持任意数量的引用
       if (citationIndex >= 0 && citationIndex < citations.value.length) {
         return `<sup class="citation-sup" data-citation="${num}" title="点击查看来源">${num}</sup>`
+      } else {
+        // 如果索引超出范围，可能是后端引用数量与前端提取不一致
+        // 仍然渲染，但标记为无效，让用户知道这个引用可能有问题
+        console.warn(`引用 ${num} 超出范围 (总数: ${citations.value.length})，可能后端返回了更多引用但前端未完全提取`)
+        return `<sup class="citation-sup citation-invalid" data-citation="${num}" title="引用来源未找到">${num}</sup>`
       }
-      return num // 如果索引无效，保持原数字
     }).join(', ')
     
     return supElements || match // 如果无法处理，保持原样
@@ -107,6 +156,12 @@ function handleCitationClick(event: MouseEvent) {
   const citationSup = target.closest('.citation-sup')
   
   if (citationSup) {
+    // 如果是无效引用，不处理点击
+    if (citationSup.classList.contains('citation-invalid')) {
+      console.warn('点击了无效的引用，无法显示详情')
+      return
+    }
+    
     const citationId = citationSup.getAttribute('data-citation')
     if (citationId) {
       const citationIndex = parseInt(citationId) - 1
@@ -138,6 +193,8 @@ function handleCitationClick(event: MouseEvent) {
         })
         
         event.stopPropagation()
+      } else {
+        console.warn(`引用索引 ${citationIndex} 超出范围 (总数: ${citations.value.length})`)
       }
     }
   } else {
@@ -514,6 +571,12 @@ watch(() => renderedHtml.value, () => {
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
+}
+
+/* 无效引用样式（索引超出范围但仍显示） */
+.markdown-body .citation-sup.citation-invalid {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .markdown-body .citation-sup:hover {

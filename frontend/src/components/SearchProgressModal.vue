@@ -200,6 +200,7 @@ const stepMapping: Record<string, number> = {
   '初步进行中文搜索': 4,
   '扩充搜索英语资料': 5, // 先扩充英文
   '补充英语资料': 5,
+  '正在扩充英语资料': 5, // 新的标题
   '正在进一步深度搜索中文资料': 6, // 后扩充中文
   '扩充中文搜索': 6,
   '分析相关性': 7,
@@ -338,7 +339,21 @@ const updateProgress = (message: string, step: number, total: number) => {
       }
       const cleanMessage = message.replace(/^[🔍🔑📊🕷️✂️✅🤖⚙️]\s*/g, '').trim()
       if (cleanMessage && !cleanMessage.includes('搜索完成') && !cleanMessage.includes('找到')) {
-        steps.value[targetStepIndex].subtitle = cleanMessage
+        // 如果消息包含换行符，提取第二行作为副标题
+        const lines = cleanMessage.split('\n')
+        if (lines.length > 1) {
+          // 第一行更新标题，第二行作为副标题
+          const mainTitle = lines[0].trim()
+          const subtitle = lines.slice(1).join('\n').trim()
+          if (mainTitle && targetStepIndex === 5) { // 补充英语资料步骤
+            steps.value[targetStepIndex].title = mainTitle
+          }
+          if (subtitle) {
+            steps.value[targetStepIndex].subtitle = subtitle
+          }
+        } else {
+          steps.value[targetStepIndex].subtitle = cleanMessage
+        }
       }
     }
     

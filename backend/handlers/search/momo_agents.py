@@ -891,7 +891,7 @@ class SearchOrchestrator:
                 # 执行DuckDuckGo搜索（先英文，后中文）
                 for dq in ddg_queries:
                     if dq['language'] == 'en':
-                        message = "正在扩充搜索英语资料..."
+                        message = "正在扩充英语资料\n正在进一步深度搜索英语资料..."
                     else:
                         message = "正在进一步深度搜索中文资料..."
                     await self._report_progress(current_step, message)
@@ -1050,7 +1050,8 @@ class SearchOrchestrator:
             return ""
         
         citations = []
-        for idx, doc in enumerate(documents[:10], 1):  # 最多10个引用
+        # 移除数量限制，包含所有文档的引用（避免前端无法渲染大于10的引用）
+        for idx, doc in enumerate(documents, 1):
             title = doc.title if hasattr(doc, 'title') else 'N/A'
             url = doc.url if hasattr(doc, 'url') else 'N/A'
             citations.append(f"{idx}. [{title}]({url})")
