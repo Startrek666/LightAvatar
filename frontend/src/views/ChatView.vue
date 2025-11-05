@@ -1065,7 +1065,7 @@ const downloadAsPDF = async () => {
 }
 
 // 下载视频
-const downloadVideo = async (videoUrl: string, messageIndex: number) => {
+const downloadVideo = async (_videoUrl: string, messageIndex: number) => {
   try {
     isDownloading.value = true
     
