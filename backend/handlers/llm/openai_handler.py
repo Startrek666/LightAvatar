@@ -177,7 +177,7 @@ class OpenAIHandler(BaseHandler):
                         logger.info(f"🔄 Gemma模型(搜索模式)检测到第 {len(user_messages)+1} 轮对话，执行上下文重置")
                         
                         # 从 history_without_current 中取最后2条消息（上一轮对话）
-                        if len(history_without_current) >= 2:
+                        if history_without_current and len(history_without_current) >= 2:
                             last_user_msg = history_without_current[-2]  # 上一轮的user消息
                             last_assistant_msg = history_without_current[-1]  # 上一轮的assistant回复
                             
@@ -199,12 +199,13 @@ class OpenAIHandler(BaseHandler):
                                 messages.append({"role": "user", "content": text})
                         else:
                             # 历史记录不足，按正常流程处理
-                            logger.warning(f"⚠️ 上下文重置失败：历史记录不足 (len={len(history_without_current)})")
-                            for msg in history_without_current:
-                                messages.append({
-                                    "role": msg["role"],
-                                    "content": msg["content"]
-                                })
+                            logger.warning(f"⚠️ 上下文重置失败：历史记录不足 (len={len(history_without_current) if history_without_current else 0})")
+                            if history_without_current:
+                                for msg in history_without_current:
+                                    messages.append({
+                                        "role": msg["role"],
+                                        "content": msg["content"]
+                                    })
                             messages.append({"role": "user", "content": text})
                     else:
                         # 不到5轮，正常添加历史（Gemma 模型限制为最多8条，即4轮对话）
@@ -553,12 +554,13 @@ class OpenAIHandler(BaseHandler):
                                 messages.append({"role": "user", "content": text})
                         else:
                             # 历史记录不足，按正常流程处理
-                            logger.warning(f"⚠️ 上下文重置失败：历史记录不足 (len={len(history_without_current)})")
-                            for msg in history_without_current:
-                                messages.append({
-                                    "role": msg["role"],
-                                    "content": msg["content"]
-                                })
+                            logger.warning(f"⚠️ 上下文重置失败：历史记录不足 (len={len(history_without_current) if history_without_current else 0})")
+                            if history_without_current:
+                                for msg in history_without_current:
+                                    messages.append({
+                                        "role": msg["role"],
+                                        "content": msg["content"]
+                                    })
                             messages.append({"role": "user", "content": text})
                     else:
                         # 不到5轮，正常添加历史（Gemma 模型限制为最多8条，即4轮对话）
