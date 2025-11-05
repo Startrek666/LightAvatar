@@ -161,7 +161,7 @@
               </a-button-group>
             </div>
             
-            <div class="messages-container" ref="messagesContainer">
+            <div class="messages-container" ref="messagesContainer" :class="{ 'with-checkboxes': settings.download?.enableMessageSelection }">
               <div v-for="(message, index) in messages" :key="index" :class="['message', message.role, { 'selected': selectedMessageIds.has(index) }]">
                 <!-- 搜索进度消息 -->
                 <template v-if="message.role === 'search_progress'">
@@ -2200,6 +2200,11 @@ onUnmounted(() => {
   overflow-y: auto;
   padding-right: 8px;
   padding-bottom: 16px;
+}
+
+/* 当开启消息勾选时，为勾选框留出空间 */
+.messages-container.with-checkboxes {
+  padding-left: 40px;
 }
 
 /* 下载工具栏样式 */

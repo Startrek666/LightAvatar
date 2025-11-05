@@ -132,9 +132,9 @@ function processCitations(content: string): string {
     const supElements = numList.map((num: string) => {
       const citationIndex = parseInt(num) - 1
       console.log(`处理 ${match} 中的 ${num}, index: ${citationIndex}, 引用总数: ${citations.value.length}`) // 调试日志
-      
+    
       // 始终渲染sup标签，支持任意数量的引用
-      if (citationIndex >= 0 && citationIndex < citations.value.length) {
+    if (citationIndex >= 0 && citationIndex < citations.value.length) {
         return `<sup class="citation-sup" data-citation="${num}" title="点击查看来源">${num}</sup>`
       } else {
         // 如果索引超出范围，可能是后端引用数量与前端提取不一致
