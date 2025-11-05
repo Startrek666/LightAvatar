@@ -168,9 +168,9 @@ class OpenAIHandler(BaseHandler):
                     # conversation_history 中最后一条是当前用户输入（已经在 session_manager 中添加）
                     # 所以要排除它来计算之前的对话轮数
                     history_without_current = conversation_history[:-1] if conversation_history and conversation_history[-1].get("role") == "user" else conversation_history
-                    user_messages = [m for m in history_without_current if m["role"] == "user"]
+                    user_messages = [m for m in history_without_current if m["role"] == "user"] if history_without_current else []
                     
-                    logger.info(f"📊 Gemma模型(搜索模式)对话统计: 完整历史={len(conversation_history)}条, 用户消息={len(user_messages)}条")
+                    logger.info(f"📊 Gemma模型(搜索模式)对话统计: 完整历史={len(conversation_history) if conversation_history else 0}条, 用户消息={len(user_messages)}条")
                     
                     # 判断是否需要重置（第5轮之后，即第6、11、16轮...）
                     if len(user_messages) >= 5 and len(user_messages) % 5 == 0:
@@ -296,16 +296,16 @@ class OpenAIHandler(BaseHandler):
                             # 快速模式：使用简单 Prompt
                             logger.info(f"⚡ [快速模式] 使用简单模式生成回答 (质量: {momo_search_quality})")
                             context = f"# 以下内容是基于用户发送的消息的搜索结果（今天是{cur_date}）:\n\n"
-                            
-                            for i, doc in enumerate(relevant_docs, 1):
-                                context += f"[网页 {i} 开始]\n"
-                                context += f"标题: {doc.title}\n"
-                                context += f"链接: {doc.url}\n"
-                                content_text = doc.content if doc.content else doc.snippet
-                                context += f"内容: {content_text}\n"
-                                context += f"[网页 {i} 结束]\n\n"
-                            
-                            context += """在回答时，请注意以下几点：
+                        
+                        for i, doc in enumerate(relevant_docs, 1):
+                            context += f"[网页 {i} 开始]\n"
+                            context += f"标题: {doc.title}\n"
+                            context += f"链接: {doc.url}\n"
+                            content_text = doc.content if doc.content else doc.snippet
+                            context += f"内容: {content_text}\n"
+                            context += f"[网页 {i} 结束]\n\n"
+                        
+                        context += """在回答时，请注意以下几点：
 - 在适当的情况下在句子末尾引用上下文，按照引用编号[citation:X]的格式在答案中对应部分引用上下文
 - 如果一句话源自多个上下文，请列出所有相关的引用编号，例如[citation:3][citation:5]
 - 并非搜索结果的所有内容都与用户的问题密切相关，你需要结合问题，对搜索结果进行甄别、筛选
@@ -522,16 +522,16 @@ class OpenAIHandler(BaseHandler):
                     # conversation_history 中最后一条是当前用户输入（已经在 session_manager 中添加）
                     # 所以要排除它来计算之前的对话轮数
                     history_without_current = conversation_history[:-1] if conversation_history and conversation_history[-1].get("role") == "user" else conversation_history
-                    user_messages = [m for m in history_without_current if m["role"] == "user"]
+                    user_messages = [m for m in history_without_current if m["role"] == "user"] if history_without_current else []
                     
-                    logger.info(f"📊 Gemma模型对话统计: 完整历史={len(conversation_history)}条, 用户消息={len(user_messages)}条")
+                    logger.info(f"📊 Gemma模型对话统计: 完整历史={len(conversation_history) if conversation_history else 0}条, 用户消息={len(user_messages)}条")
                     
                     # 判断是否需要重置（第5轮之后，即第6、11、16轮...）
                     if len(user_messages) >= 5 and len(user_messages) % 5 == 0:
                         logger.info(f"🔄 Gemma模型检测到第 {len(user_messages)+1} 轮对话，执行上下文重置")
                         
                         # 从 history_without_current 中取最后2条消息（上一轮对话）
-                        if len(history_without_current) >= 2:
+                        if history_without_current and len(history_without_current) >= 2:
                             last_user_msg = history_without_current[-2]  # 上一轮的user消息
                             last_assistant_msg = history_without_current[-1]  # 上一轮的assistant回复
                             

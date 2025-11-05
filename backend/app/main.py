@@ -234,7 +234,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 use_search = data.get("use_search", False)  # 是否启用联网搜索
                 search_mode = data.get("search_mode", "simple")  # 搜索模式: simple/advanced
                 search_quality = data.get("search_quality", "speed")  # 搜索质量: speed/quality
-                text_content = data.get("text", "")
+                text_content = data.get("text") or ""  # 确保不会是None
                 logger.info(f"[WebSocket] Session {session_id}: 收到文本消息")
                 logger.info(f"  - streaming: {use_streaming}")
                 logger.info(f"  - use_search: {use_search}")
@@ -319,8 +319,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                     async def process_text_background():
                         """在后台处理文本，避免阻塞WebSocket接收循环"""
                         try:
+                            text_for_processing = data.get("text") or ""  # 确保不会是None
                             await session.process_text_stream(
-                                data.get("text"), 
+                                text_for_processing, 
                                 stream_callback,
                                 use_search=use_search,
                                 search_mode=search_mode,
@@ -349,7 +350,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 
                 else:
                     # Non-streaming mode (legacy support)
-                    response = await session.process_text(data.get("text"))
+                    text_for_processing = data.get("text") or ""  # 确保不会是None
+                    response = await session.process_text(text_for_processing)
                     
                     # Send text response
                     await websocket_manager.send_json(session_id, {
