@@ -323,7 +323,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                         """在后台处理文本，避免阻塞WebSocket接收循环"""
                         try:
                             await session.process_text_stream(
-                                data.get("text"), 
+                                text_content, 
                                 stream_callback,
                                 use_search=use_search,
                                 search_mode=search_mode,

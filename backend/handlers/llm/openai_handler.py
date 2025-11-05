@@ -186,7 +186,7 @@ class OpenAIHandler(BaseHandler):
                                 # 合并上一轮对话和新消息作为新的第一轮
                                 merged_content = f"之前的对话：\n用户: {last_user_msg['content']}\n助手: {last_assistant_msg['content']}\n\n当前问题: {text}"
                                 messages.append({"role": "user", "content": merged_content})
-                                logger.info(f"✅ 重置上下文，只保留上一轮(user:{len(last_user_msg['content'])}字 + assistant:{len(last_assistant_msg['content'])}字) + 新消息({len(text)}字)")
+                                logger.info(f"✅ 重置上下文，只保留上一轮(user:{len(last_user_msg['content'])}字 + assistant:{len(last_assistant_msg['content'])}字) + 新消息({len(text) if text else 0}字)")
                             else:
                                 # 格式不对，说明历史记录异常，按正常流程处理（但排除当前输入，因为后面会统一添加）
                                 logger.warning(f"⚠️ 上下文重置失败：历史记录格式不正确 (last_user_msg role={last_user_msg.get('role')}, last_assistant_msg role={last_assistant_msg.get('role')})")
@@ -541,7 +541,7 @@ class OpenAIHandler(BaseHandler):
                                 # 合并上一轮对话和新消息作为新的第一轮
                                 merged_content = f"之前的对话：\n用户: {last_user_msg['content']}\n助手: {last_assistant_msg['content']}\n\n当前问题: {text}"
                                 messages.append({"role": "user", "content": merged_content})
-                                logger.info(f"✅ 重置上下文，只保留上一轮(user:{len(last_user_msg['content'])}字 + assistant:{len(last_assistant_msg['content'])}字) + 新消息({len(text)}字)")
+                                logger.info(f"✅ 重置上下文，只保留上一轮(user:{len(last_user_msg['content'])}字 + assistant:{len(last_assistant_msg['content'])}字) + 新消息({len(text) if text else 0}字)")
                             else:
                                 # 格式不对，说明历史记录异常，按正常流程处理（但排除当前输入，因为后面会统一添加）
                                 logger.warning(f"⚠️ 上下文重置失败：历史记录格式不正确 (last_user_msg role={last_user_msg.get('role')}, last_assistant_msg role={last_assistant_msg.get('role')})")

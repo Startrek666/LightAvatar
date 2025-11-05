@@ -406,8 +406,9 @@ class Session:
         # 标记为处理中，防止WebSocket断开时Session被清理
         self.is_processing = True
         logger.info(f"[Session {self.session_id}] process_text_stream 开始处理")
-        logger.info(f"  - 输入文本长度: {len(text)}")
-        logger.info(f"  - 输入文本预览: {text[:100]}")
+        safe_text = text or ""
+        logger.info(f"  - 输入文本长度: {len(safe_text)}")
+        logger.info(f"  - 输入文本预览: {safe_text[:100]}")
         logger.info(f"  - 联网搜索: {use_search}")
         logger.info(f"  - 搜索模式: {search_mode}")
         logger.info(f"  - 搜索质量: {search_quality}")
@@ -416,12 +417,12 @@ class Session:
             # Add user message to history
             self.conversation_history.append({
                 "role": "user",
-                "content": text,
+                "content": safe_text,
                 "timestamp": datetime.now().isoformat()
             })
             
             # Send user message confirmation
-            await callback("user_message", {"text": text})
+            await callback("user_message", {"text": safe_text})
             
             # Stream LLM response with real-time sentence processing
             full_response = ""
@@ -695,7 +696,7 @@ class Session:
                     else:
                         logger.info(f"⚙️ [管道模式] 使用高级搜索 (质量: {search_quality})")
                     stream = self.llm_handler.stream_response_with_search(
-                        text, 
+                        safe_text, 
                         self.conversation_history,
                         search_handler=None,  # 不使用简单搜索
                         use_search=True,
@@ -709,9 +710,9 @@ class Session:
                     # 如果高级搜索不可用，回退到普通模式
                     if search_mode == "advanced":
                         logger.warning(f"⚠️ 高级搜索不可用，回退到普通模式")
-                    stream = self.llm_handler.stream_response(text, self.conversation_history)
+                    stream = self.llm_handler.stream_response(safe_text, self.conversation_history)
             else:
-                stream = self.llm_handler.stream_response(text, self.conversation_history)
+                stream = self.llm_handler.stream_response(safe_text, self.conversation_history)
             
             async for chunk in stream:
                 # 检查是否已被中断
