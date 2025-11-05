@@ -243,6 +243,34 @@ class OpenAIHandler(BaseHandler):
                 content_preview = msg.get('content', '')[:50]
                 logger.debug(f"  消息 {i+1}: role={role}, content={content_preview}...")
             
+            # 检测用户输入的语言并添加强制语言匹配指令
+            def detect_language(text: str) -> str:
+                """简单检测文本主要语言"""
+                # 统计中文字符数量
+                chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+                # 统计英文字母数量
+                english_chars = sum(1 for char in text if char.isalpha() and ord(char) < 128)
+                
+                if chinese_chars > english_chars:
+                    return "zh"
+                elif english_chars > 0:
+                    return "en"
+                else:
+                    return "zh"  # 默认中文
+            
+            detected_lang = detect_language(text)
+            
+            # 根据检测到的语言，在系统提示词中添加强制语言指令
+            if detected_lang == "en":
+                language_instruction = "\n\n🔴 CRITICAL INSTRUCTION: The user's message is in ENGLISH. You MUST respond ENTIRELY in ENGLISH. DO NOT use Chinese characters in your response. This is mandatory."
+            else:
+                language_instruction = "\n\n🔴 重要指令：用户的消息是中文。你必须完全用中文回答。不要在回答中使用英文。这是强制要求。"
+            
+            # 将语言指令添加到第一条系统消息中
+            if messages and messages[0].get("role") == "system":
+                messages[0]["content"] += language_instruction
+                logger.info(f"🌐 检测到用户语言: {detected_lang}, 已添加语言匹配指令")
+            
             # 如果启用搜索
             citations_text = ""  # 用于存储引用信息
             
@@ -306,14 +334,21 @@ class OpenAIHandler(BaseHandler):
                             context += f"内容: {content_text}\n"
                             context += f"[网页 {i} 结束]\n\n"
                         
-                        context += """在回答时，请注意以下几点：
+                        # 根据检测到的语言添加强制语言指令
+                        if detected_lang == "en":
+                            lang_instruction = "🔴 CRITICAL: User's question is in ENGLISH. You MUST answer in ENGLISH ONLY. Do not use any Chinese characters."
+                        else:
+                            lang_instruction = "🔴 重要：用户问题是中文。你必须只用中文回答。不要使用任何英文字符。"
+                        
+                        context += f"""{lang_instruction}
+
+在回答时，请注意以下几点：
 - 在适当的情况下在句子末尾引用上下文，按照引用编号[citation:X]的格式在答案中对应部分引用上下文
 - 如果一句话源自多个上下文，请列出所有相关的引用编号，例如[citation:3][citation:5]
 - 并非搜索结果的所有内容都与用户的问题密切相关，你需要结合问题，对搜索结果进行甄别、筛选
 - 对于列举类的问题，尽量将答案控制在10个要点以内
 - 如果回答很长，请尽量结构化、分段落总结，控制在5个点以内
 - 你的回答应该综合多个相关网页来回答，不能重复引用一个网页
-- 除非用户要求，否则你回答的语言需要和用户提问的语言保持一致
 
 # 用户消息为：
 {text}"""
@@ -364,7 +399,13 @@ class OpenAIHandler(BaseHandler):
                                 context += f"   摘要: {result['snippet']}\n"
                             context += "\n"
                         
-                        context += "请基于以上搜索结果回答用户的问题。"
+                        # 添加语言匹配指令
+                        if detected_lang == "en":
+                            context += "\n🔴 CRITICAL: User's question is in ENGLISH. Answer in ENGLISH ONLY."
+                        else:
+                            context += "\n🔴 重要：用户问题是中文。只用中文回答。"
+                        
+                        context += "\n请基于以上搜索结果回答用户的问题。"
                         
                         # 将搜索结果插入到用户消息之前
                         messages.insert(-1, {

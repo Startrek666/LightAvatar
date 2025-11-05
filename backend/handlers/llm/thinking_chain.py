@@ -40,11 +40,41 @@ class ThinkingChain:
         Returns:
             完整的思考链 Prompt
         """
+        # 检测用户查询的语言
+        def detect_language(text: str) -> str:
+            chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+            english_chars = sum(1 for char in text if char.isalpha() and ord(char) < 128)
+            return "en" if english_chars > chinese_chars and english_chars > 0 else "zh"
+        
+        detected_lang = detect_language(user_query)
+        
+        # 根据检测到的语言添加强制指令
+        if detected_lang == "en":
+            lang_instruction = """
+🔴🔴🔴 CRITICAL MANDATORY INSTRUCTION 🔴🔴🔴
+The user's question is in ENGLISH. You MUST write your ENTIRE response in ENGLISH.
+- All thinking steps: ENGLISH
+- Final answer: ENGLISH
+- Do NOT use any Chinese characters in your response.
+This is a MANDATORY requirement that overrides all other instructions.
+"""
+        else:
+            lang_instruction = """
+🔴🔴🔴 重要强制指令 🔴🔴🔴
+用户的问题是中文。你必须用中文撰写整个回答。
+- 所有思考步骤：中文
+- 最终答案：中文
+- 不要在回答中使用任何英文字符。
+这是强制要求，优先级高于所有其他指令。
+"""
+        
         # 构建搜索结果上下文
         search_context = self._build_search_context(search_results)
         
         # 构建思考链 Prompt
-        thinking_prompt = f"""# 角色定位
+        thinking_prompt = f"""{lang_instruction}
+
+# 角色定位
 你是一位具有深度思考能力的AI助手。你的任务不是简单地总结搜索结果，而是要进行深度的分析、推理和思考，为用户提供有价值的见解。
 
 # 当前日期
@@ -173,13 +203,39 @@ class ThinkingChain:
         Returns:
             综合信息 Prompt
         """
+        # 检测用户查询的语言
+        def detect_language(text: str) -> str:
+            chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+            english_chars = sum(1 for char in text if char.isalpha() and ord(char) < 128)
+            return "en" if english_chars > chinese_chars and english_chars > 0 else "zh"
+        
+        detected_lang = detect_language(user_query)
+        
+        # 根据检测到的语言添加强制指令
+        if detected_lang == "en":
+            lang_instruction = """
+🔴🔴🔴 CRITICAL MANDATORY INSTRUCTION 🔴🔴🔴
+The user's question is in ENGLISH. You MUST write your ENTIRE response in ENGLISH.
+Do NOT use any Chinese characters in your response.
+This is a MANDATORY requirement that overrides all other instructions.
+"""
+        else:
+            lang_instruction = """
+🔴🔴🔴 重要强制指令 🔴🔴🔴
+用户的问题是中文。你必须用中文撰写整个回答。
+不要在回答中使用任何英文字符。
+这是强制要求，优先级高于所有其他指令。
+"""
+        
         search_context = self._build_search_context(search_results)
         
         understanding = thinking_results.get("understanding", "")
         analysis = thinking_results.get("analysis", "")
         thinking = thinking_results.get("thinking", "")
         
-        synthesis_prompt = f"""# 角色定位
+        synthesis_prompt = f"""{lang_instruction}
+
+# 角色定位
 你是一位具有深度思考能力的AI助手。你的任务是基于前面的思考和分析，综合信息并生成高质量的回答。
 
 # 当前日期
@@ -339,7 +395,21 @@ def _build_simple_prompt(
     """构建简单的 Prompt（向后兼容）"""
     from urllib.parse import urlparse
     
-    context_parts = [f"# 以下内容是基于用户发送的消息的搜索结果（今天是{current_date}）:\n"]
+    # 检测用户查询的语言
+    def detect_language(text: str) -> str:
+        chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+        english_chars = sum(1 for char in text if char.isalpha() and ord(char) < 128)
+        return "en" if english_chars > chinese_chars and english_chars > 0 else "zh"
+    
+    detected_lang = detect_language(user_query)
+    
+    # 根据检测到的语言添加强制指令
+    if detected_lang == "en":
+        lang_instruction = "🔴 CRITICAL: User's question is in ENGLISH. Answer in ENGLISH ONLY.\n\n"
+    else:
+        lang_instruction = "🔴 重要：用户问题是中文。只用中文回答。\n\n"
+    
+    context_parts = [lang_instruction + f"# 以下内容是基于用户发送的消息的搜索结果（今天是{current_date}）:\n"]
     
     for idx, doc in enumerate(search_results[:15], 1):
         context_parts.append(f"[参考资料 {idx}]")
