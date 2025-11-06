@@ -108,6 +108,7 @@ class KeywordExtractionAgent(BaseAgent):
         try:
             query = input_data.get("query", "")
             understanding = input_data.get("understanding", None)  # 获取问题理解结果
+            conversation_history = input_data.get("conversation_history", None)
             if not query:
                 raise ValueError("查询为空")
             
@@ -118,11 +119,15 @@ class KeywordExtractionAgent(BaseAgent):
             else:
                 logger.info(f"[{self.name}] 开始提取关键词: {query}")
             
+            if conversation_history:
+                logger.info(f"[{self.name}] 已接收对话历史: {len(conversation_history)} 条消息")
+            
             keywords_dict = extract_keywords(
                 query,
                 api_key=self.zhipu_api_key,
                 model=self.zhipu_model,
-                understanding=understanding  # 传递理解结果
+                understanding=understanding,  # 传递理解结果
+                conversation_history=conversation_history  # 传递对话历史
             )
             
             if keywords_dict:
@@ -410,6 +415,7 @@ class ProblemUnderstandingAgent(BaseAgent):
         
         try:
             query = input_data.get("query", "")
+            conversation_history = input_data.get("conversation_history", None)
             if not query:
                 raise ValueError("查询为空")
             
@@ -418,9 +424,86 @@ class ProblemUnderstandingAgent(BaseAgent):
             
             current_date = datetime.now().strftime("%Y-%m-%d")
             
+            # 构建上下文信息（使用压缩技术）
+            context_info = ""
+            if conversation_history:
+                from .momo_utils import compress_conversation_history
+                
+                # 尝试压缩对话历史（使用配置的方法）
+                # 从input_data中获取压缩配置（如果SearchOrchestrator传递了的话）
+                compression_method = input_data.get("compression_method", "rule_based")
+                compression_max_messages = input_data.get("compression_max_messages", 4)
+                compression_max_length = input_data.get("compression_max_length", 600)
+                
+                compressed_context = compress_conversation_history(
+                    conversation_history=conversation_history,
+                    current_query=query,
+                    max_messages=compression_max_messages,
+                    max_compressed_length=compression_max_length,
+                    compression_method=compression_method,
+                    api_key=self.zhipu_api_key,
+                    model=self.zhipu_model
+                )
+                
+                # 如果配置的方法失败，尝试降级策略
+                if not compressed_context and compression_method != "rule_based":
+                    compressed_context = compress_conversation_history(
+                        conversation_history=conversation_history,
+                        current_query=query,
+                        max_messages=compression_max_messages,
+                        max_compressed_length=compression_max_length,
+                        compression_method="rule_based"
+                    )
+                elif not compressed_context and compression_method != "smart_truncate":
+                    compressed_context = compress_conversation_history(
+                        conversation_history=conversation_history,
+                        current_query=query,
+                        max_messages=compression_max_messages,
+                        max_compressed_length=compression_max_length,
+                        compression_method="smart_truncate"
+                    )
+                
+                if compressed_context:
+                    # 使用压缩后的上下文
+                    context_info = f"""
+
+**对话上下文摘要**（重要！请结合上下文理解当前问题）：
+{compressed_context}
+
+**注意**：如果当前问题是简短的不完整表述（如"用表格对比"、"详细说明"、"还有哪些"等），请结合上下文理解用户的真实意图。例如：
+- "用表格对比" 在上下文中提到过"开源大模型" → 应该是"用表格对比开源大模型"
+- "详细说明" 在上下文中提到过某个概念 → 应该详细说明该概念
+- 当前问题可能是对之前问题的补充或细化，而非全新的独立问题
+"""
+                else:
+                    # 如果压缩失败或不需要压缩，使用简单的截断方式
+                    recent_history = conversation_history[-4:] if len(conversation_history) > 4 else conversation_history
+                    context_parts = []
+                    for msg in recent_history:
+                        role = msg.get("role", "unknown")
+                        content = msg.get("content", "")
+                        if role == "user" and content and content != query:
+                            context_parts.append(f"- 用户之前提到: {content}")
+                        elif role == "assistant" and content:
+                            # 只取前150字符的摘要
+                            content_preview = content[:150] + "..." if len(content) > 150 else content
+                            context_parts.append(f"- AI之前回答过: {content_preview}")
+                    
+                    if context_parts:
+                        context_info = f"""
+
+**对话上下文**（重要！请结合上下文理解当前问题）：
+{chr(10).join(context_parts)}
+
+**注意**：如果当前问题是简短的不完整表述（如"用表格对比"、"详细说明"、"还有哪些"等），请结合上下文理解用户的真实意图。例如：
+- "用表格对比" 在上下文中提到过"开源大模型" → 应该是"用表格对比开源大模型"
+- "详细说明" 在上下文中提到过某个概念 → 应该详细说明该概念
+- 当前问题可能是对之前问题的补充或细化，而非全新的独立问题
+"""
+            
             prompt = f"""今天是{current_date}。作为一个专业的问题分析专家，请深入理解用户的问题，挖掘其背后的多层次需求。
 
-用户问题：{query}
+用户当前问题：{query}{context_info}
 
 请进行多维度深度分析，识别用户的显性需求和潜在需求：
 
@@ -762,7 +845,7 @@ class SearchOrchestrator:
         self.total_steps = 0
         self.current_step = 0
     
-    async def execute(self, query: str, mode: str = "speed", detected_lang: str = "zh") -> tuple[List, str, dict]:
+    async def execute(self, query: str, mode: str = "speed", detected_lang: str = "zh", conversation_history: Optional[List[Dict]] = None) -> tuple[List, str, dict]:
         """
         执行多Agent协作搜索
         
@@ -770,6 +853,7 @@ class SearchOrchestrator:
             query: 搜索查询
             mode: 搜索模式 (speed/quality)
             detected_lang: 检测到的语言
+            conversation_history: 对话历史记录，用于上下文理解
             
         Returns:
             (相关文档列表, 引用信息, 思考结果字典)
@@ -789,7 +873,16 @@ class SearchOrchestrator:
                 understanding_agent = self.agents.get("problem_understanding")
                 if understanding_agent:
                     await self._report_progress(1, "理解问题")
-                    understanding_result = await understanding_agent.process({"query": query})
+                    # 传递压缩配置（从orchestrator获取）
+                    understanding_input = {
+                        "query": query,
+                        "conversation_history": conversation_history
+                    }
+                    # 如果有压缩配置，传递下去
+                    if hasattr(self, '_compression_config'):
+                        understanding_input.update(self._compression_config)
+                    
+                    understanding_result = await understanding_agent.process(understanding_input)
                     if understanding_result.get("success"):
                         understanding_text = understanding_result.get("understanding", "")
                         thinking_results["understanding"] = understanding_text
@@ -806,6 +899,13 @@ class SearchOrchestrator:
                 keyword_input = {"query": query}
                 if mode == "quality" and thinking_results.get("understanding"):
                     keyword_input["understanding"] = thinking_results["understanding"]
+                # 添加对话历史用于上下文理解
+                if conversation_history:
+                    keyword_input["conversation_history"] = conversation_history
+                
+                # 传递压缩配置（从orchestrator获取）
+                if hasattr(self, '_compression_config'):
+                    keyword_input.update(self._compression_config)
                 
                 keyword_result = await keyword_agent.process(keyword_input)
                 

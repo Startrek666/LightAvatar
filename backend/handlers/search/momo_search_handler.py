@@ -191,6 +191,13 @@ class MomoSearchHandler(BaseHandler):
             else:
                 logger.info("⚠️ 使用传统管道模式（未启用多Agent）")
             
+            # 上下文压缩配置
+            compression_config = self.config.get('context_compression', {})
+            self.compression_method = compression_config.get('method', 'rule_based')
+            self.compression_max_messages = compression_config.get('max_messages', 4)
+            self.compression_max_length = compression_config.get('max_compressed_length', 600)
+            logger.info(f"📦 上下文压缩配置: 方法={self.compression_method}, 阈值={self.compression_max_messages}条, 最大长度={self.compression_max_length}字符")
+            
             logger.info("✅ Momo Search Handler 初始化完成")
             
         except Exception as e:
@@ -307,7 +314,8 @@ class MomoSearchHandler(BaseHandler):
         self,
         query: str,
         mode: str = "speed",
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        conversation_history: Optional[List[Dict]] = None
     ) -> tuple[List[SearchDocument], str, dict]:
         """
         执行搜索并报告进度
@@ -316,28 +324,32 @@ class MomoSearchHandler(BaseHandler):
             query: 搜索查询
             mode: 搜索模式 (speed/quality)
             progress_callback: 进度回调函数
+            conversation_history: 对话历史记录，用于上下文理解
         
         Returns:
             (相关文档列表, 引用信息, 思考结果字典)
         """
         # 如果启用多Agent模式，使用Agent协作
         if self.use_multi_agent and hasattr(self, 'agents'):
-            return await self._search_with_agents(query, mode, progress_callback)
+            return await self._search_with_agents(query, mode, progress_callback, conversation_history)
         
         # 否则使用传统管道模式（返回空的思考结果）
-        docs, citations = await self._search_with_pipeline(query, mode, progress_callback)
+        docs, citations = await self._search_with_pipeline(query, mode, progress_callback, conversation_history)
         return docs, citations, {}
     
     async def _search_with_agents(
         self,
         query: str,
         mode: str = "speed",
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        conversation_history: Optional[List[Dict]] = None
     ) -> tuple[List[SearchDocument], str, dict]:
         """使用多Agent协作执行搜索"""
         try:
             logger.info(f"🤖 [多Agent模式] 开始执行搜索: 查询='{query}', 模式={mode}")
             logger.info(f"🤖 [多Agent模式] 已启用 {len(self.agents)} 个Agent: {list(self.agents.keys())}")
+            if conversation_history:
+                logger.info(f"📚 [多Agent模式] 对话历史: {len(conversation_history)} 条消息")
             
             detected_lang = detect_language(query)
             
@@ -347,11 +359,19 @@ class MomoSearchHandler(BaseHandler):
                 progress_callback=progress_callback
             )
             
+            # 传递压缩配置给orchestrator（以便传递给各个Agent）
+            orchestrator._compression_config = {
+                "compression_method": self.compression_method,
+                "compression_max_messages": self.compression_max_messages,
+                "compression_max_length": self.compression_max_length
+            }
+            
             # 执行多Agent协作搜索
             relevant_docs, citations, thinking_results = await orchestrator.execute(
                 query=query,
                 mode=mode,
-                detected_lang=detected_lang
+                detected_lang=detected_lang,
+                conversation_history=conversation_history
             )
             
             logger.info(f"✅ [多Agent模式] 搜索完成: 返回 {len(relevant_docs)} 个文档")
@@ -367,13 +387,72 @@ class MomoSearchHandler(BaseHandler):
         self,
         query: str,
         mode: str = "speed",
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        conversation_history: Optional[List[Dict]] = None
     ) -> tuple[List[SearchDocument], str]:
         """使用传统管道模式执行搜索（原有实现）"""
         try:
             detected_lang = detect_language(query)
             all_search_results = []
             keywords_dict = None  # 初始化关键词字典
+            
+            # 如果有对话历史，构建上下文增强的查询（使用压缩技术）
+            enhanced_query = query
+            if conversation_history:
+                from .momo_utils import compress_conversation_history
+                
+                # 尝试压缩对话历史（只在历史较长时压缩）
+                # 使用配置中的压缩方法
+                compressed_context = compress_conversation_history(
+                    conversation_history=conversation_history,
+                    current_query=query,
+                    max_messages=self.compression_max_messages,
+                    max_compressed_length=self.compression_max_length,
+                    compression_method=self.compression_method,
+                    api_key=self.zhipu_api_key,
+                    model=self.zhipu_model
+                )
+                
+                # 如果配置的方法失败，尝试降级策略
+                if not compressed_context and self.compression_method != "rule_based":
+                    compressed_context = compress_conversation_history(
+                        conversation_history=conversation_history,
+                        current_query=query,
+                        max_messages=self.compression_max_messages,
+                        max_compressed_length=self.compression_max_length,
+                        compression_method="rule_based"
+                    )
+                elif not compressed_context and self.compression_method != "smart_truncate":
+                    compressed_context = compress_conversation_history(
+                        conversation_history=conversation_history,
+                        current_query=query,
+                        max_messages=self.compression_max_messages,
+                        max_compressed_length=self.compression_max_length,
+                        compression_method="smart_truncate"
+                    )
+                
+                if compressed_context:
+                    # 使用压缩后的上下文
+                    enhanced_query = f"{query}\n\n上下文信息:\n{compressed_context}"
+                    logger.info(f"📚 [管道模式] 已添加压缩后的对话上下文到查询（压缩版本）")
+                else:
+                    # 如果压缩失败或不需要压缩，使用简单的截断方式
+                    recent_history = conversation_history[-4:] if len(conversation_history) > 4 else conversation_history
+                    context_parts = []
+                    for msg in recent_history:
+                        role = msg.get("role", "unknown")
+                        content = msg.get("content", "")
+                        if role == "user" and content and content != query:
+                            context_parts.append(f"用户之前提到: {content}")
+                        elif role == "assistant" and content:
+                            # 只取前200字符的摘要，避免太长
+                            content_preview = content[:200] + "..." if len(content) > 200 else content
+                            context_parts.append(f"AI之前回答: {content_preview}")
+                    
+                    if context_parts:
+                        context_text = "\n".join(context_parts)
+                        enhanced_query = f"{query}\n\n上下文信息:\n{context_text}"
+                        logger.info(f"📚 [管道模式] 已添加对话上下文到查询（未压缩版本）")
             
             # 预先计算总步骤数，用于一致的进度显示
             base_steps = 5  # 关键词提取(1) + 向量检索(1) + 深度爬取(1) + 文档分块(1) + 完成(1)
@@ -387,11 +466,12 @@ class MomoSearchHandler(BaseHandler):
                 if progress_callback:
                     await progress_callback(0, total_steps, "提取搜索关键词")
                 
-                logger.info(f"开始提取关键词: {query}")
+                logger.info(f"开始提取关键词: {enhanced_query if enhanced_query != query else query}")
                 keywords_dict = extract_keywords(
-                    query,
+                    enhanced_query,  # 使用增强的查询（包含上下文）
                     api_key=self.zhipu_api_key,
-                    model=self.zhipu_model
+                    model=self.zhipu_model,
+                    conversation_history=conversation_history  # 传递对话历史
                 )
                 
                 # 准备搜索查询列表

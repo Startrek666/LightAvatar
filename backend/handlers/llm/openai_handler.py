@@ -291,7 +291,8 @@ class OpenAIHandler(BaseHandler):
                     relevant_docs, citations, thinking_results = await momo_search_handler.search_with_progress(
                         query=text,
                         mode=momo_search_quality,
-                        progress_callback=progress_callback
+                        progress_callback=progress_callback,
+                        conversation_history=conversation_history  # 传递对话历史，用于上下文理解
                     )
                     
                     # 发送搜索结果到前端（用于弹窗显示）

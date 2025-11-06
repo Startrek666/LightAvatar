@@ -4,7 +4,7 @@ Momo Search Utils - 搜索工具函数
 from dataclasses import dataclass
 import urllib.parse
 from json import JSONDecodeError
-from typing import List, Optional
+from typing import List, Optional, Dict
 import re
 import asyncio
 
@@ -78,11 +78,477 @@ def detect_language(text: str) -> str:
         return "en"
 
 
+def extract_key_entities(text: str) -> List[str]:
+    """
+    使用规则提取文本中的关键实体和概念（通用版本）
+    
+    提取规则：
+    - 中文：提取常见的实体模式（名词短语、人名、地名、作品名等）
+    - 英文：提取专有名词和大写词汇
+    - 技术术语：提取特定模式的术语
+    - 通用：提取引号内容、关键词
+    """
+    entities = []
+    import re
+    
+    # 1. 英文专有名词（人名、地名、公司名等）
+    tech_patterns = [
+        r'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*',  # 英文专有名词 (如 Python, Machine Learning)
+        r'[a-z]+-[a-z]+',  # 连字符术语 (如 deep-learning, state-of-the-art)
+        r'\d+[GBKM]',  # 大小单位 (如 16GB, 500MB)
+        r'[a-z]{2,}\d+',  # 产品型号 (如 gpt4, llama3, iPhone15)
+        r'[A-Z]{2,}',  # 全大写缩写 (如 API, NLP, AI)
+    ]
+    
+    for pattern in tech_patterns:
+        matches = re.findall(pattern, text)
+        entities.extend(matches)
+    
+    # 2. 中文实体提取（更全面的模式）
+    # 人名：2-4个中文字符，可能包含·号（如 李·明）
+    chinese_name_pattern = r'[\u4e00-\u9fa5]{2,4}(?:·[\u4e00-\u9fa5]{1,3})?'
+    chinese_names = re.findall(chinese_name_pattern, text)
+    entities.extend(chinese_names)
+    
+    # 3. 常见的中文名词短语（2-6个字符的技术术语、概念、产品名等）
+    # 匹配：数字+单位、形容词+名词、名词+名词等常见组合
+    chinese_concept_patterns = [
+        r'[\u4e00-\u9fa5]{2,6}',  # 2-6个汉字的名词短语（会匹配很多，需要后续过滤）
+    ]
+    for pattern in chinese_concept_patterns:
+        matches = re.findall(pattern, text)
+        # 过滤掉常见的停用词和虚词
+        stop_words = {'这个', '那个', '什么', '如何', '怎么', '为什么', '因为', '所以', '但是', '然而', 
+                     '可以', '应该', '需要', '如果', '那么', '或者', '而且', '以及', '等等', '例如',
+                     '还有', '另外', '首先', '其次', '最后', '然后', '接下来', '同时', '因此'}
+        filtered_matches = [m for m in matches if len(m) >= 2 and m not in stop_words]
+        entities.extend(filtered_matches)
+    
+    # 4. 提取引号内的内容（通常是重要概念、引用）
+    quoted = re.findall(r'["""](.*?)["""]', text)
+    entities.extend(quoted)
+    
+    # 5. 提取【】内的内容（中文常用强调格式）
+    bracketed = re.findall(r'【(.*?)】', text)
+    entities.extend(bracketed)
+    
+    # 6. 提取《》内的内容（书名、作品名）
+    book_titles = re.findall(r'《(.*?)》', text)
+    entities.extend(book_titles)
+    
+    # 7. 提取常见的关键词模式（如果文本中有明确的主题词）
+    # 匹配"关于XXX"、"XXX的"等模式
+    topic_patterns = [
+        r'关于([\u4e00-\u9fa5]{2,10})',
+        r'([\u4e00-\u9fa5]{2,10})的',
+        r'(?:介绍|讲解|说明|分析)([^，。：;]{2,10})',
+    ]
+    for pattern in topic_patterns:
+        matches = re.findall(pattern, text)
+        entities.extend(matches)
+    
+    # 去重并过滤
+    entities = list(set([e.strip() for e in entities if 2 <= len(e) <= 30]))
+    
+    # 按长度和重要性排序（短的可能更重要，如"AI"、"Python"）
+    entities.sort(key=lambda x: (len(x), x))
+    
+    return entities[:25]  # 返回最多25个实体（增加数量以覆盖更多领域）
+
+
+def compress_conversation_history_rule_based(
+    conversation_history: List[Dict],
+    current_query: str,
+    max_messages: int = 4,
+    max_compressed_length: int = 800
+) -> Optional[str]:
+    """
+    基于规则的上下文压缩（通用版本，适配不同问题领域）
+    
+    策略：
+    1. 提取最近几轮对话的关键实体和概念（支持技术、文学、艺术、历史等）
+    2. 提取用户提到的主要主题（保留完整的问题表述）
+    3. 提取AI回答中的核心要点（不仅仅是第一句，包含关键信息句）
+    4. 保留对话逻辑和关联性（通过实体关联）
+    5. 过滤掉无关的细节，但保留领域相关的关键信息
+    
+    适用领域：
+    - ✅ 技术/产品：实体提取效果好
+    - ✅ 学术研究：保留关键概念和术语
+    - ✅ 历史/文化：提取人名、地名、作品名
+    - ⚠️ 文学/艺术：保留引号和作品名，但可能丢失情感细节
+    - ⚠️ 抽象讨论：依赖实体提取，可能不够深入
+    """
+    if not conversation_history or len(conversation_history) <= max_messages:
+        return None
+    
+    try:
+        total_length = sum(len(msg.get("content", "")) for msg in conversation_history)
+        if total_length <= max_compressed_length * 2:
+            return None
+        
+        # 提取最近的对话（用于分析）
+        recent_history = conversation_history[-max_messages*2:]
+        
+        # 收集关键信息
+        user_queries = []
+        ai_summaries = []
+        key_entities = set()
+        
+        for msg in recent_history:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            
+            if not content:
+                continue
+            
+            if role == "user" and content != current_query:
+                user_queries.append(content)
+                # 提取实体
+                entities = extract_key_entities(content)
+                key_entities.update(entities)
+            
+            elif role == "assistant":
+                # 提取AI回答的关键句子（不仅限前3句）
+                # 分句处理（考虑中英文标点）
+                sentences = re.split(r'[。！？\n]|\.\s+|! |\? ', content)
+                sentences = [s.strip() for s in sentences if s.strip()]
+                
+                # 提取关键句子策略：
+                # 1. 第一句（通常是总结或开头）
+                # 2. 包含最多实体的句子（核心内容）
+                # 3. 包含引号或特殊标记的句子（重要引用或强调）
+                
+                key_sentences = []
+                
+                # 添加第一句（如果存在）
+                if sentences:
+                    first_sentence = sentences[0]
+                    if len(first_sentence) > 0:
+                        key_sentences.append(first_sentence)
+                
+                # 找出包含最多实体的句子（更可能是核心内容）
+                if len(sentences) > 1:
+                    sentence_entity_counts = []
+                    for i, sent in enumerate(sentences[:10]):  # 只检查前10句（避免太长）
+                        entities_in_sent = extract_key_entities(sent)
+                        # 给包含引号、书名号等的句子加分
+                        score = len(entities_in_sent)
+                        if '""' in sent or '"' in sent or '《' in sent or '【' in sent:
+                            score += 3
+                        if i > 0:  # 第一句已经添加，其他句子加分少一点
+                            score += 1
+                        sentence_entity_counts.append((score, i, sent))
+                    
+                    # 按分数排序，取前2个（排除已经添加的第一句）
+                    sentence_entity_counts.sort(reverse=True)
+                    for score, idx, sent in sentence_entity_counts[:2]:
+                        if idx != 0:  # 避免重复添加第一句
+                            key_sentences.append(sent)
+                
+                # 构建摘要（最多3个关键句子）
+                for sent in key_sentences[:3]:
+                    if len(sent) > 200:
+                        sent = sent[:200] + "..."
+                    ai_summaries.append(sent)
+                
+                # 提取关键实体（从整个内容中提取，不仅仅是前500字符）
+                # 但为了避免过长，分段落提取
+                content_sample = content[:1000] if len(content) > 1000 else content  # 取前1000字符
+                entities = extract_key_entities(content_sample)
+                key_entities.update(entities)
+        
+        # 构建压缩后的上下文
+        compressed_parts = []
+        
+        # 1. 用户之前的问题
+        if user_queries:
+            # 如果用户问题很长，只保留核心部分
+            for q in user_queries[-2:]:  # 最多保留最近2个问题
+                if len(q) > 100:
+                    # 尝试提取问题关键词部分
+                    q_short = q[:100] + "..."
+                else:
+                    q_short = q
+                compressed_parts.append(f"用户提到: {q_short}")
+        
+        # 2. 核心实体和概念（按重要性排序）
+        if key_entities:
+            # 更全面的停用词过滤
+            stop_words = {
+                '这个', '那个', '什么', '如何', '怎么', '为什么', '因为', '所以', '但是', '然而',
+                '可以', '应该', '需要', '如果', '那么', '或者', '而且', '以及', '等等', '例如',
+                '还有', '另外', '首先', '其次', '最后', '然后', '接下来', '同时', '因此',
+                '一下', '一点', '一些', '一种', '一个', '一般', '一直', '一定', '一样',
+                '很好', '非常', '比较', '相当', '可能', '也许', '大概', '应该',
+            }
+            
+            # 过滤并去重
+            filtered_entities = [
+                e for e in key_entities 
+                if len(e) >= 2 and e not in stop_words 
+                and not e.isdigit()  # 排除纯数字
+            ]
+            
+            # 按长度和类型排序（短词可能在前面，但也要考虑多样性）
+            # 优先保留：有特殊格式的（引号、书名号）、英文专有名词、技术术语
+            def entity_score(entity):
+                score = 0
+                # 包含大写字母的加分（可能是专有名词）
+                if re.search(r'[A-Z]', entity):
+                    score += 10
+                # 包含数字的加分（可能是版本号、型号）
+                if re.search(r'\d', entity):
+                    score += 5
+                # 包含连字符的加分（可能是复合术语）
+                if '-' in entity:
+                    score += 5
+                # 长度适中的加分（2-8字符最佳）
+                if 2 <= len(entity) <= 8:
+                    score += 3
+                return score
+            
+            filtered_entities.sort(key=lambda x: (entity_score(x), -len(x)), reverse=True)
+            
+            if filtered_entities:
+                entities_str = "、".join(filtered_entities[:20])  # 增加到20个实体以提高覆盖率
+                compressed_parts.append(f"涉及的关键概念: {entities_str}")
+        
+        # 3. AI之前回答的要点（保留更多关键句子）
+        if ai_summaries:
+            # 去重（避免重复的句子）
+            unique_summaries = []
+            seen = set()
+            for summary in ai_summaries:
+                summary_normalized = summary[:50].strip()  # 用前50字符作为唯一标识
+                if summary_normalized not in seen:
+                    unique_summaries.append(summary)
+                    seen.add(summary_normalized)
+            
+            for summary in unique_summaries[:3]:  # 增加到最多3个摘要，提高信息保留率
+                compressed_parts.append(f"AI之前回答要点: {summary}")
+        
+        if compressed_parts:
+            compressed = "\n".join(compressed_parts)
+            # 确保不超过最大长度
+            if len(compressed) > max_compressed_length:
+                compressed = compressed[:max_compressed_length] + "..."
+            
+            logger.info(f"📦 [规则压缩] 对话历史已压缩: {total_length} 字符 → {len(compressed)} 字符")
+            return compressed
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ 规则压缩失败: {e}", exc_info=True)
+        return None
+
+
+def compress_conversation_history_smart_truncate(
+    conversation_history: List[Dict],
+    current_query: str,
+    max_messages: int = 4,
+    max_compressed_length: int = 800
+) -> Optional[str]:
+    """
+    智能截断压缩：保留最重要的开头和结尾部分
+    
+    策略：
+    - 保留用户第一次提到的核心问题（开头）
+    - 保留最近几轮对话的关键信息（结尾）
+    - 中间部分用摘要代替
+    """
+    if not conversation_history or len(conversation_history) <= max_messages:
+        return None
+    
+    try:
+        total_length = sum(len(msg.get("content", "")) for msg in conversation_history)
+        if total_length <= max_compressed_length * 2:
+            return None
+        
+        # 提取开头和结尾
+        start_messages = conversation_history[:max_messages]
+        end_messages = conversation_history[-max_messages:]
+        
+        compressed_parts = []
+        
+        # 开头：用户最初的问题
+        for msg in start_messages:
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if content and content != current_query:
+                    compressed_parts.append(f"最初问题: {content[:150]}")
+                    break
+        
+        # 结尾：最近的对话
+        recent_user_query = None
+        for msg in reversed(end_messages):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            
+            if role == "user" and content and content != current_query:
+                recent_user_query = content[:100] if len(content) > 100 else content
+                break
+        
+        if recent_user_query:
+            compressed_parts.append(f"最近提到: {recent_user_query}")
+        
+        # 如果有中间部分被省略，添加说明
+        if len(conversation_history) > max_messages * 2:
+            compressed_parts.append(f"（省略中间 {len(conversation_history) - max_messages * 2} 轮对话）")
+        
+        if compressed_parts:
+            compressed = "\n".join(compressed_parts)
+            if len(compressed) > max_compressed_length:
+                compressed = compressed[:max_compressed_length] + "..."
+            
+            logger.info(f"📦 [智能截断] 对话历史已压缩: {total_length} 字符 → {len(compressed)} 字符")
+            return compressed
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ 智能截断失败: {e}", exc_info=True)
+        return None
+
+
+def compress_conversation_history(
+    conversation_history: List[Dict],
+    current_query: str,
+    max_messages: int = 4,
+    max_compressed_length: int = 800,
+    compression_method: str = "rule_based",  # "rule_based", "smart_truncate", "llm"
+    api_key: Optional[str] = None,
+    model: Optional[str] = None
+) -> Optional[str]:
+    """
+    压缩对话历史，提取与当前查询最相关的关键信息
+    
+    支持多种压缩方法：
+    - "rule_based": 基于规则的压缩（快速，无需API调用）
+    - "smart_truncate": 智能截断（快速，保留开头和结尾）
+    - "llm": 使用LLM压缩（最准确，但需要API调用）
+    
+    Args:
+        conversation_history: 完整对话历史
+        current_query: 当前用户查询
+        max_messages: 最多保留的消息数量（如果历史较短，不压缩）
+        max_compressed_length: 压缩后文本的最大长度（字符）
+        compression_method: 压缩方法 ("rule_based", "smart_truncate", "llm")
+        api_key: 智谱清言API密钥（仅llm方法需要）
+        model: 智谱清言模型名称（仅llm方法需要）
+    
+    Returns:
+        压缩后的上下文文本（字符串），如果没有历史或不需要压缩则返回None
+    """
+    if not conversation_history or len(conversation_history) <= max_messages:
+        # 如果历史很短，不需要压缩
+        return None
+    
+    # 根据压缩方法选择策略
+    if compression_method == "rule_based":
+        return compress_conversation_history_rule_based(
+            conversation_history=conversation_history,
+            current_query=current_query,
+            max_messages=max_messages,
+            max_compressed_length=max_compressed_length
+        )
+    
+    elif compression_method == "smart_truncate":
+        return compress_conversation_history_smart_truncate(
+            conversation_history=conversation_history,
+            current_query=current_query,
+            max_messages=max_messages,
+            max_compressed_length=max_compressed_length
+        )
+    
+    elif compression_method == "llm":
+        # LLM压缩（原有的实现）
+        try:
+            # 计算原始文本长度
+            total_length = sum(len(msg.get("content", "")) for msg in conversation_history)
+            
+            # 如果总长度已经很小，不需要压缩
+            if total_length <= max_compressed_length * 2:
+                return None
+            
+            # 提取对话历史的关键信息
+            history_text_parts = []
+            for i, msg in enumerate(conversation_history[-max_messages*2:]):  # 取最近的消息用于摘要
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                if role == "user":
+                    history_text_parts.append(f"用户: {content}")
+                elif role == "assistant":
+                    # 对AI回答进行截断，只保留前500字符用于摘要
+                    content_preview = content[:500] + "..." if len(content) > 500 else content
+                    history_text_parts.append(f"AI: {content_preview}")
+            
+            history_text = "\n".join(history_text_parts)
+            
+            # 使用LLM压缩历史对话
+            prompt = f"""请对以下对话历史进行压缩摘要，提取与当前查询最相关的关键信息。
+
+当前查询：{current_query}
+
+对话历史：
+{history_text}
+
+**压缩要求**：
+1. 只保留与当前查询相关的核心概念、实体、主题
+2. 如果当前查询是不完整的（如"用表格对比"、"详细说明"），必须保留历史中提到的核心概念（如"开源大模型"）
+3. 删除无关的细节、冗余信息、重复内容、冗长的思考过程
+4. 重点提取：实体名称、关键概念、讨论主题、用户意图
+5. 忽略：详细的推理过程、长篇解释、重复的总结
+6. 保持关键信息完整，但要尽量简洁
+7. 输出格式：用简洁的文本描述历史对话中的关键信息，控制在{max_compressed_length}字以内
+
+**重要**：如果当前查询看起来是对之前讨论的延续或补充，必须保留历史中提到的核心主题和关键概念。
+
+压缩摘要："""
+            
+            try:
+                compressed = call_zhipu_llm(
+                    prompt=prompt,
+                    api_key=api_key,
+                    model=model,
+                    temperature=0.3,  # 较低温度保证摘要准确性
+                    max_tokens=600   # 控制输出长度
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ 调用LLM压缩失败: {e}，跳过压缩")
+                compressed = None
+            
+            if compressed and len(compressed.strip()) > 0:
+                # 确保不超过最大长度
+                if len(compressed) > max_compressed_length:
+                    compressed = compressed[:max_compressed_length] + "..."
+                logger.info(f"📦 [LLM压缩] 对话历史已压缩: {total_length} 字符 → {len(compressed)} 字符")
+                return compressed
+            else:
+                logger.warning("⚠️ LLM对话历史压缩失败，返回None")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ LLM压缩失败: {e}", exc_info=True)
+            return None
+    
+    else:
+        logger.warning(f"⚠️ 未知的压缩方法: {compression_method}，使用规则压缩")
+        return compress_conversation_history_rule_based(
+            conversation_history=conversation_history,
+            current_query=current_query,
+            max_messages=max_messages,
+            max_compressed_length=max_compressed_length
+        )
+
+
 def extract_keywords(
     query: str,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
-    understanding: Optional[str] = None
+    understanding: Optional[str] = None,
+    conversation_history: Optional[List[Dict]] = None
 ) -> Optional[dict]:
     """
     使用智谱清言模型提取搜索关键词
@@ -107,12 +573,70 @@ def extract_keywords(
         now = datetime.now()
         current_date = f"{now.year}年{now.month}月{now.day}日"
         
+        # 构建上下文信息（使用压缩技术）
+        context_info = ""
+        if conversation_history:
+            # 尝试压缩对话历史（使用默认配置，因为extract_keywords可能被独立调用）
+            # 优先使用规则压缩（快速，无需API调用）
+            compressed_context = compress_conversation_history(
+                conversation_history=conversation_history,
+                current_query=query,
+                max_messages=4,  # 如果历史≤4条消息，不压缩（默认值，可在调用时覆盖）
+                max_compressed_length=500,  # 压缩后最多500字符
+                compression_method="rule_based",  # 使用规则压缩（快速，无需API）
+                api_key=api_key,
+                model=model
+            )
+            
+            # 如果规则压缩失败，尝试智能截断
+            if not compressed_context:
+                compressed_context = compress_conversation_history(
+                    conversation_history=conversation_history,
+                    current_query=query,
+                    max_messages=4,
+                    max_compressed_length=500,
+                    compression_method="smart_truncate"
+                )
+            
+            if compressed_context:
+                # 使用压缩后的上下文
+                context_info = f"""
+
+**对话上下文摘要**（重要！请结合上下文提取关键词）：
+{compressed_context}
+
+**注意**：如果当前问题是简短的不完整表述（如"用表格对比"、"详细说明"、"还有哪些"等），请结合上下文中的核心概念提取关键词。
+例如：用户说"用表格对比"，但上下文中提到过"开源大模型"，应该提取"开源大模型 表格 对比 比较"等关键词。
+"""
+            else:
+                # 如果压缩失败或不需要压缩，使用简单的截断方式
+                recent_history = conversation_history[-4:] if len(conversation_history) > 4 else conversation_history
+                context_parts = []
+                for msg in recent_history:
+                    role = msg.get("role", "unknown")
+                    content = msg.get("content", "")
+                    if role == "user" and content and content != query:
+                        context_parts.append(f"- 用户之前提到: {content}")
+                    elif role == "assistant" and content:
+                        content_preview = content[:100] + "..." if len(content) > 100 else content
+                        context_parts.append(f"- AI之前回答: {content_preview}")
+                
+                if context_parts:
+                    context_info = f"""
+
+**对话上下文**（重要！请结合上下文提取关键词）：
+{chr(10).join(context_parts)}
+
+**注意**：如果当前问题是简短的不完整表述（如"用表格对比"、"详细说明"、"还有哪些"等），请结合上下文中的核心概念提取关键词。
+例如：用户说"用表格对比"，但上下文中提到过"开源大模型"，应该提取"开源大模型 表格 对比 比较"等关键词。
+"""
+        
         # 构建Prompt（根据是否有理解结果选择不同的prompt）
         if understanding:
             # 深度模式：基于问题理解生成更全面的关键词
             prompt = f"""今天是{current_date}。你是一个专业的搜索关键词提取专家。基于对用户问题的深度理解，提取全面的搜索关键词。
 
-用户问题：{query}
+用户当前问题：{query}{context_info}
 
 问题理解：
 {understanding}
@@ -146,8 +670,20 @@ def extract_keywords(
 
 现在，请为用户问题提取关键词："""
         else:
-            # 快速模式：原有的简单关键词提取
-            prompt = f"""今天是{current_date}。为了给用户的回答保持准确，你需要使用搜索引擎。使用json格式返回关键词，属性为zh_keys,en_keys。每个属性只需要一行，关键词用空格分隔。仅需返回重要关键词，每行不超过10个。对于英语关键词，除了完整翻译，还可以加上相关缩写。如果语句中包含"最近"，"最新"等词语，根据需要加上年份或者月份，年份和月份不能连在一起。从下面这句话中提取用于搜索引擎的关键词：{query}"""
+            # 快速模式：原有的简单关键词提取（如果有上下文，也加上）
+            prompt_base = f"""今天是{current_date}。为了给用户的回答保持准确，你需要使用搜索引擎。使用json格式返回关键词，属性为zh_keys,en_keys。每个属性只需要一行，关键词用空格分隔。仅需返回重要关键词，每行不超过10个。对于英语关键词，除了完整翻译，还可以加上相关缩写。如果语句中包含"最近"，"最新"等词语，根据需要加上年份或者月份，年份和月份不能连在一起。"""
+            
+            if context_info:
+                prompt = f"""{prompt_base}
+
+**对话上下文**（重要！请结合上下文提取关键词）：
+{context_info}
+
+**注意**：如果当前问题是简短的不完整表述，请结合上下文中的核心概念提取关键词。
+
+现在从下面这句话中提取用于搜索引擎的关键词：{query}"""
+            else:
+                prompt = f"""{prompt_base}从下面这句话中提取用于搜索引擎的关键词：{query}"""
         
         headers = {
             "Authorization": f"Bearer {zhipu_api_key}",

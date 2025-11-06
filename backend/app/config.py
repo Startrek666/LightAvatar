@@ -162,6 +162,11 @@ class Settings(BaseSettings):
     MOMO_SEARCH_MAX_CRAWL_DOCS: int = Field(default=10, description="Maximum documents to crawl")
     MOMO_SEARCH_USE_MULTI_AGENT: bool = Field(default=True, description="Use multi-agent collaboration mode")
     
+    # Context compression settings
+    CONTEXT_COMPRESSION_METHOD: str = Field(default="rule_based", description="Context compression method: rule_based, smart_truncate, llm")
+    CONTEXT_COMPRESSION_MAX_MESSAGES: int = Field(default=4, description="Maximum messages threshold before compression")
+    CONTEXT_COMPRESSION_MAX_LENGTH: int = Field(default=600, description="Maximum compressed context length (characters)")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -201,10 +206,18 @@ def update_settings(config_dict: dict):
         # 尝试匹配其他 search.advanced.* 配置
         elif key_path.startswith("search.advanced."):
             sub_key = key_path.replace("search.advanced.", "").upper()
-            momo_key = f"MOMO_SEARCH_{sub_key}"
-            if hasattr(settings, momo_key):
-                setattr(settings, momo_key, value)
-                return True
+            # 处理 context_compression.* 的嵌套配置
+            if sub_key.startswith("CONTEXT_COMPRESSION_"):
+                # search.advanced.context_compression.method -> CONTEXT_COMPRESSION_METHOD
+                if hasattr(settings, sub_key):
+                    setattr(settings, sub_key, value)
+                    return True
+            else:
+                # 其他 search.advanced.* 配置
+                momo_key = f"MOMO_SEARCH_{sub_key}"
+                if hasattr(settings, momo_key):
+                    setattr(settings, momo_key, value)
+                    return True
         return False
     
     for key, value in config_dict.items():
