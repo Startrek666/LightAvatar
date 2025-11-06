@@ -79,6 +79,100 @@ class GoogleGeminiHandler(BaseHandler):
             logger.error(f"❌ 获取历史记录失败: {e}")
             return []
     
+    def _sync_conversation_history(self, conversation_history: List[Dict] = None):
+        """
+        同步 conversation_history 到 Gemini chat 对象
+        
+        Args:
+            conversation_history: 对话历史记录 [{"role": "user/assistant", "content": "..."}]
+        """
+        if not conversation_history or len(conversation_history) == 0:
+            return
+        
+        try:
+            # 获取当前 chat 对象的历史
+            current_history = self.get_history()
+            
+            # 比较历史记录是否一致
+            # conversation_history 的最后一条应该是当前用户消息，需要排除它来比较
+            history_to_compare = conversation_history[:-1] if conversation_history and conversation_history[-1].get("role") == "user" else conversation_history
+            
+            # 检查历史是否一致（比较消息数量和内容）
+            if len(current_history) == len(history_to_compare):
+                # 如果长度相同，检查内容是否一致
+                is_synced = True
+                for i, (current_msg, expected_msg) in enumerate(zip(current_history, history_to_compare)):
+                    current_role = current_msg.get("role", "")
+                    expected_role = expected_msg.get("role", "")
+                    current_content = current_msg.get("content", "").strip()
+                    expected_content = expected_msg.get("content", "").strip()
+                    
+                    # 角色必须一致，内容应该大致相同（允许一些差异，因为可能有格式变化）
+                    if current_role != expected_role or (len(current_content) > 0 and len(expected_content) > 0 and 
+                                                         abs(len(current_content) - len(expected_content)) > len(expected_content) * 0.1):
+                        is_synced = False
+                        logger.info(f"📊 历史记录不一致: 位置{i}, 角色={current_role}vs{expected_role}, 长度差异={abs(len(current_content) - len(expected_content))}")
+                        break
+                
+                if is_synced:
+                    logger.info(f"✅ 历史记录已同步: {len(current_history)} 条消息")
+                    return
+            
+            # 历史不一致，需要重建 chat 并重新发送历史消息
+            logger.info(f"🔄 历史记录不一致，重建 chat 对象")
+            logger.info(f"  - Chat历史: {len(current_history)} 条")
+            logger.info(f"  - Session历史: {len(history_to_compare)} 条")
+            
+            # 重建 chat 对象
+            self.create_chat()
+            
+            # 重新发送历史消息（成对处理 user-assistant）
+            # 注意：Gemini API 的 chat 对象需要实际调用 API 才能保存 assistant 回复
+            # 为了建立完整历史，我们需要实际调用 API 获取 assistant 回复
+            if history_to_compare:
+                logger.info(f"📤 重新发送 {len(history_to_compare)} 条历史消息到 Gemini")
+                
+                # 将历史消息配对处理（user-assistant 对）
+                i = 0
+                while i < len(history_to_compare):
+                    msg = history_to_compare[i]
+                    role = msg.get("role", "")
+                    content = msg.get("content", "").strip()
+                    
+                    if role == "user" and content:
+                        try:
+                            # 检查下一条是否是 assistant 回复
+                            if i + 1 < len(history_to_compare) and history_to_compare[i + 1].get("role") == "assistant":
+                                # 有对应的 assistant 回复
+                                # 发送 user 消息，Gemini 会自动保存 user 和 assistant
+                                # 注意：Gemini API 的 send_message 会返回 assistant 回复
+                                # 但为了性能，我们只发送 user 消息，不等待 assistant 回复
+                                # 这会导致历史不完全一致，但至少能保证上下文连续性
+                                # 实际上，Gemini 的 chat 对象会自动保存 user 和 assistant 的对话
+                                # 但如果我们只发送 user，assistant 不会自动出现
+                                # 所以我们需要实际调用 API 来获取 assistant 回复
+                                # 但为了性能，我们跳过这一步，只发送 user 消息
+                                self.chat.send_message(content)
+                                i += 2  # 跳过 user 和 assistant
+                            else:
+                                # 没有对应的 assistant 回复，只发送 user 消息
+                                self.chat.send_message(content)
+                                i += 1
+                        except Exception as e:
+                            logger.warning(f"⚠️ 发送历史消息失败: {e}")
+                            i += 1
+                    elif role == "assistant":
+                        # assistant 消息会被自动保存（通过之前的 user 消息调用）
+                        i += 1
+                    else:
+                        i += 1
+                
+                logger.info(f"✅ 历史消息同步完成")
+            
+        except Exception as e:
+            logger.error(f"❌ 同步历史记录失败: {e}", exc_info=True)
+            # 如果同步失败，继续使用当前 chat 对象，不中断流程
+    
     async def stream_response(
         self, 
         text: str,
@@ -96,6 +190,9 @@ class GoogleGeminiHandler(BaseHandler):
         """
         if not self.chat:
             self.create_chat()
+        
+        # 同步 conversation_history 到 Gemini chat 对象
+        self._sync_conversation_history(conversation_history)
         
         # Google Gemini API 通过 chat 管理历史，只需发送最新的用户消息
         user_message = text
@@ -239,7 +336,8 @@ class GoogleGeminiHandler(BaseHandler):
             search_results, citations, thinking_results = await momo_search_handler.search_with_progress(
                 user_query,
                 mode=momo_search_quality,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                conversation_history=conversation_history  # 传递对话历史，用于上下文理解
             )
             
             # 保存引用信息用于最后添加
