@@ -160,7 +160,8 @@ def compress_conversation_history_rule_based(
     conversation_history: List[Dict],
     current_query: str,
     max_messages: int = 4,
-    max_compressed_length: int = 800
+    max_compressed_length: int = 800,
+    min_total_length: int = 1600
 ) -> Optional[str]:
     """
     基于规则的上下文压缩（通用版本，适配不同问题领域）
@@ -184,7 +185,7 @@ def compress_conversation_history_rule_based(
     
     try:
         total_length = sum(len(msg.get("content", "")) for msg in conversation_history)
-        if total_length <= max_compressed_length * 2:
+        if total_length <= min_total_length:
             return None
         
         # 提取最近的对话（用于分析）
@@ -348,7 +349,8 @@ def compress_conversation_history_smart_truncate(
     conversation_history: List[Dict],
     current_query: str,
     max_messages: int = 4,
-    max_compressed_length: int = 800
+    max_compressed_length: int = 800,
+    min_total_length: int = 1600
 ) -> Optional[str]:
     """
     智能截断压缩：保留最重要的开头和结尾部分
@@ -363,7 +365,7 @@ def compress_conversation_history_smart_truncate(
     
     try:
         total_length = sum(len(msg.get("content", "")) for msg in conversation_history)
-        if total_length <= max_compressed_length * 2:
+        if total_length <= min_total_length:
             return None
         
         # 提取开头和结尾
@@ -417,6 +419,7 @@ def compress_conversation_history(
     current_query: str,
     max_messages: int = 4,
     max_compressed_length: int = 800,
+    min_total_length: int = 1600,
     compression_method: str = "rule_based",  # "rule_based", "smart_truncate", "llm"
     api_key: Optional[str] = None,
     model: Optional[str] = None
@@ -434,6 +437,7 @@ def compress_conversation_history(
         current_query: 当前用户查询
         max_messages: 最多保留的消息数量（如果历史较短，不压缩）
         max_compressed_length: 压缩后文本的最大长度（字符）
+        min_total_length: 历史对话总字符数阈值，超过此值才开始压缩
         compression_method: 压缩方法 ("rule_based", "smart_truncate", "llm")
         api_key: 智谱清言API密钥（仅llm方法需要）
         model: 智谱清言模型名称（仅llm方法需要）
@@ -451,7 +455,8 @@ def compress_conversation_history(
             conversation_history=conversation_history,
             current_query=current_query,
             max_messages=max_messages,
-            max_compressed_length=max_compressed_length
+            max_compressed_length=max_compressed_length,
+            min_total_length=min_total_length
         )
     
     elif compression_method == "smart_truncate":
@@ -459,7 +464,8 @@ def compress_conversation_history(
             conversation_history=conversation_history,
             current_query=current_query,
             max_messages=max_messages,
-            max_compressed_length=max_compressed_length
+            max_compressed_length=max_compressed_length,
+            min_total_length=min_total_length
         )
     
     elif compression_method == "llm":
@@ -469,7 +475,7 @@ def compress_conversation_history(
             total_length = sum(len(msg.get("content", "")) for msg in conversation_history)
             
             # 如果总长度已经很小，不需要压缩
-            if total_length <= max_compressed_length * 2:
+            if total_length <= min_total_length:
                 return None
             
             # 提取对话历史的关键信息
@@ -539,7 +545,8 @@ def compress_conversation_history(
             conversation_history=conversation_history,
             current_query=current_query,
             max_messages=max_messages,
-            max_compressed_length=max_compressed_length
+            max_compressed_length=max_compressed_length,
+            min_total_length=min_total_length
         )
 
 
@@ -583,6 +590,7 @@ def extract_keywords(
                 current_query=query,
                 max_messages=4,  # 如果历史≤4条消息，不压缩（默认值，可在调用时覆盖）
                 max_compressed_length=500,  # 压缩后最多500字符
+                min_total_length=1000,  # 默认字符阈值（可在调用时覆盖）
                 compression_method="rule_based",  # 使用规则压缩（快速，无需API）
                 api_key=api_key,
                 model=model
@@ -595,6 +603,7 @@ def extract_keywords(
                     current_query=query,
                     max_messages=4,
                     max_compressed_length=500,
+                    min_total_length=1000,
                     compression_method="smart_truncate"
                 )
             

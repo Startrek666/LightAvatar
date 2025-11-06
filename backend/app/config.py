@@ -165,6 +165,7 @@ class Settings(BaseSettings):
     # Context compression settings
     CONTEXT_COMPRESSION_METHOD: str = Field(default="rule_based", description="Context compression method: rule_based, smart_truncate, llm")
     CONTEXT_COMPRESSION_MAX_MESSAGES: int = Field(default=4, description="Maximum messages threshold before compression")
+    CONTEXT_COMPRESSION_MIN_TOTAL_LENGTH: int = Field(default=1200, description="Minimum total character length threshold before compression")
     CONTEXT_COMPRESSION_MAX_LENGTH: int = Field(default=600, description="Maximum compressed context length (characters)")
     
     class Config:

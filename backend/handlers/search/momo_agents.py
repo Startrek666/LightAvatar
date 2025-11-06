@@ -434,12 +434,14 @@ class ProblemUnderstandingAgent(BaseAgent):
                 compression_method = input_data.get("compression_method", "rule_based")
                 compression_max_messages = input_data.get("compression_max_messages", 4)
                 compression_max_length = input_data.get("compression_max_length", 600)
+                compression_min_total_length = input_data.get("compression_min_total_length", 1200)
                 
                 compressed_context = compress_conversation_history(
                     conversation_history=conversation_history,
                     current_query=query,
                     max_messages=compression_max_messages,
                     max_compressed_length=compression_max_length,
+                    min_total_length=compression_min_total_length,
                     compression_method=compression_method,
                     api_key=self.zhipu_api_key,
                     model=self.zhipu_model
@@ -452,6 +454,7 @@ class ProblemUnderstandingAgent(BaseAgent):
                         current_query=query,
                         max_messages=compression_max_messages,
                         max_compressed_length=compression_max_length,
+                        min_total_length=compression_min_total_length,
                         compression_method="rule_based"
                     )
                 elif not compressed_context and compression_method != "smart_truncate":
@@ -460,6 +463,7 @@ class ProblemUnderstandingAgent(BaseAgent):
                         current_query=query,
                         max_messages=compression_max_messages,
                         max_compressed_length=compression_max_length,
+                        min_total_length=compression_min_total_length,
                         compression_method="smart_truncate"
                     )
                 

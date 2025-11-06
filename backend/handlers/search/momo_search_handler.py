@@ -195,8 +195,9 @@ class MomoSearchHandler(BaseHandler):
             compression_config = self.config.get('context_compression', {})
             self.compression_method = compression_config.get('method', 'rule_based')
             self.compression_max_messages = compression_config.get('max_messages', 4)
+            self.compression_min_total_length = compression_config.get('min_total_length', 1200)
             self.compression_max_length = compression_config.get('max_compressed_length', 600)
-            logger.info(f"📦 上下文压缩配置: 方法={self.compression_method}, 阈值={self.compression_max_messages}条, 最大长度={self.compression_max_length}字符")
+            logger.info(f"📦 上下文压缩配置: 方法={self.compression_method}, 消息阈值={self.compression_max_messages}条, 字符阈值={self.compression_min_total_length}字符, 最大长度={self.compression_max_length}字符")
             
             logger.info("✅ Momo Search Handler 初始化完成")
             
@@ -363,7 +364,8 @@ class MomoSearchHandler(BaseHandler):
             orchestrator._compression_config = {
                 "compression_method": self.compression_method,
                 "compression_max_messages": self.compression_max_messages,
-                "compression_max_length": self.compression_max_length
+                "compression_max_length": self.compression_max_length,
+                "compression_min_total_length": self.compression_min_total_length
             }
             
             # 执行多Agent协作搜索
@@ -408,6 +410,7 @@ class MomoSearchHandler(BaseHandler):
                     current_query=query,
                     max_messages=self.compression_max_messages,
                     max_compressed_length=self.compression_max_length,
+                    min_total_length=self.compression_min_total_length,
                     compression_method=self.compression_method,
                     api_key=self.zhipu_api_key,
                     model=self.zhipu_model
@@ -420,6 +423,7 @@ class MomoSearchHandler(BaseHandler):
                         current_query=query,
                         max_messages=self.compression_max_messages,
                         max_compressed_length=self.compression_max_length,
+                        min_total_length=self.compression_min_total_length,
                         compression_method="rule_based"
                     )
                 elif not compressed_context and self.compression_method != "smart_truncate":
@@ -428,6 +432,7 @@ class MomoSearchHandler(BaseHandler):
                         current_query=query,
                         max_messages=self.compression_max_messages,
                         max_compressed_length=self.compression_max_length,
+                        min_total_length=self.compression_min_total_length,
                         compression_method="smart_truncate"
                     )
                 
