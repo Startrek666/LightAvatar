@@ -176,7 +176,8 @@ class GoogleGeminiHandler(BaseHandler):
     async def stream_response(
         self, 
         text: str,
-        conversation_history: List[Dict] = None
+        conversation_history: List[Dict] = None,
+        ui_language: str = "zh"
     ) -> AsyncGenerator[str, None]:
         """
         流式生成响应（与 OpenAIHandler 接口一致）
@@ -184,6 +185,7 @@ class GoogleGeminiHandler(BaseHandler):
         Args:
             text: 当前用户输入文本
             conversation_history: 对话历史记录 [{"role": "user/assistant", "content": "..."}]
+            ui_language: 界面语言 ("zh" 或 "en")
             
         Yields:
             str: 响应文本块
@@ -308,9 +310,12 @@ class GoogleGeminiHandler(BaseHandler):
         """
         user_query = text
         
+        # 从 kwargs 中获取 ui_language，默认为 "zh"
+        ui_language = kwargs.get("ui_language", "zh")
+        
         if not user_query:
             logger.warning("⚠️ 用户查询为空")
-            async for chunk in self.stream_response(text, conversation_history):
+            async for chunk in self.stream_response(text, conversation_history, ui_language=ui_language):
                 yield chunk
             return
         
@@ -324,7 +329,7 @@ class GoogleGeminiHandler(BaseHandler):
         
         if not momo_search_handler:
             logger.warning("⚠️ Momo 搜索处理器未提供，跳过搜索")
-            async for chunk in self.stream_response(text, conversation_history):
+            async for chunk in self.stream_response(text, conversation_history, ui_language=ui_language):
                 yield chunk
             return
         
@@ -361,9 +366,6 @@ class GoogleGeminiHandler(BaseHandler):
                 # quality（深度）模式：使用思考链，进行深度思考
                 # speed（快速）模式：使用简单模式，快速回答
                 use_thinking_chain = (momo_search_quality == "quality")
-                
-                # 从 kwargs 中获取 ui_language，默认为 "zh"
-                ui_language = kwargs.get("ui_language", "zh")
                 
                 if use_thinking_chain:
                     logger.info(f"🧠 [深度模式] 使用深度思考链生成回答 (质量: {momo_search_quality})")
