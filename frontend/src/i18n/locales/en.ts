@@ -141,7 +141,8 @@ export default {
     xiaoxiao: 'Xiaoxiao (Female)',
     yunxi: 'Yunxi (Male)',
     xiaoyi: 'Xiaoyi (Female)',
-    yunjian: 'Yunjian (Male)'
+    yunjian: 'Yunjian (Male)',
+    aria: 'Aria (English Female)'
   },
   avatars: {
     default: 'Default Female',

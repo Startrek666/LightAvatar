@@ -27,7 +27,8 @@ class ThinkingChain:
         self,
         user_query: str,
         search_results: List[SearchDocument],
-        current_date: str
+        current_date: str,
+        ui_language: str = "zh"
     ) -> str:
         """
         构建要求深度思考的 Prompt
@@ -41,12 +42,19 @@ class ThinkingChain:
             完整的思考链 Prompt
         """
         # 检测用户查询的语言
-        def detect_language(text: str) -> str:
+        def detect_language(text: str, ui_language: str = "zh") -> str:
+            """检测文本语言，如果中英文混合则使用界面语言"""
             chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
             english_chars = sum(1 for char in text if char.isalpha() and ord(char) < 128)
+            
+            # ✅ 修复：如果同时包含中文和英文，使用界面语言
+            if chinese_chars > 0 and english_chars > 0:
+                return ui_language
+            
+            # 如果只有中文或只有英文，按原有逻辑判断
             return "en" if english_chars > chinese_chars and english_chars > 0 else "zh"
         
-        detected_lang = detect_language(user_query)
+        detected_lang = detect_language(user_query, ui_language)
         
         # 根据检测到的语言添加强制指令
         if detected_lang == "en":
@@ -189,7 +197,8 @@ This is a MANDATORY requirement that overrides all other instructions.
         user_query: str,
         search_results: List[SearchDocument],
         current_date: str,
-        thinking_results: dict
+        thinking_results: dict,
+        ui_language: str = "zh"
     ) -> str:
         """
         构建综合信息 Prompt（使用前面的思考结果）
@@ -204,12 +213,19 @@ This is a MANDATORY requirement that overrides all other instructions.
             综合信息 Prompt
         """
         # 检测用户查询的语言
-        def detect_language(text: str) -> str:
+        def detect_language(text: str, ui_language: str = "zh") -> str:
+            """检测文本语言，如果中英文混合则使用界面语言"""
             chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
             english_chars = sum(1 for char in text if char.isalpha() and ord(char) < 128)
+            
+            # ✅ 修复：如果同时包含中文和英文，使用界面语言
+            if chinese_chars > 0 and english_chars > 0:
+                return ui_language
+            
+            # 如果只有中文或只有英文，按原有逻辑判断
             return "en" if english_chars > chinese_chars and english_chars > 0 else "zh"
         
-        detected_lang = detect_language(user_query)
+        detected_lang = detect_language(user_query, ui_language)
         
         # 根据检测到的语言添加强制指令
         if detected_lang == "en":
@@ -359,7 +375,8 @@ def build_enhanced_search_prompt(
     search_results: List[SearchDocument],
     current_date: str,
     use_thinking_chain: bool = True,
-    thinking_results: Optional[dict] = None
+    thinking_results: Optional[dict] = None,
+    ui_language: str = "zh"
 ) -> str:
     """
     构建增强的搜索 Prompt（便捷函数）
@@ -378,10 +395,10 @@ def build_enhanced_search_prompt(
         chain = ThinkingChain()
         # 如果有思考结果，使用综合信息模式
         if thinking_results and (thinking_results.get("understanding") or thinking_results.get("analysis") or thinking_results.get("thinking")):
-            return chain.build_synthesis_prompt(user_query, search_results, current_date, thinking_results)
+            return chain.build_synthesis_prompt(user_query, search_results, current_date, thinking_results, ui_language)
         else:
             # 否则使用原来的思考链模式
-            return chain.build_thinking_prompt(user_query, search_results, current_date)
+            return chain.build_thinking_prompt(user_query, search_results, current_date, ui_language)
     else:
         # 回退到简单模式（向后兼容）
         return _build_simple_prompt(user_query, search_results, current_date)

@@ -237,12 +237,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                 use_search = data.get("use_search", False)  # 是否启用联网搜索
                 search_mode = data.get("search_mode", "simple")  # 搜索模式: simple/advanced
                 search_quality = data.get("search_quality", "speed")  # 搜索质量: speed/quality
+                ui_language = data.get("ui_language", "zh")  # 界面语言：zh 或 en
                 text_content = data.get("text", "")
                 logger.info(f"[WebSocket] Session {session_id}: 收到文本消息")
                 logger.info(f"  - streaming: {use_streaming}")
                 logger.info(f"  - use_search: {use_search}")
                 logger.info(f"  - search_mode: {search_mode}")
                 logger.info(f"  - search_quality: {search_quality}")
+                logger.info(f"  - ui_language: {ui_language}")
                 logger.info(f"  - text length: {len(text_content)}")
                 logger.info(f"  - text preview: {text_content[:100]}")
                 
@@ -327,7 +329,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
                                 stream_callback,
                                 use_search=use_search,
                                 search_mode=search_mode,
-                                search_quality=search_quality
+                                search_quality=search_quality,
+                                ui_language=ui_language
                             )
                             logger.info(f"[WebSocket] Session {session_id}: 流式处理完成")
                         except Exception as e:
@@ -750,21 +753,41 @@ async def merge_videos(videos: List[UploadFile] = File(...)):
             logger.error(f"❌ FFmpeg合并失败: {result.stderr}")
             raise HTTPException(status_code=500, detail=f"Video merge failed: {result.stderr}")
         
-        # 检查输出文件是否生成
-        if not output_path.exists() or output_path.stat().st_size == 0:
-            logger.error(f"❌ 合并后的视频文件为空或不存在")
-            raise HTTPException(status_code=500, detail="Merged video is empty")
+        # ✅ 优化：使用流式传输，避免一次性加载整个文件到内存
+        file_size = output_path.stat().st_size
+        logger.info(f"✅ 视频合并成功: {file_size} bytes ({file_size / 1024 / 1024:.2f} MB)")
         
-        # 读取合并后的视频
-        merged_video = output_path.read_bytes()
-        logger.info(f"✅ 视频合并成功: {len(merged_video)} bytes ({len(merged_video) / 1024 / 1024:.2f} MB)")
+        # 保存临时目录路径，用于传输完成后清理
+        temp_dir_to_clean = temp_dir
         
-        # 返回合并后的视频文件
-        return Response(
-            content=merged_video,
+        def generate_video_chunks():
+            """生成视频文件块，用于流式传输"""
+            chunk_size = 1024 * 1024  # 1MB chunks
+            try:
+                with open(output_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+            finally:
+                # 传输完成后清理临时文件
+                try:
+                    import shutil
+                    if temp_dir_to_clean.exists():
+                        shutil.rmtree(temp_dir_to_clean)
+                        logger.debug(f"🧹 清理临时目录: {temp_dir_to_clean}")
+                except Exception as e:
+                    logger.warning(f"清理临时文件失败: {e}")
+        
+        # 使用流式响应，分块传输视频文件
+        return StreamingResponse(
+            generate_video_chunks(),
             media_type="video/mp4",
             headers={
-                "Content-Disposition": "attachment; filename=merged_video.mp4"
+                "Content-Disposition": "attachment; filename=merged_video.mp4",
+                "Content-Length": str(file_size),
+                "Accept-Ranges": "bytes"
             }
         )
         
@@ -775,11 +798,15 @@ async def merge_videos(videos: List[UploadFile] = File(...)):
         logger.error(f"❌ 视频合并失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Video merge error: {str(e)}")
     finally:
-        # 清理临时文件
+        # 注意：如果返回了 StreamingResponse，文件清理会在 generate_video_chunks 的 finally 块中进行
+        # 这里只清理异常情况下的临时文件
         try:
             import shutil
-            shutil.rmtree(temp_dir)
-            logger.debug(f"🧹 清理临时目录: {temp_dir}")
+            if 'temp_dir' in locals() and temp_dir.exists():
+                # 检查是否已经返回了 StreamingResponse（通过检查 output_path 是否还存在）
+                if not output_path.exists() or output_path.stat().st_size == 0:
+                    shutil.rmtree(temp_dir)
+                    logger.debug(f"🧹 清理临时目录（异常情况）: {temp_dir}")
         except Exception as e:
             logger.warning(f"清理临时文件失败: {e}")
 

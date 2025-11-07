@@ -346,6 +346,7 @@
             <a-select-option value="zh-CN-YunxiNeural">{{ t('voices.yunxi') }}</a-select-option>
             <a-select-option value="zh-CN-YunjianNeural">{{ t('voices.yunjian') }}</a-select-option>
             <a-select-option value="zh-CN-XiaoyiNeural">{{ t('voices.xiaoyi') }}</a-select-option>
+            <a-select-option value="en-US-AriaNeural">{{ t('voices.aria') }}</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item :label="t('settings.avatarTemplate')">
@@ -500,7 +501,11 @@ const settings = ref({
     model: 'qwen'
   },
   tts: {
-    voice: 'zh-CN-XiaoxiaoNeural'
+    // ✅ 根据当前界面语言设置默认TTS语音
+    voice: (() => {
+      const currentLang = localStorage.getItem('language') || 'zh'
+      return currentLang === 'en' ? 'en-US-AriaNeural' : 'zh-CN-XiaoxiaoNeural'
+    })()
   },
   avatar: {
     template: 'default.mp4'
@@ -512,12 +517,16 @@ const settings = ref({
 
 // 合并配置，确保所有字段都存在
 const mergeSettings = (loadedConfig: any) => {
+  // ✅ 根据当前界面语言设置默认TTS语音
+  const currentLang = locale.value || localStorage.getItem('language') || 'zh'
+  const defaultVoice = currentLang === 'en' ? 'en-US-AriaNeural' : 'zh-CN-XiaoxiaoNeural'
+  
   return {
     llm: {
       model: loadedConfig?.llm?.model || 'qwen'
     },
     tts: {
-      voice: loadedConfig?.tts?.voice || 'zh-CN-XiaoxiaoNeural'
+      voice: loadedConfig?.tts?.voice || defaultVoice
     },
     avatar: {
       template: loadedConfig?.avatar?.template || 'default.mp4'
@@ -576,6 +585,20 @@ const goToProfile = () => {
 const handleLanguageChange = ({ key }: { key: string }) => {
   locale.value = key
   localStorage.setItem('language', key)
+  
+  // ✅ 根据界面语言自动切换TTS语音
+  if (key === 'en') {
+    // 切换到英语界面时，使用英语女音
+    settings.value.tts.voice = 'en-US-AriaNeural'
+    // 保存配置到服务器
+    saveSettings()
+  } else {
+    // 切换到中文界面时，使用中文女音（默认）
+    settings.value.tts.voice = 'zh-CN-XiaoxiaoNeural'
+    // 保存配置到服务器
+    saveSettings()
+  }
+  
   message.success(t('common.success'))
 }
 
@@ -792,7 +815,8 @@ const sendTextMessage = (event?: Event) => {
     streaming: true,  // Enable streaming mode
     use_search: enableWebSearch.value,  // 是否启用联网搜索
     search_mode: 'advanced',  // 固定使用高级搜索
-    search_quality: searchQuality.value  // 搜索模式: speed(快速)/quality(深度)
+    search_quality: searchQuality.value,  // 搜索模式: speed(快速)/quality(深度)
+    ui_language: locale.value  // 界面语言：zh 或 en
   }
   console.log('🚀 [sendTextMessage] 发送数据到服务器:', payload)
   send(payload)
@@ -959,24 +983,124 @@ const downloadAsWord = async () => {
       return
     }
     
-    // 创建Word文档内容
-    const content = selectedMessages.map((msg, idx) => {
-      // 清理Markdown格式，转换为纯文本
-      const cleanContent = msg.content
-        .replace(/\*\*(.*?)\*\*/g, '$1')  // 加粗
-        .replace(/\*(.*?)\*/g, '$1')      // 斜体
-        .replace(/\[(.*?)\]\(.*?\)/g, '$1')  // 链接
-        .replace(/`(.*?)`/g, '$1')        // 代码
-        .replace(/#{1,6}\s+(.*)/g, '$1')  // 标题
-        .replace(/\[citation:[\d\s,]+\]/g, '')  // 引用标记
+    // ✅ 使用marked库将Markdown转换为HTML，保留表格格式
+    const { marked } = await import('marked')
+    
+    // 配置marked选项
+    marked.setOptions({
+      breaks: true,
+      gfm: true
+    })
+    
+    // 创建Word文档内容（HTML格式）
+    const htmlContent = selectedMessages.map((msg, idx) => {
+      // 移除引用标记
+      let processedContent = msg.content.replace(/\[citation:[\d\s,]+\]/g, '')
+      
+      // 将Markdown转换为HTML，保留表格格式
+      const htmlContent = marked.parse(processedContent)
       
       // 根据角色添加标签
       const roleLabel = msg.role === 'user' ? '用户' : 'AI'
-      return `${roleLabel} (${idx + 1}):\n${cleanContent}\n\n`
-    }).join('\n---\n\n')
+      return `
+        <div class="message-block">
+          <h3>${roleLabel} (${idx + 1})</h3>
+          <div class="message-content">${htmlContent}</div>
+        </div>
+      `
+    }).join('<hr>')
     
-    // 创建Blob并下载
-    const blob = new Blob(['\ufeff' + content], { type: 'application/msword;charset=utf-8' })
+    // 创建完整的HTML文档（Word可以打开HTML格式）
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>AI对话记录</title>
+        <style>
+          body {
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            padding: 20px;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+          }
+          h1 {
+            color: #333;
+            border-bottom: 2px solid #1890ff;
+            padding-bottom: 10px;
+          }
+          h3 {
+            color: #1890ff;
+            margin-top: 20px;
+            margin-bottom: 10px;
+          }
+          .message-block {
+            margin-bottom: 30px;
+          }
+          .message-content {
+            margin-top: 10px;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 16px 0;
+            border: 1px solid #dfe2e5;
+          }
+          table th {
+            font-weight: 600;
+            padding: 8px 13px;
+            border: 1px solid #dfe2e5;
+            background-color: #f6f8fa;
+            text-align: left;
+          }
+          table td {
+            padding: 8px 13px;
+            border: 1px solid #dfe2e5;
+          }
+          table tr:nth-child(2n) {
+            background-color: #f6f8fa;
+          }
+          code {
+            background-color: rgba(27, 31, 35, 0.05);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+          }
+          pre {
+            background-color: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+          }
+          pre code {
+            background-color: transparent;
+            padding: 0;
+          }
+          blockquote {
+            border-left: 4px solid #dfe2e5;
+            padding-left: 16px;
+            color: #6a737d;
+            margin: 16px 0;
+          }
+          hr {
+            border: none;
+            border-top: 1px solid #e1e4e8;
+            margin: 20px 0;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>AI对话记录</h1>
+        <p>生成时间: ${new Date().toLocaleString('zh-CN')}</p>
+        <hr>
+        ${htmlContent}
+      </body>
+      </html>
+    `
+    
+    // 创建Blob并下载（使用HTML格式，Word可以打开）
+    const blob = new Blob(['\ufeff' + fullHtml], { type: 'application/msword;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -1014,23 +1138,34 @@ const downloadAsPDF = async () => {
       return
     }
     
-    // 使用html2pdf库生成PDF（需要安装 html2pdf.js）
-    // 如果未安装，则使用简单的文本转PDF方法
-    const content = selectedMessages.map((msg, idx) => {
-      const cleanContent = msg.content
-        .replace(/\*\*(.*?)\*\*/g, '$1')
-        .replace(/\*(.*?)\*/g, '$1')
-        .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-        .replace(/`(.*?)`/g, '$1')
-        .replace(/#{1,6}\s+(.*)/g, '$1')
-        .replace(/\[citation:[\d\s,]+\]/g, '')
+    // ✅ 使用marked库将Markdown转换为HTML，保留表格格式
+    const { marked } = await import('marked')
+    
+    // 配置marked选项
+    marked.setOptions({
+      breaks: true,
+      gfm: true
+    })
+    
+    // 创建PDF文档内容（HTML格式）
+    const htmlContent = selectedMessages.map((msg, idx) => {
+      // 移除引用标记
+      let processedContent = msg.content.replace(/\[citation:[\d\s,]+\]/g, '')
+      
+      // 将Markdown转换为HTML，保留表格格式
+      const htmlContent = marked.parse(processedContent)
       
       // 根据角色添加标签
       const roleLabel = msg.role === 'user' ? '用户' : 'AI'
-      return `${roleLabel} (${idx + 1}):\n${cleanContent}\n\n`
-    }).join('\n---\n\n')
+      return `
+        <div class="message-block">
+          <h3>${roleLabel} (${idx + 1})</h3>
+          <div class="message-content">${htmlContent}</div>
+        </div>
+      `
+    }).join('<hr>')
     
-    // 创建打印窗口生成PDF
+    // 创建打印窗口生成PDF（保留表格格式）
     const printWindow = window.open('', '_blank')
     if (printWindow) {
       printWindow.document.write(`
@@ -1040,16 +1175,91 @@ const downloadAsPDF = async () => {
           <meta charset="UTF-8">
           <title>AI对话记录</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
-            h1 { color: #333; }
-            .message { margin-bottom: 20px; padding: 10px; border-left: 3px solid #1890ff; }
+            body {
+              font-family: "Microsoft YaHei", Arial, sans-serif;
+              padding: 20px;
+              line-height: 1.6;
+              max-width: 800px;
+              margin: 0 auto;
+            }
+            h1 {
+              color: #333;
+              border-bottom: 2px solid #1890ff;
+              padding-bottom: 10px;
+            }
+            h3 {
+              color: #1890ff;
+              margin-top: 20px;
+              margin-bottom: 10px;
+            }
+            .message-block {
+              margin-bottom: 30px;
+            }
+            .message-content {
+              margin-top: 10px;
+            }
+            table {
+              border-collapse: collapse;
+              width: 100%;
+              margin: 16px 0;
+              border: 1px solid #dfe2e5;
+            }
+            table th {
+              font-weight: 600;
+              padding: 8px 13px;
+              border: 1px solid #dfe2e5;
+              background-color: #f6f8fa;
+              text-align: left;
+            }
+            table td {
+              padding: 8px 13px;
+              border: 1px solid #dfe2e5;
+            }
+            table tr:nth-child(2n) {
+              background-color: #f6f8fa;
+            }
+            code {
+              background-color: rgba(27, 31, 35, 0.05);
+              padding: 2px 4px;
+              border-radius: 3px;
+              font-family: monospace;
+            }
+            pre {
+              background-color: #f6f8fa;
+              padding: 16px;
+              border-radius: 6px;
+              overflow-x: auto;
+            }
+            pre code {
+              background-color: transparent;
+              padding: 0;
+            }
+            blockquote {
+              border-left: 4px solid #dfe2e5;
+              padding-left: 16px;
+              color: #6a737d;
+              margin: 16px 0;
+            }
+            hr {
+              border: none;
+              border-top: 1px solid #e1e4e8;
+              margin: 20px 0;
+            }
+            @media print {
+              body {
+                padding: 10px;
+              }
+              table {
+                page-break-inside: avoid;
+              }
+            }
           </style>
         </head>
         <body>
           <h1>AI对话记录</h1>
-          <p>生成时间: ${new Date().toLocaleString()}</p>
+          <p>生成时间: ${new Date().toLocaleString('zh-CN')}</p>
           <hr>
-          <pre style="white-space: pre-wrap; font-family: Arial, sans-serif;">${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+          ${htmlContent}
         </body>
         </html>
       `)
@@ -1406,10 +1616,21 @@ const handleWebSocketMessage = (data: any) => {
       // 如果重发了视频，等待视频播放完成后再解锁输入框
       // 视频播放完成会在 playNextVideo() 中处理
     } else {
-      // 没有重发视频，立即解锁输入框
-      console.log('  - 无需重发视频，立即解锁输入框')
-      isProcessing.value = false
-      message.destroy('reconnecting')
+      // 没有重发视频，但需要检查是否有视频正在播放或队列中有视频
+      // ✅ 修复：只有在没有视频播放且队列为空时才解锁输入框
+      const hasVideoInQueue = videoQueue.value.length > 0
+      const isVideoPlaying = isPlayingSpeechVideo.value
+      
+      if (!hasVideoInQueue && !isVideoPlaying) {
+        // 没有视频在队列中，也没有正在播放的视频，可以解锁
+        console.log('  - 无需重发视频，且无视频播放，解锁输入框')
+        isProcessing.value = false
+        message.destroy('reconnecting')
+      } else {
+        // 有视频在播放或队列中，等待视频播放完成后再解锁
+        console.log(`  - 无需重发视频，但有视频${isVideoPlaying ? '正在播放' : '在队列中'}，等待播放完成后再解锁`)
+        // 视频播放完成会在 playNextVideo() 中处理
+      }
     }
   }
   else if (data.type === 'config_updated') {
@@ -1481,16 +1702,23 @@ const playNextVideo = async () => {
     // 播放完所有视频后，回到待机视频
     playIdleVideo()
     
-    // ✅ 修复：只有在流式传输已完成且队列为空时才解锁输入框
-    // 避免在视频还在传输时提前解锁
-    if (streamCompleted.value && isProcessing.value) {
-      console.log('✅ 所有视频播放完成，解锁输入框')
-      isProcessing.value = false
-      streamCompleted.value = false // 重置标志
-      message.destroy('reconnecting')
-    } else if (videoQueue.value.length === 0 && !streamCompleted.value) {
-      // 队列为空但流式传输未完成，说明视频还在传输中，不要解锁
-      console.log('⏳ 视频队列为空，但流式传输未完成，等待更多视频...')
+    // ✅ 修复：检查是否可以解锁输入框
+    // 1. 如果流式传输已完成，且正在处理中，解锁输入框
+    // 2. 如果流式传输未完成，但队列为空且正在处理中，可能是重连场景，也解锁
+    if (isProcessing.value) {
+      if (streamCompleted.value) {
+        // 流式传输已完成，解锁输入框
+        console.log('✅ 所有视频播放完成，解锁输入框')
+        isProcessing.value = false
+        streamCompleted.value = false // 重置标志
+        message.destroy('reconnecting')
+      } else {
+        // 流式传输未完成，但队列为空且没有正在播放的视频
+        // 可能是重连场景，或者视频传输已中断，解锁输入框
+        console.log('✅ 视频队列为空且无视频播放（可能是重连场景），解锁输入框')
+        isProcessing.value = false
+        message.destroy('reconnecting')
+      }
     }
     return
   }
@@ -1542,7 +1770,6 @@ const playNextVideo = async () => {
           }
         }
         nextVideo.onerror = (e) => {
-          console.error('❌ 视频加载失败:', e)
           reject(e)
         }
         
@@ -1551,7 +1778,6 @@ const playNextVideo = async () => {
         
         // 超时保护（缩短到 5 秒）
         setTimeout(() => {
-          console.error(`⏰ 视频加载超时 (>5秒)`)
           reject(new Error('Video load timeout'))
         }, 5000)
       })

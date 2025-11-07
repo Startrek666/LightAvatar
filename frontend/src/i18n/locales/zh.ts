@@ -141,7 +141,8 @@ export default {
     xiaoxiao: '晓晓 (女声)',
     yunxi: '云希 (男声)',
     xiaoyi: '晓伊 (女声)',
-    yunjian: '云健 (男声)'
+    yunjian: '云健 (男声)',
+    aria: 'Aria (英语女声)'
   },
   avatars: {
     default: '默认女性',

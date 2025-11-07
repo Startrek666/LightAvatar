@@ -142,7 +142,8 @@ class OpenAIHandler(BaseHandler):
         momo_search_handler = None,
         momo_search_quality: str = "speed",  # "speed" 或 "quality"
         progress_callback = None,
-        search_results_callback = None
+        search_results_callback = None,
+        ui_language: str = "zh"  # 界面语言
     ) -> AsyncGenerator[str, None]:
         """
         Generate streaming response with optional web search
@@ -244,21 +245,35 @@ class OpenAIHandler(BaseHandler):
                 logger.debug(f"  消息 {i+1}: role={role}, content={content_preview}...")
             
             # 检测用户输入的语言并添加强制语言匹配指令
-            def detect_language(text: str) -> str:
-                """简单检测文本主要语言"""
+            def detect_language(text: str, ui_language: str = "zh") -> str:
+                """简单检测文本主要语言
+                
+                Args:
+                    text: 用户输入文本
+                    ui_language: 界面语言 ("zh" 或 "en")
+                
+                Returns:
+                    "zh" 或 "en"
+                """
                 # 统计中文字符数量
                 chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
                 # 统计英文字母数量
                 english_chars = sum(1 for char in text if char.isalpha() and ord(char) < 128)
                 
+                # ✅ 修复：如果同时包含中文和英文，使用界面语言
+                if chinese_chars > 0 and english_chars > 0:
+                    logger.info(f"🌐 检测到中英文混合输入，使用界面语言: {ui_language}")
+                    return ui_language
+                
+                # 如果只有中文或只有英文，按原有逻辑判断
                 if chinese_chars > english_chars:
                     return "zh"
                 elif english_chars > 0:
                     return "en"
                 else:
-                    return "zh"  # 默认中文
+                    return ui_language  # 默认使用界面语言
             
-            detected_lang = detect_language(text)
+            detected_lang = detect_language(text, ui_language)
             
             # 根据检测到的语言，在系统提示词中添加强制语言指令
             if detected_lang == "en":
@@ -319,7 +334,8 @@ class OpenAIHandler(BaseHandler):
                                 search_results=relevant_docs,
                                 current_date=cur_date,
                                 use_thinking_chain=True,
-                                thinking_results=thinking_results
+                                thinking_results=thinking_results,
+                                ui_language=ui_language
                             )
                             context = thinking_prompt
                         else:
@@ -552,7 +568,7 @@ class OpenAIHandler(BaseHandler):
         
         logger.info(f"{'='*60}")
     
-    async def stream_response(self, text: str, conversation_history: List[Dict] = None) -> AsyncGenerator[str, None]:
+    async def stream_response(self, text: str, conversation_history: List[Dict] = None, ui_language: str = "zh") -> AsyncGenerator[str, None]:
         """Generate streaming response (without search)"""
         try:
             # Prepare messages
@@ -639,6 +655,48 @@ class OpenAIHandler(BaseHandler):
                 role = msg.get('role', 'unknown')
                 content_preview = msg.get('content', '')[:50]
                 logger.debug(f"  消息 {i+1}: role={role}, content={content_preview}...")
+            
+            # 检测用户输入的语言并添加强制语言匹配指令
+            def detect_language(text: str, ui_language: str = "zh") -> str:
+                """简单检测文本主要语言
+                
+                Args:
+                    text: 用户输入文本
+                    ui_language: 界面语言 ("zh" 或 "en")
+                
+                Returns:
+                    "zh" 或 "en"
+                """
+                # 统计中文字符数量
+                chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+                # 统计英文字母数量
+                english_chars = sum(1 for char in text if char.isalpha() and ord(char) < 128)
+                
+                # ✅ 修复：如果同时包含中文和英文，使用界面语言
+                if chinese_chars > 0 and english_chars > 0:
+                    logger.info(f"🌐 检测到中英文混合输入，使用界面语言: {ui_language}")
+                    return ui_language
+                
+                # 如果只有中文或只有英文，按原有逻辑判断
+                if chinese_chars > english_chars:
+                    return "zh"
+                elif english_chars > 0:
+                    return "en"
+                else:
+                    return ui_language  # 默认使用界面语言
+            
+            detected_lang = detect_language(text, ui_language)
+            
+            # 根据检测到的语言，在系统提示词中添加强制语言指令
+            if detected_lang == "en":
+                language_instruction = "\n\n🔴 CRITICAL INSTRUCTION: The user's message is in ENGLISH. You MUST respond ENTIRELY in ENGLISH. DO NOT use Chinese characters in your response. This is mandatory."
+            else:
+                language_instruction = "\n\n🔴 重要指令：用户的消息是中文。你必须完全用中文回答。不要在回答中使用英文。这是强制要求。"
+            
+            # 将语言指令添加到第一条系统消息中
+            if messages and messages[0].get("role") == "system":
+                messages[0]["content"] += language_instruction
+                logger.info(f"🌐 检测到用户语言: {detected_lang}, 已添加语言匹配指令")
             
             # Stream response
             async for chunk in self._stream_response_internal(messages):

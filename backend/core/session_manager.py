@@ -389,7 +389,8 @@ class Session:
         callback, 
         use_search: bool = False,
         search_mode: str = "simple",
-        search_quality: str = "speed"
+        search_quality: str = "speed",
+        ui_language: str = "zh"
     ):
         """
         Process text input with streaming response
@@ -401,6 +402,7 @@ class Session:
             use_search: Whether to perform web search before generating response
             search_mode: 搜索模式 ("simple" 或 "advanced")
             search_quality: 搜索质量 ("speed" 或 "quality"，仅用于advanced模式)
+            ui_language: 界面语言 ("zh" 或 "en")
         """
         self.update_activity()
         # 标记为处理中，防止WebSocket断开时Session被清理
@@ -704,15 +706,16 @@ class Session:
                         momo_search_handler=self.momo_search_handler,
                         momo_search_quality=search_quality,
                         progress_callback=search_progress_callback,
-                        search_results_callback=search_results_callback
+                        search_results_callback=search_results_callback,
+                        ui_language=ui_language
                     )
                 else:
                     # 如果高级搜索不可用，回退到普通模式
                     if search_mode == "advanced":
                         logger.warning(f"⚠️ 高级搜索不可用，回退到普通模式")
-                    stream = self.llm_handler.stream_response(safe_text, self.conversation_history)
+                    stream = self.llm_handler.stream_response(safe_text, self.conversation_history, ui_language=ui_language)
             else:
-                stream = self.llm_handler.stream_response(safe_text, self.conversation_history)
+                stream = self.llm_handler.stream_response(safe_text, self.conversation_history, ui_language=ui_language)
             
             async for chunk in stream:
                 # 检查是否已被中断

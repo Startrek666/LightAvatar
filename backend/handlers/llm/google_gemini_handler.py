@@ -362,6 +362,9 @@ class GoogleGeminiHandler(BaseHandler):
                 # speed（快速）模式：使用简单模式，快速回答
                 use_thinking_chain = (momo_search_quality == "quality")
                 
+                # 从 kwargs 中获取 ui_language，默认为 "zh"
+                ui_language = kwargs.get("ui_language", "zh")
+                
                 if use_thinking_chain:
                     logger.info(f"🧠 [深度模式] 使用深度思考链生成回答 (质量: {momo_search_quality})")
                     enhanced_text = build_enhanced_search_prompt(
@@ -369,7 +372,8 @@ class GoogleGeminiHandler(BaseHandler):
                         search_results=search_results,
                         current_date=today,
                         use_thinking_chain=True,
-                        thinking_results=thinking_results
+                        thinking_results=thinking_results,
+                        ui_language=ui_language
                     )
                 else:
                     # 快速模式：使用简单 Prompt
@@ -378,7 +382,8 @@ class GoogleGeminiHandler(BaseHandler):
                         user_query=user_query,
                         search_results=search_results,
                         current_date=today,
-                        use_thinking_chain=False
+                        use_thinking_chain=False,
+                        ui_language=ui_language
                     )
                 
                 logger.info(f"📝 搜索上下文已构建 (长度: {len(enhanced_text)}, 思考链: {use_thinking_chain})")
