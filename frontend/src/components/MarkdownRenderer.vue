@@ -100,33 +100,9 @@ function processCitations(content: string): string {
   
   console.log('开始处理引用标记，引用数量:', citations.value.length) // 调试日志
   
-  // 截断参考来源部分，只显示前10个引用（避免占用太多空间）
-  // 但保留所有引用数据用于处理citation标记点击
+  // ✅ 优化：不在这里截断参考来源，让 Markdown 渲染完成后在 DOM 中处理
+  // 避免正则表达式处理大量文本导致卡死
   let processedContent = content
-  const referencesMatch = processedContent.match(/(?:\*\*)?(?:📚\s*)?参考来源[：:]\s*(?:\*\*)?\s*\n((?:\d+\.\s*\[[\s\S]*?\]\([\s\S]*?\)\s*)+)/)
-  if (referencesMatch && citations.value.length > 10) {
-    const referencesText = referencesMatch[1]
-    const citationRegex = /(\d+)\.\s*\[([\s\S]*?)\]\(([\s\S]*?)\)/g
-    citationRegex.lastIndex = 0
-    let match
-    let displayedCount = 0
-    let truncatedText = ''
-    
-    while ((match = citationRegex.exec(referencesText)) !== null && displayedCount < 10) {
-      truncatedText += `${match[1]}. [${match[2]}](${match[3]})\n`
-      displayedCount++
-    }
-    
-    // 如果引用超过10个，添加提示（使用国际化）
-    if (displayedCount < citations.value.length) {
-      // 注意：这里使用中文，因为是在Markdown处理阶段，后续会在DOM中替换为翻译文本
-      truncatedText += `\n*（共${citations.value.length}个引用，仅显示前10个）*`
-    }
-    
-    // 替换参考来源部分
-    const referencesHeader = referencesMatch[0].replace(referencesText, truncatedText.trim())
-    processedContent = processedContent.replace(referencesMatch[0], referencesHeader)
-  }
   
   // 将 [citation:X] 或 [citation:X, Y] 转换为可点击的上标
   // 匹配 [citation:1] 或 [citation:1, 9] 或 [citation:1][citation:2] 这样的格式
@@ -135,15 +111,12 @@ function processCitations(content: string): string {
     const numList = nums.split(',').map((n: string) => n.trim()).filter((n: string) => n)
     const supElements = numList.map((num: string) => {
       const citationIndex = parseInt(num) - 1
-      console.log(`处理 ${match} 中的 ${num}, index: ${citationIndex}, 引用总数: ${citations.value.length}`) // 调试日志
     
       // 始终渲染sup标签，支持任意数量的引用
-    if (citationIndex >= 0 && citationIndex < citations.value.length) {
+      if (citationIndex >= 0 && citationIndex < citations.value.length) {
         return `<sup class="citation-sup" data-citation="${num}" title="点击查看来源">${num}</sup>`
       } else {
-        // 如果索引超出范围，可能是后端引用数量与前端提取不一致
-        // 仍然渲染，但标记为无效，让用户知道这个引用可能有问题
-        console.warn(`引用 ${num} 超出范围 (总数: ${citations.value.length})，可能后端返回了更多引用但前端未完全提取`)
+        // 如果索引超出范围，标记为无效
         return `<sup class="citation-sup citation-invalid" data-citation="${num}" title="引用来源未找到">${num}</sup>`
       }
     }).join(', ')
@@ -269,8 +242,14 @@ function optimizeReferencesLayout() {
         let nextElement = p.nextElementSibling
         while (nextElement) {
           if (nextElement.tagName === 'OL' || nextElement.tagName === 'UL') {
-            // 添加特殊类名
+            // ✅ 检查是否已经处理过，避免重复处理
+            if (nextElement.classList.contains('references-processed')) {
+              break
+            }
+            
+            // 标记为已处理
             nextElement.classList.add('references-list')
+            nextElement.classList.add('references-processed')
             
             // ✅ 隐藏第11个及以后的列表项
             const listItems = nextElement.querySelectorAll('li')
@@ -282,25 +261,13 @@ function optimizeReferencesLayout() {
             
             // ✅ 如果超过10个，添加提示文本（避免重复添加）
             if (listItems.length > 10) {
-              // 检查是否已经存在提示文本（可能是Markdown解析后的斜体文本，或之前添加的）
+              // 检查是否已经存在提示文本
               let existingHint = nextElement.nextElementSibling
               let hasHint = false
               
               // 检查下一个元素是否是提示文本
-              if (existingHint && (
-                existingHint.classList.contains('references-hint') ||
-                (existingHint.tagName === 'P' && existingHint.textContent?.includes('共') && existingHint.textContent?.includes('个引用'))
-              )) {
+              if (existingHint && existingHint.classList.contains('references-hint')) {
                 hasHint = true
-                // 如果是Markdown解析的斜体文本，替换为翻译文本
-                if (!existingHint.classList.contains('references-hint')) {
-                  const hintText = t('chat.referencesHint', { total: listItems.length })
-                  existingHint.textContent = hintText
-                  existingHint.classList.add('references-hint')
-                  ;(existingHint as HTMLElement).style.fontStyle = 'italic'
-                  ;(existingHint as HTMLElement).style.color = '#666'
-                  ;(existingHint as HTMLElement).style.marginTop = '8px'
-                }
               }
               
               // 如果没有提示文本，添加新的
@@ -332,25 +299,19 @@ onMounted(() => {
       tooltipVisible.value = false
     }
   })
-  
-  // 监听内容变化，优化参考来源布局
-  const observer = new MutationObserver(() => {
-    optimizeReferencesLayout()
-  })
-  
-  if (markdownContainer.value) {
-    observer.observe(markdownContainer.value, {
-      childList: true,
-      subtree: true
-    })
-    // 初始执行一次
-    optimizeReferencesLayout()
-  }
 })
 
-// 监听 renderedHtml 变化，优化布局
+// 监听 renderedHtml 变化，优化布局（使用防抖避免频繁调用）
+let optimizeTimer: ReturnType<typeof setTimeout> | null = null
 watch(() => renderedHtml.value, () => {
-  optimizeReferencesLayout()
+  // 清除之前的定时器
+  if (optimizeTimer) {
+    clearTimeout(optimizeTimer)
+  }
+  // 延迟执行，避免频繁调用
+  optimizeTimer = setTimeout(() => {
+    optimizeReferencesLayout()
+  }, 100)
 })
 </script>
 

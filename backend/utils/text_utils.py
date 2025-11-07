@@ -34,9 +34,10 @@ def clean_markdown_for_tts(text: str) -> str:
     
     # 0. 移除"参考来源"部分（包括标题和所有引用列表）
     # 匹配格式：**📚 参考来源：**\n1. [标题](URL)\n2. [标题](URL)...
+    # 或者英文：**📚 References:**\n1. [标题](URL)\n2. [标题](URL)...
     # 使用更精确的正则表达式，匹配整个参考来源块
     text = re.sub(
-        r'\*\*📚\s*参考来源[：:]\*\*\s*\n(?:\d+\.\s*\[.*?\]\(.*?\)\s*)+',
+        r'\*\*📚\s*(?:参考来源|References)[：:]\*\*\s*\n(?:\d+\.\s*\[.*?\]\(.*?\)\s*)+',
         '',
         text,
         flags=re.DOTALL
@@ -45,7 +46,7 @@ def clean_markdown_for_tts(text: str) -> str:
     # 如果文本被修改，说明成功移除了参考来源部分
     if len(text) != len(original_text):
         from loguru import logger
-        logger.debug(f"✂️ 已移除参考来源部分 (从 {len(original_text)} 字符减少到 {len(text)} 字符)")
+        logger.debug(f"✂️ 已移除参考来源/References部分 (从 {len(original_text)} 字符减少到 {len(text)} 字符)")
     
     # 移除引用标记 [citation:X] 或 [citation:X, Y] 或 [citation: X]（不读出）
     # 匹配格式：[citation:1], [citation:1, 9], [citation: 12], [citation:1, 12, 40] 等
