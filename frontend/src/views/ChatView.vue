@@ -1702,23 +1702,19 @@ const playNextVideo = async () => {
     // 播放完所有视频后，回到待机视频
     playIdleVideo()
     
-    // ✅ 修复：检查是否可以解锁输入框
-    // 1. 如果流式传输已完成，且正在处理中，解锁输入框
-    // 2. 如果流式传输未完成，但队列为空且正在处理中，可能是重连场景，也解锁
-    if (isProcessing.value) {
-      if (streamCompleted.value) {
-        // 流式传输已完成，解锁输入框
-        console.log('✅ 所有视频播放完成，解锁输入框')
-        isProcessing.value = false
-        streamCompleted.value = false // 重置标志
-        message.destroy('reconnecting')
-      } else {
-        // 流式传输未完成，但队列为空且没有正在播放的视频
-        // 可能是重连场景，或者视频传输已中断，解锁输入框
-        console.log('✅ 视频队列为空且无视频播放（可能是重连场景），解锁输入框')
-        isProcessing.value = false
-        message.destroy('reconnecting')
-      }
+    // ✅ 修复：只有在流式传输已完成时，才解锁输入框
+    // 如果流式传输未完成（streamCompleted.value === false），说明还在等待更多视频到达
+    // 此时不应该解锁输入框，应该继续等待
+    if (isProcessing.value && streamCompleted.value) {
+      // 流式传输已完成，且所有视频都已播放完成，解锁输入框
+      console.log('✅ 所有视频播放完成，解锁输入框')
+      isProcessing.value = false
+      streamCompleted.value = false // 重置标志
+      message.destroy('reconnecting')
+    } else if (isProcessing.value && !streamCompleted.value) {
+      // 流式传输未完成，但队列为空，可能是等待下一个视频到达
+      // 不应该解锁输入框，继续等待
+      console.log('⏳ 视频队列为空，但流式传输未完成，继续等待更多视频...')
     }
     return
   }
