@@ -28,10 +28,13 @@
 import { computed, ref, nextTick, onMounted, watch } from 'vue'
 import { marked, Renderer } from 'marked'
 import hljs from 'highlight.js'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   content: string
 }>()
+
+const { t } = useI18n()
 
 const markdownContainer = ref<HTMLElement>()
 const tooltipVisible = ref(false)
@@ -114,8 +117,9 @@ function processCitations(content: string): string {
       displayedCount++
     }
     
-    // 如果引用超过10个，添加提示
+    // 如果引用超过10个，添加提示（使用国际化）
     if (displayedCount < citations.value.length) {
+      // 注意：这里使用中文，因为是在Markdown处理阶段，后续会在DOM中替换为翻译文本
       truncatedText += `\n*（共${citations.value.length}个引用，仅显示前10个）*`
     }
     
@@ -243,22 +247,75 @@ const renderedHtml = computed(() => {
   }
 })
 
-// 优化参考来源列表的样式
+// 优化参考来源列表的样式和隐藏多余的引用
 function optimizeReferencesLayout() {
   nextTick(() => {
     if (!markdownContainer.value) return
     
-    // 查找所有包含"参考来源"的段落
+    // 查找所有包含"参考来源"或"References"的段落
     const paragraphs = markdownContainer.value.querySelectorAll('p')
     paragraphs.forEach(p => {
       const text = p.textContent || ''
-      if (text.includes('参考来源')) {
+      const isReferencesHeader = text.includes('参考来源') || text.includes('References')
+      
+      if (isReferencesHeader) {
+        // ✅ 替换"参考来源"为翻译文本
+        if (text.includes('参考来源')) {
+          const referencesText = t('chat.references')
+          p.innerHTML = p.innerHTML.replace(/参考来源[：:]?/g, referencesText + ':')
+        }
+        
         // 找到后面的第一个有序列表
         let nextElement = p.nextElementSibling
         while (nextElement) {
           if (nextElement.tagName === 'OL' || nextElement.tagName === 'UL') {
             // 添加特殊类名
             nextElement.classList.add('references-list')
+            
+            // ✅ 隐藏第11个及以后的列表项
+            const listItems = nextElement.querySelectorAll('li')
+            listItems.forEach((li, index) => {
+              if (index >= 10) {
+                (li as HTMLElement).style.display = 'none'
+              }
+            })
+            
+            // ✅ 如果超过10个，添加提示文本（避免重复添加）
+            if (listItems.length > 10) {
+              // 检查是否已经存在提示文本（可能是Markdown解析后的斜体文本，或之前添加的）
+              let existingHint = nextElement.nextElementSibling
+              let hasHint = false
+              
+              // 检查下一个元素是否是提示文本
+              if (existingHint && (
+                existingHint.classList.contains('references-hint') ||
+                (existingHint.tagName === 'P' && existingHint.textContent?.includes('共') && existingHint.textContent?.includes('个引用'))
+              )) {
+                hasHint = true
+                // 如果是Markdown解析的斜体文本，替换为翻译文本
+                if (!existingHint.classList.contains('references-hint')) {
+                  const hintText = t('chat.referencesHint', { total: listItems.length })
+                  existingHint.textContent = hintText
+                  existingHint.classList.add('references-hint')
+                  ;(existingHint as HTMLElement).style.fontStyle = 'italic'
+                  ;(existingHint as HTMLElement).style.color = '#666'
+                  ;(existingHint as HTMLElement).style.marginTop = '8px'
+                }
+              }
+              
+              // 如果没有提示文本，添加新的
+              if (!hasHint) {
+                const hintText = t('chat.referencesHint', { total: listItems.length })
+                const hintElement = document.createElement('p')
+                hintElement.className = 'references-hint'
+                hintElement.style.fontStyle = 'italic'
+                hintElement.style.color = '#666'
+                hintElement.style.marginTop = '8px'
+                hintElement.textContent = hintText
+                nextElement.insertAdjacentElement('afterend', hintElement)
+              }
+            }
+            
             break
           }
           nextElement = nextElement.nextElementSibling

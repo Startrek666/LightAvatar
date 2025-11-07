@@ -1781,11 +1781,22 @@ const playNextVideo = async () => {
       // 等待一帧，确保视频已渲染
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       
+      // ✅ 修复：在切换之前设置 onended 事件监听器，确保使用正确的视频元素引用
+      // 清除之前可能存在的 onended 监听器
+      nextVideo.onended = null
+      nextVideo.onended = () => {
+        console.log('🎬 视频播放完成，播放下一个视频')
+        URL.revokeObjectURL(url)
+        playNextVideo()
+      }
+      
       // 切换显示的video（无缝切换）
       currentVideoIndex.value = currentVideoIndex.value === 0 ? 1 : 0
 
       // 停止并清理旧video
       if (currentVideo) {
+        // 清除旧视频的 onended 监听器，避免重复触发
+        currentVideo.onended = null
         currentVideo.pause()
         if (
           currentVideo.src &&
@@ -1798,12 +1809,6 @@ const playNextVideo = async () => {
 
       // 切换到语音视频时，标记待机状态为false
       isPlayingIdleVideo.value = false
-
-      // When video ends, play next
-      nextVideo.onended = () => {
-        URL.revokeObjectURL(url)
-        playNextVideo()
-      }
     } catch (error) {
       console.error('Video playback error:', error)
       URL.revokeObjectURL(url)

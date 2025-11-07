@@ -64,7 +64,9 @@ export default {
     assistant: 'Assistant',
     copySuccess: 'Copied to clipboard',
     copyFailed: 'Copy failed',
-    nodeChanged: 'Node changed, page will reload automatically'
+    nodeChanged: 'Node changed, page will reload automatically',
+    references: 'References',
+    referencesHint: '(Total {total} references, showing first 10 only)'
   },
   search: {
     title: 'Web Search',

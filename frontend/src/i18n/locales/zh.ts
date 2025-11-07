@@ -64,7 +64,9 @@ export default {
     assistant: '助手',
     copySuccess: '已复制到剪贴板',
     copyFailed: '复制失败',
-    nodeChanged: '节点已切换，页面将自动刷新'
+    nodeChanged: '节点已切换，页面将自动刷新',
+    references: '参考来源',
+    referencesHint: '（共{total}个引用，仅显示前10个）'
   },
   search: {
     title: '联网搜索中',
